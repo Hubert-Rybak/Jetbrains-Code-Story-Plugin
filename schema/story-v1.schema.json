@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/main/schema/story-v1.schema.json",
+  "title": "Code Story story file",
+  "description": "A Code Story story file, schema version 1. The plugin saves stories as .codestory/local/<yyyy-MM-dd>-<slug>.story.json at the Git repository root (the project folder when there is no Git). Files are UTF-8, pretty-printed, with the fields in the order of this schema, and at most 256 KB.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "title", "steps"],
+  "properties": {
+    "schemaVersion": {
+      "description": "The version of this format.",
+      "const": 1
+    },
+    "id": {
+      "description": "The file name without .story.json. A number suffix keeps IDs unique.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "title": {
+      "description": "The story title: 8 words or fewer.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "steps": {
+      "description": "The steps in reading order: 3 to 12 are best, 15 at most.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 15,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["title", "comment", "location"],
+      "properties": {
+        "title": {
+          "description": "The step title: 8 words or fewer.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "comment": {
+          "description": "What the code does and why it matters: 1 to 3 short sentences in simple English.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "location": { "$ref": "#/$defs/location" }
+      }
+    },
+    "location": {
+      "description": "A range of lines in one file.",
+      "type": "object",
+      "required": ["file", "startLine", "endLine"],
+      "properties": {
+        "file": {
+          "description": "The file path relative to the story root (the Git repository root), with / between folders. No absolute paths and no '..' segments.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(^|[/\\\\])\\.\\.([/\\\\]|$)).+$"
+        },
+        "startLine": {
+          "description": "The first line of the range, 1-based.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "endLine": {
+          "description": "The last line of the range, 1-based and inclusive. Not smaller than startLine.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

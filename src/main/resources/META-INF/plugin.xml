@@ -3,7 +3,9 @@
     <name>Code Story</name>
     <vendor url="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin">Hubert Rybak</vendor>
     <description><![CDATA[
-        <p>Guided code stories for JetBrains IDEs. This initial version provides the Code Story tool window.</p>
+        <p>Guided code stories for JetBrains IDEs. An AI agent sends a story through the IDE's MCP server
+        (the <code>code_story_show</code> tool). The Code Story tool window lists the stories and their steps;
+        a click on a step opens its file and highlights the lines that the step explains.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -13,5 +15,6 @@
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Code Story" anchor="right" icon="AllIcons.Toolwindows.Documentation"
                     factoryClass="io.github.hubertrybak.codestory.CodeStoryToolWindowFactory"/>
+        <notificationGroup id="Code Story" displayType="BALLOON"/>
     </extensions>
 </idea-plugin>

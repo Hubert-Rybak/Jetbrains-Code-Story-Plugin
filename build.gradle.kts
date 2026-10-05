@@ -5,6 +5,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.intellij.platform")
 }
 
@@ -14,6 +15,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     intellijPlatform {
         intellijIdea("2025.3")
+        // Optional at runtime (see plugin.xml); kotlinx.serialization comes from the IDE.
+        bundledPlugin("com.intellij.mcpServer")
         testFramework(TestFrameworkType.Platform)
     }
 }
