@@ -1,0 +1,17 @@
+<idea-plugin>
+    <id>io.github.hubertrybak.codestory</id>
+    <name>Code Story</name>
+    <vendor url="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin">Hubert Rybak</vendor>
+    <description><![CDATA[
+        <p>Guided code stories for JetBrains IDEs. This initial version provides the Code Story tool window.</p>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends optional="true" config-file="io.github.hubertrybak.codestory-mcp.xml">com.intellij.mcpServer</depends>
+    <depends optional="true" config-file="io.github.hubertrybak.codestory-git.xml">Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Code Story" anchor="right" icon="AllIcons.Toolwindows.Documentation"
+                    factoryClass="io.github.hubertrybak.codestory.CodeStoryToolWindowFactory"/>
+    </extensions>
+</idea-plugin>
