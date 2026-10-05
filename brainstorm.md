@@ -17,7 +17,7 @@ A JetBrains IDE plugin for browsing "stories" about code.
 - The design space was mapped as a decision tree: every decision opens the decisions that depend on it.
 - The work went in rounds. Each round asked every open decision whose prerequisites were already settled (the "frontier"), each with a recommended answer.
 - When a decision needed facts (IDE APIs, existing tools, agent capabilities), research ran first, and only the dependent questions waited for it.
-- Five rounds and 32 questions, until no open decision remained.
+- Five rounds and 32 questions, until no open decision remained. After the spec was published, a new idea (a reader feedback loop) opened a new branch, which took three more rounds (questions 33–47).
 
 ## 3. Final design tree
 
@@ -43,14 +43,14 @@ Code Story
 │  ├─ C5 Skill delivery & MCP setup ...... plugin installs the skill; guides the MCP switch-on
 │  ├─ C6 Context source .................. the conversation; free-text request
 │  ├─ C7 Story-building rules ............ rules 1–5 (section 4, Q12)
-│  └─ C8 Reader asks the agent ........... copy a prompt in v1; live question loop with drill-down mode
+│  └─ C8 Reader asks the agent ........... replaced by branch K (feedback loop)
 ├─ D Story model
 │  ├─ D1 Later modes ..................... drill-down → diff walkthrough → flow map
 │  ├─ D2 Story & step fields ............. title, type, summary, request, author, git, steps (one or no location)
 │  ├─ D3 Code anchoring .................. line range + anchor text; follows edits
 │  ├─ D4 Old vs new code ................. agent sets baseRef; plugin computes A/M from Git; Show diff
 │  ├─ D5 File format ..................... own JSON + JSON Schema; CodeTour import/export in v1.1
-│  └─ D6 Stale stories ................... ok / moved / lost; refresh through the agent
+│  └─ D6 Stale stories ................... ok / moved / code changed / lost; refresh through the feedback loop
 ├─ E Persistence
 │  ├─ E1 Storage & sharing ............... .codestory/local (Git-ignored) + .codestory/shared (committed)
 │  ├─ E2 Story management ................ play, stop, share, delete, copy as Markdown
@@ -64,7 +64,24 @@ Code Story
 │  ├─ G0 Wording ......................... ASD-STE100, short
 │  └─ G1/G2 Text format, limits, checks .. Markdown subset; length limits; warnings only
 ├─ H Security, privacy, performance ...... story-only tools; safe paths; no HTML; no network calls
-└─ I Implementation defaults ............. IDs, overwrite on update, reader state, settings, themes
+├─ I Implementation defaults ............. IDs, overwrite on update, reader state, settings, themes
+└─ K Reader feedback loop (v1)
+   ├─ K0 Drafts + Submit per round ....... comments are drafts until "Submit round"
+   ├─ K1 When it ships ................... v1; replaces "Ask agent…"
+   ├─ K2 Where readers comment ........... on a step or on the whole story
+   ├─ K3 Question vs change request ...... explicit toggle; a Question never changes code
+   ├─ K4 Comment UI ...................... 💬 in the card, threads in the details pane, draft counts, unread dots
+   ├─ K5 How a round reaches the agent ... pull on demand (/code-story feedback) + optional hook snippets; listening mode in v1.1
+   ├─ K6 Where answers go ................ thread reply; may improve step text or insert steps
+   ├─ K7 Change requests ................. applied directly by the agent
+   ├─ K8 Steps in sync with code ......... "code changed" status; "done" rejected until steps are updated or confirmed
+   ├─ K9 Thread states ................... submitted → received → answered / done / declined; reply reopens; resolve
+   ├─ K10 Threads stored ................. in the story file (shared with it); drafts in IDE storage
+   ├─ K11 Which session answers .......... any session; fetchable until answered; first reply wins
+   ├─ K12 Answer text rules .............. STE, 100 words at most; automatic "Story changes" line
+   ├─ K13 Agent API ...................... code_story_feedback / code_story_patch / code_story_reply
+   ├─ K14 Who comments ................... the local reader and their own agent
+   └─ K16 Skill feedback mode ............ /code-story feedback; "Request refresh" replaces "Copy refresh request"
 ```
 
 ## 4. Decisions by round
@@ -112,10 +129,10 @@ Code Story
 | Q22 | Versions, build, CI, tests | Minimum 2025.3 (build 253), compiled against 2025.3 with Java 21, no upper version limit. Kotlin, the official template and the IntelliJ Platform Gradle Plugin 2.x. Optional dependencies on the MCP Server and Git plugins. GitHub Actions: build, unit tests, Plugin Verifier for Rider and IDEA (2025.3, 2026.1, 2026.2, current early access); a tag publishes the zip to GitHub Releases. Tests: unit tests for the core, IDE-level tests for anchoring and tool handlers, a manual checklist for Rider (C#) and IDEA before each release. |
 | Q23 | Tool API and validation | `code_story_guide()`, `code_story_show(story, storyId?)`, `code_story_list()`, `code_story_get(storyId)` with typed parameters. Report: errors (story rejected, nothing saved), corrections (accepted, lines shifted), warnings (accepted). Each item names the step and gives a fix hint. All or nothing. The file drop runs the same checks and shows problems in the tool window. |
 | Q24 | Skill delivery and MCP setup | A short `SKILL.md` plus references (guide, JSON Schema, example). The plugin installs the skill into `.agents/skills/` and `.claude/skills/` (user level by default), versions it and offers updates. When the MCP server is off, a notification opens its settings; the plugin never changes the setting itself. "Check setup" action and a first-run notification. |
-| Q25 | Reader asks the agent | v1: "Ask agent…" copies a prompt to the clipboard. The live question loop comes with the drill-down mode. |
+| Q25 | Reader asks the agent | v1: "Ask agent…" copies a prompt to the clipboard. The live question loop comes with the drill-down mode. *(Later replaced by the reader feedback loop, Q33.)* |
 | Q26 | Playback and navigation | Auto-play for stories from MCP or the file drop; no auto-play for shared stories that arrive through Git. Preview tab, range in the upper third, text-only steps in the details pane. Own Next / Previous / Stop actions with shortcuts that can be changed. One story at a time. Finish on the last step. Resume and Restart. Editing while a story plays is allowed. |
 | Q27 | Text format, limits, checks | Markdown subset (inline code, bold, bullet lists, safe links). Titles 8 words at most; summary 1–3 sentences; comment 1–3 sentences or a lead sentence and up to 4 list items, 60 words at most; sentences of 20 (instructions) / 25 (descriptions) words at most; English only. Mechanical checks in the plugin; warnings only, sent to the agent, not shown to readers. |
-| Q28 | Stale stories | Step status ok / moved / lost; lost steps play with a warning; "2 of 9 steps lost" in the list; branch and commit in the header; "Copy refresh request"; moved anchors are saved for local stories only; no automatic deletion. |
+| Q28 | Stale stories | Step status ok / moved / lost; lost steps play with a warning; "2 of 9 steps lost" in the list; branch and commit in the header; "Copy refresh request"; moved anchors are saved for local stories only; no automatic deletion. *(Later extended by the "code changed" status, Q38, and "Request refresh", Q47.)* |
 | Q29 | Security, privacy, performance | Tools only create and read stories; paths stay inside the project; no HTML; links only on click; size limits; "Written by <agent> (<model>)" label; no network calls or telemetry; the watcher covers only `.codestory/`; atomic writes. |
 
 ### Round 5 — Final
@@ -125,6 +142,38 @@ Code Story
 | Q30 | Story root and path base | `.codestory/` at the Git repository root; paths relative to it; the project folder without Git; one `.codestory/` per repository; one story stays inside one repository. |
 | Q31 | Implementation defaults | Story ID = file name; updates overwrite (no version history in v1); anchor checks use the text the IDE shows, ignoring whitespace and line-ending differences; project not open → error, then file-drop fallback; with two IDEs on one repository, an MCP story plays only in the IDE that received it; reader state stays in IDE storage; settings page under Tools \| Code Story; theme-aware colors; "Copy as Markdown" uses repository-relative links with line ranges. |
 | Q32 | v1 scope, roadmap, done criteria | Accepted as in sections 6 and 7 and in the spec. |
+
+### Round 6 — Reader feedback loop: scope and behavior
+
+The idea: readers comment under steps, collect several comments, and "submit" them back to the agent. Questions get answers written back into the story; change requests give the agent the context to change code; any code change must also update the matching steps.
+
+| # | Decision | Answer | Why |
+|---|---|---|---|
+| Q33 | When it ships | v1; it replaces the "Ask agent…" clipboard prompt. The live waiting part may move to v1.1 if it proves costly. | It makes stories interactive, and v1 drops "Ask agent…" in exchange. |
+| Q34 | Where readers comment | On a step, and on the whole story | A step already points at its code; a separate line-range anchor adds little. |
+| Q35 | Question or change request | The reader picks the kind with a toggle (Question by default). For a Question, the agent never changes code; it suggests a change request instead. | No code changes that nobody asked for. |
+| Q36 | Where answers go | A thread reply under the comment; the agent may also improve the step text or insert steps, and the reply lists those story changes | Answers stay next to the code they explain. |
+| Q37 | Change requests | The agent applies them directly (its permission prompts still apply) and replies "done" with a summary | The reader asked explicitly; a plan-first step would cost a round each time. |
+| Q38 | Steps in sync with code | New step status "code changed" (the code in the range differs from the code the step was written for). The plugin rejects "done" until every affected step is updated or confirmed. It also covers the developer's own edits. | Meets the requirement that any code change also updates the relevant steps. |
+| Q39 | Who comments and answers | The local reader and their own agent | Sending comments to another person needs a server or the PR platform. |
+
+### Round 7 — Reader feedback loop: UI, states, storage, text
+
+| # | Decision | Answer |
+|---|---|---|
+| Q40 | Comment UI | 💬 button in the card with a small input (text, kind toggle, Save draft); collapsed thread line in the card; full threads and "Comment on story" in the details pane; editable drafts with counts; one "Submit round" per story; open-thread counts and unread dots in the tree; a notification when answers arrive; a shortcut for "Comment on current step"; no writing checks on reader comments. |
+| Q41 | Thread states | draft → submitted (can be withdrawn until fetched) → received → answered / done / declined (with a reason); numbered rounds per story; the agent replies to every comment, and comments without a reply stay pending; a reply reopens a thread; resolved threads are hidden until "Show resolved". |
+| Q42 | Storage and sharing | Threads live in the story file and travel with a shared story. Drafts and unread markers stay in IDE storage until Submit. |
+| Q43 | Answer text | ASD-STE100, Markdown subset, 1–5 sentences or a lead sentence and up to 6 list items, 100 words at most; links to project files; "done" replies summarize the code changes, and the plugin adds a "Story changes" line; "declined" replies give a reason. |
+
+### Round 8 — Reader feedback loop: delivery and API
+
+| # | Decision | Answer |
+|---|---|---|
+| Q44 | How a round reaches the agent | v1: pull on demand. After Submit, the IDE shows "Waiting for your agent: tell it `/code-story feedback`" with a copy button (`$code-story feedback` in Codex). Optional hook snippets (Claude Code and Codex at session start and on each prompt, Copilot CLI at session start) tell the agent that feedback is pending; the plugin keeps a small pending-feedback index for them and never installs hooks itself. Listening mode moves to v1.1. |
+| Q45 | Which session answers | Any session in the project. Fetching marks comments "received"; they stay available until answered; the first reply wins, and a second gets "already answered". |
+| Q46 | Agent API | `code_story_feedback(storyId?)` (pending comments with full context, plus steps in "code changed" or "lost" status); `code_story_patch(storyId, operations)` (update, insert, remove, confirm steps); `code_story_reply(storyId, replies)` (answered / done / declined, with the "done" check). Threads belong to the plugin and are kept by step ID when a story is replaced. Every result names the next call. |
+| Q47 | Skill feedback mode | `/code-story feedback [storyId]`: fetch oldest first; answer questions without code changes; apply change requests, update the affected steps and reply "done"; refresh "code changed" and "lost" steps even without comments; summarize in the chat. "Request refresh" (adds a refresh item to the next round) replaces "Copy refresh request". |
 
 ## 5. Research findings (status 2026-10-05)
 
@@ -195,10 +244,21 @@ Code Story
   - Worth reusing: the inline panel and its cleanup on plugin unload, the anchor policy (search ±20 lines for the stored text) and its tests, the 409 "stale anchor" / "line adjusted" answers, never guessing the project, a guide served by the plugin so the skill always matches the installed version, batch calls with results per item, navigation bound to shortcuts.
 - **Verdict:** build our own plugin and reuse these ideas, with typed MCP parameters instead of JSON inside strings, and with the `.codestory/` storage and the CodeTour mapping designed from day one. Walkthrough can serve as a stopgap until v1 exists.
 
+### 5.6 How a feedback round can reach the agent
+
+- **No server push.** None of the checked agents wakes up on a message that the MCP server starts. Claude Code can do it only through "channels", a research preview behind a developer flag; Codex only logs such messages; Copilot and Junie document nothing. The IDE's MCP server offers toolsets only progress forwarding (since 2026.2) and elicitation inside a running tool call.
+- **Waiting tool calls are fragile.**
+  - Claude Code: for HTTP servers, the request timer runs until the first response byte and is at least 60 s; the IDE's server sends nothing before the result, so calls are probably cut after about 60 s unless the user raises the server's timeout. Calls that run longer than 2 minutes move to the background and wake Claude when they finish.
+  - Codex: 300 s since June 2026 (120 s and 60 s in older versions); the call blocks the turn.
+  - Copilot CLI: 30 s by default. Copilot in Rider and Junie: unknown.
+- **Hooks can remind the agent.** Claude Code (session start, each prompt, stop, background re-wake), Codex (session start, each prompt, stop) and Copilot CLI (session start, agent stop, notifications) can add context from a script, for example one that reads a pending-feedback index. Copilot's Rider plugin has no suitable hook. Junie hooks are in early access.
+- **Prior art.** Marginalis holds a long request (up to hours) that the agent runs in the background, uses a cursor so a round is never delivered twice, and enables "Submit round" only while an agent listens. Walkthrough repeats a 110 s wait call. Both keep an item available until it is answered.
+- **Conclusion:** keep rounds durable in the story files, let any agent pull them with a non-blocking tool (`/code-story feedback`), offer hook snippets as an opt-in reminder, and add a bounded listening mode later.
+
 ## 6. Roadmap
 
-- **v1:** everything in the spec: step-by-step stories through MCP with the file-drop fallback, inline card, tool window, anchoring and drift handling, change information, sharing, text checks, skill installation and setup.
-- **v1.1:** CodeTour import and export.
+- **v1:** everything in the spec: step-by-step stories through MCP with the file-drop fallback, inline card, tool window, anchoring and drift handling, change information, sharing, text checks, skill installation and setup, and the reader feedback loop (comments, rounds, answers, change requests, steps kept in sync with the code).
+- **v1.1:** CodeTour import and export; listening mode for feedback rounds.
 - **v2:** drill-down mode (child steps) with the live question loop (the reader asks in the card, the agent answers with child steps).
 - **v3:** diff walkthrough mode (steps on the old side of a diff).
 - **v4:** flow map mode (a diagram of components or calls; clicking a box opens the code).
@@ -215,6 +275,7 @@ Code Story
 6. Editing code during playback keeps the anchors right; after large edits, lost steps show a warning.
 7. The Plugin Verifier passes for Rider and IntelliJ IDEA from 2025.3 to the current early-access build, and the unit and IDE tests pass in CI.
 8. The manual checklist passes in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark themes.
+9. A reader comments on steps, submits a round, and `/code-story feedback` answers the questions in the story and applies a change request; the affected steps are updated or confirmed, and "done" is rejected until they are.
 
 ## 8. Risks and watch points
 
@@ -226,6 +287,8 @@ Code Story
 - **The space moves fast.** Most related tools appeared between May and October 2026. Differentiate on Rider quality, inline cards, drift handling, sharing and controlled wording.
 - **ASD-STE100 copyright.** Paraphrase the rules; never ship the dictionary.
 - **Name collision.** Check the name "Code Story" before a public release.
+- **Feedback needs a hand-over step.** Without server push, the developer tells the agent `/code-story feedback`; hooks only remind. Keep the copy button and the "waiting for your agent" message obvious.
+- **Agent tool-call limits change often.** Re-check them before building listening mode in v1.1.
 
 ## 9. Sources
 
@@ -294,3 +357,16 @@ Agent skills and ASD-STE100:
 - https://www.asd-ste100.org/STE_faq.html
 - https://www.asd-ste100.org/STE_downloads.html
 - https://simplified-english.co.uk/rules-ste9.html
+
+Feedback delivery:
+
+- https://code.claude.com/docs/en/env-vars
+- https://code.claude.com/docs/en/hooks
+- https://learn.chatgpt.com/docs/extend/mcp.md
+- https://learn.chatgpt.com/docs/hooks.md
+- https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference
+- https://docs.github.com/en/copilot/reference/hooks-reference
+- https://github.blog/changelog/2026-03-11-major-agentic-capabilities-improvements-in-github-copilot-for-jetbrains-ides/
+- https://devblogs.microsoft.com/java/unlocking-mcp-in-jetbrains-how-copilot-uses-sampling-prompts-resources-and-elicitation/
+- https://modelcontextprotocol.io/specification/2026-07-28/changelog
+- https://github.com/forketyfork/agentic-skills/blob/main/skills/walkthrough/skills/walkthrough/SKILL.md
