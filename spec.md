@@ -117,7 +117,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 64. As a developer, I want anchors to follow my edits while a file is open, so that the card stays at the right code after I change lines above it.
 65. As a developer, I want the plugin to find a step's code again after it moved (nearby first, then in the whole file), so that stories survive refactoring and branch switches.
 66. As a developer, I want a "lost" warning in the card when the code of a step cannot be found, so that I know the step can be wrong.
-67. As a developer, I want the story list to show how many steps are lost, so that I can decide to refresh or delete the story.
+67. As a developer, I want the story list to show how many steps are lost or changed, so that I can decide to refresh or delete the story.
 68. As a developer, I want the story header to show the branch and commit where the story was made, and a note when I am on another branch, so that I understand why steps can be off.
 69. As a developer, I want "Request refresh" to add a refresh item to the story's next feedback round, so that the agent updates stale steps through the same path as my comments.
 70. As a developer, I want moved anchors saved for my local stories but not written into shared stories, so that the plugin never creates unexpected Git changes.
@@ -205,10 +205,10 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 ### Logical modules
 
 1. **Story core** (pure Kotlin, no IDE dependencies): the story model, JSON reading and writing with the schema version, validation rules, the anchor-matching policy, the text checks, Markdown-subset parsing and sanitizing, and the report builder. Input: a story and a provider of file text. Output: a normalized story and a report. This is the fast test seam.
-2. **Story repository**: finds the story root (Git root, project folder as fallback), manages `.codestory/local/` (with its own self-ignoring `.gitignore`) and `.codestory/shared/`, assigns story IDs, writes files atomically (temp file, then rename), moves stories between folders (ID kept), deletes stories, and keeps reader state (last step per story) in IDE workspace storage.
+2. **Story repository**: finds the story root (Git root, project folder as fallback), manages `.codestory/local/` (with its own self-ignoring `.gitignore`) and `.codestory/shared/`, assigns story IDs, writes files atomically (temp file, then rename), moves stories between folders (ID kept), deletes stories, and keeps reader state (last step per story, comment drafts, unread markers) in IDE workspace storage.
 3. **Agent API (MCP toolset)**: the seven tools below (guide, show, list, get, feedback, patch, reply), registered through the MCP server plugin's toolset extension point. Typed parameters come from Kotlin data classes (no JSON inside strings). The project is chosen through the project path that the MCP server injects; the plugin never guesses.
 4. **Folder watcher**: listens to file-system events for `.codestory/` only. New or changed story files are loaded and validated; auto-play follows the rules below.
-5. **Anchor tracker**: resolves anchors when a story opens or plays, keeps live range markers while documents are open, and computes the status of each step (ok, moved, lost).
+5. **Anchor tracker**: resolves anchors when a story opens or plays, keeps live range markers while documents are open, and computes the status of each step (ok, moved, code changed, lost).
 6. **Change info** (needs the Git plugin): for stories with a `baseRef`, computes the added/modified status per step and opens the IDE diff viewer (base revision against the working tree) at the step range.
 7. **Player**: holds the one active story per project, runs step navigation, opens files, scrolls, and drives the inline presentation.
 8. **Inline presentation**: the card above the first line of the range, the range highlight, the gutter number for the current step and small gutter badges for other steps in the same file. The card is a component inlay (the same mechanism as the IDE's pull-request review threads); a custom-painted block inlay with clickable areas is the fallback, because the component inlay API is marked experimental. Colors follow the IDE theme.
@@ -307,7 +307,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - `.codestory/` lives at the Git repository root, and story paths are relative to it. Without Git, the project folder is used. With several repositories in one project, each repository has its own `.codestory/`, and one story stays inside one repository.
 - New stories go to `.codestory/local/`. The plugin creates a `.gitignore` inside it that ignores everything, so no root `.gitignore` change is needed.
 - Share moves a story to `.codestory/shared/` (committed with the branch); Unshare moves it back. The story ID does not change.
-- Reader state (last step, visited marks) is never written into story files.
+- Reader state (last step, visited marks, comment drafts, unread markers) is never written into story files.
 
 ### Text rules and checks
 
