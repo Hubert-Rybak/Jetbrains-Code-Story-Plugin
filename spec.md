@@ -24,6 +24,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 5. The developer moves through the steps with the card buttons, the tool window or shortcuts. Anchors follow code edits. Stories about a change show which lines were added or modified, and "Show diff" opens the old and the new code side by side.
 6. To hand a change to a reviewer, the developer shares the story (it moves to `.codestory/shared/`) and commits it with the branch. The reviewer plays it after checkout. "Copy as Markdown" gives a text version for the pull request description.
 7. If the MCP connection is not available, the agent writes the story file into `.codestory/local/` directly, and the plugin picks it up.
+8. While reading, the developer writes comments on steps or on the whole story, each marked as a Question or a Change request, and submits them as one **round**. The developer then tells the agent `/code-story feedback`. The agent fetches the round, answers questions in threads inside the story, applies change requests to the code, and updates every step whose code changed. Steps whose code changed show "code changed" until the agent updates or confirms them, so the story always matches the code.
 
 ## User Stories
 
@@ -118,7 +119,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 66. As a developer, I want a "lost" warning in the card when the code of a step cannot be found, so that I know the step can be wrong.
 67. As a developer, I want the story list to show how many steps are lost, so that I can decide to refresh or delete the story.
 68. As a developer, I want the story header to show the branch and commit where the story was made, and a note when I am on another branch, so that I understand why steps can be off.
-69. As a developer, I want "Copy refresh request" to give me a ready prompt for the agent, so that the agent can update a stale story.
+69. As a developer, I want "Request refresh" to add a refresh item to the story's next feedback round, so that the agent updates stale steps through the same path as my comments.
 70. As a developer, I want moved anchors saved for my local stories but not written into shared stories, so that the plugin never creates unexpected Git changes.
 
 ### Sharing and story management
@@ -130,7 +131,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 75. As a reviewer, I want shared stories that arrive through Git to wait in the list, marked as new, without auto-play, so that a checkout does not interrupt me.
 76. As a developer, I want to delete a story after a confirmation, so that I can clean up old stories.
 77. As a developer, I want "Copy as Markdown" (summary and steps with repository-relative file links and line ranges), so that I can paste the story into a pull request description for reviewers who do not have the plugin.
-78. As a developer, I want "Ask agent…" on a step to copy a prompt with the story ID, the step and my question, so that I can ask the agent a follow-up question in its chat.
+78. As a developer, I want my questions about a step to go through the feedback loop (see "Reader feedback loop"), so that answers are stored in the story instead of being lost in a chat.
 79. As a developer, I want stories stored at the Git repository root with repository-relative paths, so that every solution in the repository sees the same stories and paths match Git on every machine.
 80. As a developer running two JetBrains IDEs on the same repository, I want a story delivered through MCP to play only in the IDE that received it, so that both IDEs do not jump at once.
 81. As a developer, I want my reading position kept in my IDE and never written into story files, so that shared files contain no personal state.
@@ -152,7 +153,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 91. As a developer, I want the plugin to work without the MCP server plugin (file drop only) and without the Git plugin (no change information), so that a missing optional part does not break it.
 92. As a developer, I want the plugin to make no network calls and send no telemetry, so that my code stays private.
 93. As a developer, I want story files from Git treated as untrusted input (no HTML, no commands, no paths outside the project, size limits), so that a shared story cannot harm my machine.
-94. As a developer, I want Code Story tools to only create and read stories, so that a local program that calls the IDE's MCP server cannot run code through them.
+94. As a developer, I want Code Story tools to only create, read and update stories and their threads, so that a local program that calls the IDE's MCP server cannot run code through them.
 
 ### Maintenance and distribution
 
@@ -160,6 +161,34 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 96. As a plugin maintainer, I want the core logic (format, validation, anchoring, text checks) testable without the IDE, so that tests run fast.
 97. As a plugin maintainer, I want CI to run the Plugin Verifier against Rider and IntelliJ IDEA from 2025.3 to the current early-access build, so that compatibility breaks show up early.
 98. As a plugin maintainer, I want tagged releases to publish the plugin zip to GitHub Releases, so that users can install it from disk before a Marketplace release.
+
+### Reader feedback loop
+
+99. As a developer, I want to write a comment on a step, so that I can ask about that code or ask for a change right where I read it.
+100. As a developer, I want to write a comment on the whole story, so that I can ask for missing steps or general changes.
+101. As a developer, I want to mark each comment as a Question or a Change request, so that the agent knows whether it may change code.
+102. As a developer, I want my comments to stay drafts that I can edit or delete until I submit them, so that I can collect several comments first.
+103. As a developer, I want to submit all drafts of a story as one round, so that the agent handles my feedback together.
+104. As a developer, I want to withdraw a submitted comment until the agent fetches it, so that I can take back a comment I no longer need.
+105. As a developer, I want the IDE to tell me how to hand the round to my agent (`/code-story feedback`, with a copy button), so that I do not have to remember the command.
+106. As a developer, I want to see when the agent has received my comments and is working on them, so that I know my feedback arrived.
+107. As a developer, I want answers to my questions written as thread replies inside the story, so that I can read them next to the step they explain.
+108. As a developer, I want the agent to improve a step text or add steps when my question shows that the story was unclear, so that the story gets better for the next reader.
+109. As a developer, I want the agent to apply my change requests to the code and reply "done" with a short summary, so that I can review the result in the story.
+110. As a developer, I want every reply to list the story changes it caused (steps updated, added, removed or confirmed), so that I can see how the story changed.
+111. As a developer, I want the agent to decline a request with a reason when it cannot or should not do it, so that I understand why nothing changed.
+112. As a developer, I want the agent never to change code for a Question, so that I get no code changes that I did not ask for.
+113. As a developer, I want steps whose code changed (by the agent or by me) marked "code changed" until the agent updates or confirms them, so that I never read a comment that no longer fits the code.
+114. As a developer, I want the plugin to reject a "done" reply while affected steps are not updated or confirmed, so that change requests always leave the story in sync with the code.
+115. As a developer, I want a notification when answers arrive and unread markers on steps with new replies, so that I find new answers fast.
+116. As a developer, I want to reply in a thread to continue the discussion, and to resolve threads when I am done, so that only open topics stay visible.
+117. As a developer, I want threads stored in the story file, so that a reviewer sees the earlier questions and answers when the story is shared.
+118. As a developer, I want any agent session in the project to process my feedback, so that feedback is not lost when the session that wrote the story has ended.
+119. As a developer, I want optional hook snippets for my agent that mention pending feedback at session start or with my next prompt, so that I do not forget to hand it over.
+120. As an AI agent, I want `code_story_feedback` to return the pending comments with their step, location, status and thread history, plus the steps whose code changed or was lost, so that I have all the context for my answers.
+121. As an AI agent, I want `code_story_patch` to update, insert, remove or confirm single steps, so that I can change a story without resending all of it.
+122. As an AI agent, I want `code_story_reply` to tell me exactly which steps still need an update before "done" is accepted, so that I can finish the round correctly.
+123. As an AI agent, I want the threads kept when I replace a story with stable step IDs, so that a story rewrite does not lose the discussion.
 
 ## Implementation Decisions
 
@@ -177,7 +206,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 
 1. **Story core** (pure Kotlin, no IDE dependencies): the story model, JSON reading and writing with the schema version, validation rules, the anchor-matching policy, the text checks, Markdown-subset parsing and sanitizing, and the report builder. Input: a story and a provider of file text. Output: a normalized story and a report. This is the fast test seam.
 2. **Story repository**: finds the story root (Git root, project folder as fallback), manages `.codestory/local/` (with its own self-ignoring `.gitignore`) and `.codestory/shared/`, assigns story IDs, writes files atomically (temp file, then rename), moves stories between folders (ID kept), deletes stories, and keeps reader state (last step per story) in IDE workspace storage.
-3. **Agent API (MCP toolset)**: the four tools below, registered through the MCP server plugin's toolset extension point. Typed parameters come from Kotlin data classes (no JSON inside strings). The project is chosen through the project path that the MCP server injects; the plugin never guesses.
+3. **Agent API (MCP toolset)**: the seven tools below (guide, show, list, get, feedback, patch, reply), registered through the MCP server plugin's toolset extension point. Typed parameters come from Kotlin data classes (no JSON inside strings). The project is chosen through the project path that the MCP server injects; the plugin never guesses.
 4. **Folder watcher**: listens to file-system events for `.codestory/` only. New or changed story files are loaded and validated; auto-play follows the rules below.
 5. **Anchor tracker**: resolves anchors when a story opens or plays, keeps live range markers while documents are open, and computes the status of each step (ok, moved, lost).
 6. **Change info** (needs the Git plugin): for stories with a `baseRef`, computes the added/modified status per step and opens the IDE diff viewer (base revision against the working tree) at the step range.
@@ -185,6 +214,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 8. **Inline presentation**: the card above the first line of the range, the range highlight, the gutter number for the current step and small gutter badges for other steps in the same file. The card is a component inlay (the same mechanism as the IDE's pull-request review threads); a custom-painted block inlay with clickable areas is the fallback, because the component inlay API is marked experimental. Colors follow the IDE theme.
 9. **Tool window "Code Story"** (default anchor: right): toolbar, story tree and details pane, as described below.
 10. **Setup and onboarding**: the bundled skill, skill install and update, the MCP server check, "Check setup", the first-run notification and the settings page.
+11. **Feedback loop**: comment drafts (kept in IDE storage), rounds and threads (kept in the story file), the pending-feedback index for agent hooks, the feedback, patch and reply tools, and the "code changed" check that keeps steps in sync with the code.
 
 ### Story format (JSON, own schema, `schemaVersion` 1)
 
@@ -205,20 +235,32 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
   | `baseRef` | agent | optional commit SHA; only for stories about a change (uncommitted work: `HEAD`) |
   | `delivery` | plugin | marker for stories delivered through MCP (absent for file-drop stories) |
   | `steps` | agent | ordered list |
+  | `threads` | plugin | story-level comment threads (see "Reader feedback loop") |
 
-- Step fields: `id` (stable in the story; the plugin assigns one when the agent sends none), `title` (8 words at most), `comment` (Markdown subset), and an optional `location` with `file` (repository-relative path), `startLine` and `endLine` (1-based, inclusive), `anchorText` (the exact text of the first line of the range, as the agent sends it) and the range text stored by the plugin for re-anchoring. A step has exactly one location or none (a text-only step). `children` and `links` are reserved for later modes and are not used in v1.
+- Step fields: `id` (stable in the story; the plugin assigns one when the agent sends none), `title` (8 words at most), `comment` (Markdown subset), and an optional `location` with `file` (repository-relative path), `startLine` and `endLine` (1-based, inclusive), `anchorText` (the exact text of the first line of the range, as the agent sends it) and the range text stored by the plugin for re-anchoring. A step has exactly one location or none (a text-only step). Each step also has `threads` (comment threads owned by the plugin). `children` and `links` are reserved for later modes and are not used in v1.
+- Thread fields: `id`, `kind` (`question`, `change` or `refresh`), `state` (`submitted`, `received`, `answered`, `done`, `declined`, `resolved`), and `messages`. Each message has an author (`reader` or `agent`), a round number, a time and the text. Agent replies also have an outcome and, for replies that changed the story, the automatic "Story changes" line. Drafts are not in the file; they stay in IDE storage until Submit.
 
 ### Agent API contract (MCP tools)
 
 - `code_story_guide()` returns the writing guide as Markdown: the story-building rules, the ASD-STE100 rules in our own words, the format and an example. It matches the installed plugin version.
 - `code_story_show(story, storyId?)` validates the story. When it is valid, the plugin saves it (a new story goes to `.codestory/local/`; an existing `storyId` is replaced in place, local or shared), opens it and plays it. It returns a report: story ID, file path, status (accepted or rejected), and lists of errors, corrections and warnings. Each item has the step number (or none for story-level items), a machine-readable code, a message and a fix hint.
-- `code_story_list()` returns ID, title, type, date, branch, folder (local or shared) and status (ok, or the number of lost steps) for each story.
+- `code_story_list()` returns ID, title, type, date, branch, folder (local or shared), status (ok, or the number of moved, changed and lost steps) and the number of pending comments for each story.
 - `code_story_get(storyId)` returns the full story.
 - **Errors** reject the whole story, and nothing is saved: invalid structure; an empty story or more than 15 steps; a file larger than 256 KB; an absolute path, `..` or a symlink that leads out of the project; a file that does not exist; lines outside the file; anchor text not found near the given lines.
 - **Corrections** keep the story: the anchor text was found a few lines away, and the lines were changed (for example "step 4: lines 120–131 changed to 123–134").
 - **Warnings** keep the story: text-rule problems, a range longer than 30 lines, a `baseRef` that Git does not know.
 - When the target project is not open, the MCP server returns an error that lists the open projects; the skill then falls back to the file drop, and the story appears when the project opens.
 - File drop: the same validation runs when the watcher finds the file. Problems show in the tool window only, because there is no report channel to the agent.
+- `code_story_feedback(storyId?)` returns the pending comments of one story or of all stories, oldest round first. Each item has the story ID, round, thread ID, kind, target (the story, or a step with ID, title, location and status), the comment text and the earlier messages of the thread. The result also lists the story's steps in "code changed" or "lost" status. Fetched comments become "received". They stay available to fetch until they are answered.
+- `code_story_patch(storyId, operations)` edits a story without resending it. Operations: update a step (title, comment, or location with anchor text), insert a step after another step, remove a step, confirm a step (its current code becomes the new reference and its status returns to ok). It runs the same validation as `code_story_show` and returns the same kind of report.
+- `code_story_reply(storyId, replies)` sends one reply per thread: an outcome (`answered` for questions, `done` for change and refresh items, `declined` with a reason) and the text.
+  - The outcome must match the kind of the thread.
+  - For `done`, every step in "code changed" or "lost" status must have been updated, replaced or confirmed after the round was fetched. Otherwise the reply is rejected with an error that lists those steps.
+  - Writing checks give warnings.
+  - The plugin adds the "Story changes" line itself (for example "Steps 3 and 4 updated, step 5 added, step 6 confirmed").
+  - A reply to a thread that another session already answered gets the error "already answered"; the first reply wins.
+- Threads belong to the plugin. When a story is replaced with `code_story_show(story, storyId)`, the plugin keeps each thread on its step by step ID; threads of removed steps move to the story level with the note "step removed". The guide asks agents to keep step IDs stable.
+- Every tool result names the next call (for example "Next: answer with `code_story_reply`").
 
 ### Anchoring
 
@@ -227,6 +269,8 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - The plugin stores the text of the range. When a story opens or plays, it checks each anchor: in place means ok; found nearby or elsewhere in the file (a unique match is preferred) means moved, and the anchor is updated; not found means lost.
 - While a document is open, live range markers move anchors as the developer types.
 - A lost step still plays at its stored lines, with a warning line in the card: "The code changed. This step can be wrong."
+- **Code changed:** when the anchor is found (in place or moved) but the code in the range differs from the code the step was written for, the step status is "code changed". This covers changes by the agent and by the developer. The step shows a badge and a note in the card until the agent updates or confirms it.
+- Step statuses are therefore: ok, moved, code changed, lost.
 - Moved anchors are written back to local stories only. For shared stories, corrections stay in memory.
 
 ### Change information
@@ -251,11 +295,11 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 
 ### Tool window
 
-- Toolbar: Play/Stop, Prev/Next, Share/Unshare, Delete, Copy as Markdown, Refresh.
-- Tree: repository (only when the project has several) → Local / Shared → stories (title, date, branch, type icon, newest first, warning with the count of lost steps) → steps (number, title, file and line, A/M badge when the story has a base, ✓ when visited).
-- Details pane: for a story, the summary, request, "Written by <agent> (<model>)", date, branch with commit, a note when the current branch differs, and the diff base; for a step, the comment and "Show diff".
-- Context menu: Restart, Ask agent…, Copy refresh request, Show diff, Share/Unshare, Delete.
-- Clipboard actions: "Copy as Markdown" (title, summary, steps with repository-relative links with line ranges such as `path#L42-L57`, and comments); "Ask agent…" (a prompt with the story ID, step number, step title and the developer's question); "Copy refresh request" (a prompt that names the story ID and its lost steps).
+- Toolbar: Play/Stop, Prev/Next, Share/Unshare, Delete, Copy as Markdown, Submit round (with the draft count), Refresh.
+- Tree: repository (only when the project has several) → Local / Shared → stories (title, date, branch, type icon, newest first, warning with the count of lost or changed steps, draft count) → steps (number, title, file and line, A/M badge when the story has a base, ✓ when visited, open-thread count, a dot for unread answers).
+- Details pane: for a story, the summary, request, "Written by <agent> (<model>)", date, branch with commit, a note when the current branch differs, the diff base, the story-level threads and "Comment on story"; for a step, the comment, "Show diff" and the step's threads.
+- Context menu: Restart, Comment, Request refresh, Show diff, Share/Unshare, Delete.
+- Clipboard action: "Copy as Markdown" (title, summary, steps with repository-relative links with line ranges such as `path#L42-L57`, and comments; threads are not included).
 - Not in v1: rename, edit, reorder, import, automatic cleanup, story version history (Git keeps the history of shared stories).
 
 ### Storage and sharing
@@ -271,6 +315,24 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - Limits: story and step titles of 8 words or fewer; a summary of 1–3 sentences; a comment of 1–3 sentences or a lead sentence and up to 4 list items, 60 words at most; sentences of 20 words or fewer for instructions and 25 or fewer for descriptions; code names count as one word; English only.
 - v1 checks (own Kotlin code): sentence length, sentences per comment, total words, title length, summary length, semicolons and contractions. Passive voice and -ing words are optional hints, off by default, because code text such as "string" or "mapping" gives false alarms. There is no check against the ASD-STE100 dictionary (its copyright does not allow us to ship it).
 - Results are warnings only. They go into the agent's report, and the guide tells the agent to fix them once and send the story again. The reader's UI does not show them.
+- Agent answers in threads follow the same rules, with larger limits: 1–5 sentences, or a lead sentence and up to 6 list items, 100 words at most. Answers may link to project files with line ranges. A "declined" reply must give a reason in 1–3 sentences.
+- Reader comments are not checked; readers write freely in the same Markdown subset.
+
+### Reader feedback loop
+
+- **Comments:** a reader comments on a step (the 💬 button in the card, or the step's threads in the details pane) or on the whole story ("Comment on story" in the details pane). Each comment has a kind, chosen with a toggle: Question (default) or Change request. There are no comments on separate line ranges inside a step; the comment text can quote a line.
+- **Drafts:** comments start as drafts in IDE storage (per user). Drafts can be edited and deleted. The story row and the "Submit round (N)" button show the draft count. A shortcut opens "Comment on current step"; Ctrl+Enter saves a draft.
+- **Rounds:** "Submit round" (toolbar and details pane, disabled without drafts) writes all drafts of the story into the story file as one numbered round (round 1, 2, …). Submitted comments are read-only and show "waiting for agent". A submitted comment can be withdrawn until an agent fetches it.
+- **Handing over:** after Submit, the IDE shows "Waiting for your agent: tell it `/code-story feedback`" with a copy button (`$code-story feedback` in Codex). Any agent session in the project can process the round. There is no server push: no agent wakes up on a message from the MCP server.
+- **Thread states:** submitted → received (an agent fetched it; the IDE shows "agent working") → answered (question), done (change or refresh item) or declined (with a reason). A reader reply in a thread adds a new draft and reopens the thread. A reader can resolve a thread; resolved threads are hidden until "Show resolved" is on.
+- **Questions:** the agent answers in the thread and never changes code. If it thinks a change is needed, it says so, and the reader can file a change request. The agent may also improve the step text or insert steps when the question shows that the story was unclear; the "Story changes" line lists such changes.
+- **Change requests:** the agent applies the change directly (its normal permission prompts still apply), updates every affected step, and replies "done" with a short summary of the code changes and the changed files. The plugin rejects "done" while any step is in "code changed" or "lost" status and was not updated, replaced or confirmed after the round was fetched.
+- **Request refresh:** this action adds a refresh item to the story's pending round, so the agent updates stale steps through the same `/code-story feedback` path.
+- **Arrival:** when replies arrive, a notification shows the number of answers with an Open action, the tree marks steps with unread answers, and a story that is playing reloads at the same step.
+- **Storage and sharing:** threads are part of the story file, so they travel with a shared story. A reader who comments on a shared story changes their own working copy of that file on purpose (unlike automatic anchor corrections, which never touch shared files). Drafts and unread markers stay in IDE storage.
+- **Who:** the local reader and their own agent. Comments are not sent to another person (for example the story's author).
+- **Hooks (optional):** the plugin keeps a small pending-feedback index in `.codestory/local/`. "Check setup" and the README offer hook snippets to copy: for Claude Code and Codex at session start and on each prompt, and for Copilot CLI at session start. The hooks tell the agent that feedback is pending, so the agent mentions it and processes it when the developer agrees. The plugin never installs hooks itself. Copilot's Rider plugin has no suitable hook.
+- **Listening mode** (the agent keeps waiting for rounds, so Submit reaches it at once) is planned for v1.1. It is fragile across agents in v1: tool-call limits range from 30 to 300 seconds, Claude Code probably cuts calls to the IDE's MCP server after about 60 seconds unless the user raises a timeout, and the limits of Copilot in Rider and of Junie are unknown.
 
 ### Agent skill
 
@@ -278,18 +340,25 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - The story-building rules: (1) context from the conversation first, otherwise explore; verify every location by reading the file. (2) Order by story type: change (entry point → core logic → data → side effects → tests and configuration); exploration (runtime flow, one hop per step); bug trace (trigger → path → failure point → fix); review handoff (like change, plus risks and edge cases). (3) 3–12 steps, 15 at most; otherwise narrow the subject or split it into several stories and tell the developer. (4) One idea per step; a range of the key lines, usually 30 or fewer. (5) Skip mechanical changes and mention them in the summary in one sentence at most.
 - Invocation: `/code-story <request>` in Claude Code and GitHub Copilot (Rider plugin and CLI); `$code-story <request>` in Codex CLI.
 - When the Code Story MCP tools are not available, or the project is not open, the skill writes the story file into `.codestory/local/` instead.
+- **Feedback mode** (`/code-story feedback [storyId]`, or `$code-story feedback` in Codex):
+  1. Fetch the pending comments with `code_story_feedback`, oldest round first.
+  2. Questions: answer from the story, the threads and the code. Never change code; if a change seems needed, say so and suggest a change request. Improve the step text or insert steps with `code_story_patch` when the question shows that the story was unclear.
+  3. Change requests: make the code change, then update every affected step (re-anchor, rewrite or confirm), then reply "done" with a short summary. Decline with a reason when the change cannot or should not be made.
+  4. Refresh items, or no comments but steps in "code changed" or "lost" status: refresh those steps.
+  5. At the end, summarize in the chat what was answered and changed, and point to the IDE for the details.
 
 ### Setup and onboarding
 
 - The plugin bundles the skill. "Install Code Story skill" writes it to `.agents/skills/code-story/` and `.claude/skills/code-story/`, at user level (default) or project level. Installed copies carry a version; after a plugin update, the plugin offers to update them. The skill is also published in this repository for manual installation.
 - When the IDE's MCP server is off, a notification explains why Code Story needs it and opens Settings | Tools | MCP Server. There the developer switches it on and uses the IDE's Auto-Configure for their agents. The plugin never changes this setting itself.
-- "Check setup" shows: the MCP server on or off, the Code Story tools registered, and the skill installed (where and which version).
+- "Check setup" shows: the MCP server on or off, the Code Story tools registered, and the skill installed (where and which version). It also offers the optional feedback hook snippets to copy.
 - First run: one notification with two steps (install the skill, switch on the MCP server).
 - Settings page (Settings | Tools | Code Story): bring the IDE to the front on a new story (on), optional style hints (off), skill install location (user level), highlight color (theme default).
 
 ### Security and privacy
 
-- Code Story tools only create and read stories. No tool runs code or commands, and nothing writes outside `.codestory/`. CodeTour-style `commands` are not supported.
+- Code Story tools only create, read and update stories and their threads. No tool runs code or commands, and nothing writes outside `.codestory/`. CodeTour-style `commands` are not supported. Code changes for change requests are made by the agent with its own tools and permission prompts, never by the plugin.
+- Hooks are offered as snippets only; the plugin never installs them.
 - Paths must be inside the project; absolute paths, `..` and symlinks that lead out of the project are rejected.
 - Text is rendered without HTML; links allow only http/https and project files and open only on click.
 - Limits: 15 steps, the text limits above, 256 KB per story file.
@@ -305,6 +374,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - **UI:** the card, gutter and tool window are verified by a short manual checklist before each release in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark themes. No UI automation in v1.
 - **Compatibility:** the Plugin Verifier runs in CI against Rider and IntelliJ IDEA 2025.3, 2026.1, 2026.2 and the current early-access build.
 - **End to end (manual, release gate):** Claude Code, Codex CLI, GitHub Copilot in Rider and Copilot CLI each create a story through MCP; the file drop works with the MCP server off; a shared story plays in a second clone.
+- **Feedback loop at the agent API seam:** IDE-level tests submit a round in the fixture, call `code_story_feedback`, `code_story_patch` and `code_story_reply`, and assert thread states, the "Story changes" line, the "already answered" rule, thread preservation on replace, and the "done" check (edit the fixture code under a step, then assert that "done" is rejected until the step is updated or confirmed). The thread state machine and the "Story changes" calculation also get story-core unit tests.
 - **Prior art:** this repository has no code yet. External references: Marginalis' anchor-policy tests (Apache-2.0) for the fast seam, and Walkthrough's MCP toolset tests (MIT) for the agent API seam.
 
 ## Out of Scope
@@ -320,6 +390,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - LLM calls from inside the plugin.
 - Change information for version control systems other than Git.
 - JetBrains Marketplace publication (planned after v1 has been in daily use and the name has been checked).
+- Listening mode for feedback rounds (v1.1), comments sent to another person (for example the story's author), comments on separate line ranges inside a step, and automatic installation of agent hooks.
 
 ## Further Notes
 
@@ -328,7 +399,8 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - **The MCP toolset API is not formally frozen.** Compile against the oldest supported version and verify against all newer ones; watch release notes for toolset changes.
 - **Component inlays are marked experimental.** Keep the drawn-callout fallback working.
 - **ASD-STE100 copyright.** Do not ship the dictionary or the specification text. The guide paraphrases the rules.
-- **Roadmap.** v1.1: CodeTour import and export. v2: drill-down mode and the live question loop. v3: diff walkthrough mode. v4: flow map mode. If needed: C# symbol anchors, remote development support, a word-list check against a user-supplied copy of the ASD-STE100 dictionary. Marketplace after a name check and a few weeks of daily use.
+- **No server push.** No supported agent wakes up on a message from the MCP server, so feedback rounds are pulled by the agent (`/code-story feedback`), with optional hooks as a reminder. Listening mode comes in v1.1.
+- **Roadmap.** v1.1: CodeTour import and export, and listening mode for feedback rounds. v2: drill-down mode and the live question loop. v3: diff walkthrough mode. v4: flow map mode. If needed: C# symbol anchors, remote development support, a word-list check against a user-supplied copy of the ASD-STE100 dictionary. Marketplace after a name check and a few weeks of daily use.
 - **v1 is done when:**
   1. In Rider 2026.2 on a real C# solution, `/code-story "<request>"` in Claude Code creates a story through MCP; it plays, and every step points at the right code.
   2. The same flow works with Codex CLI (`$code-story`), GitHub Copilot in Rider and Copilot CLI.
@@ -338,3 +410,4 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
   6. Editing code during playback keeps the anchors right; after large edits, lost steps show a warning.
   7. The Plugin Verifier passes for Rider and IntelliJ IDEA from 2025.3 to the current early-access build, and the unit and IDE tests pass in CI.
   8. The manual checklist passes in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark themes.
+  9. A reader comments on steps, submits a round, and `/code-story feedback` answers the questions in the story and applies a change request; the affected steps are updated or confirmed, and "done" is rejected until they are.
