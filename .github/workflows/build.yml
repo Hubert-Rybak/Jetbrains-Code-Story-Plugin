@@ -54,6 +54,8 @@ jobs:
         version: ['2025.3', '2026.1', '2026.2', EAP]
     name: Verify ${{ matrix.type }} ${{ matrix.version }}
     steps:
+      - name: Free space for IDE distributions
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
         with:
