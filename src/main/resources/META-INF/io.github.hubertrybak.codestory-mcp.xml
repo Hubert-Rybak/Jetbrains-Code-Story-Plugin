@@ -1,1 +1,5 @@
-<idea-plugin/>
+<idea-plugin>
+    <extensions defaultExtensionNs="com.intellij.mcpServer">
+        <mcpToolset implementation="io.github.hubertrybak.codestory.mcp.CodeStoryToolset"/>
+    </extensions>
+</idea-plugin>

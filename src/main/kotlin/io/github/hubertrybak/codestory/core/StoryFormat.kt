@@ -1,0 +1,69 @@
+package io.github.hubertrybak.codestory.core
+
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
+
+/** The story file format: `schema/story-v1.schema.json` in the repository. */
+object StoryFormat {
+    const val SCHEMA_VERSION = 1
+    const val FILE_SUFFIX = ".story.json"
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private val json = Json {
+        prettyPrint = true
+        prettyPrintIndent = "  "
+    }
+
+    /** Pretty-printed JSON with a fixed field order, so that diffs stay readable. */
+    fun encode(story: Story, id: String): String {
+        val file = buildJsonObject {
+            put("schemaVersion", SCHEMA_VERSION)
+            put("id", id)
+            put("title", story.title)
+            putJsonArray("steps") {
+                for (step in story.steps) {
+                    addJsonObject {
+                        put("title", step.title)
+                        put("comment", step.comment)
+                        putJsonObject("location") {
+                            put("file", step.location.file)
+                            put("startLine", step.location.startLine)
+                            put("endLine", step.location.endLine)
+                        }
+                    }
+                }
+            }
+        }
+        return json.encodeToString(JsonElement.serializer(), file) + "\n"
+    }
+
+    sealed interface Decoded {
+        class Valid(val story: Story) : Decoded
+        class Invalid(val reason: String) : Decoded
+    }
+
+    /** Reads a story file. Story files can come from other people, so the structure is checked again. */
+    fun decode(text: String): Decoded {
+        val element = try {
+            Json.parseToJsonElement(text)
+        } catch (e: SerializationException) {
+            return Decoded.Invalid("The file is not valid JSON: ${e.message}")
+        }
+        val version = ((element as? JsonObject)?.get("schemaVersion") as? JsonPrimitive)?.intOrNull
+        if (version != SCHEMA_VERSION) return Decoded.Invalid("Unsupported schemaVersion: $version")
+        return when (val result = StoryValidator(files = null).validate(element)) {
+            is ValidationResult.Valid -> Decoded.Valid(result.story)
+            is ValidationResult.Invalid -> Decoded.Invalid(result.errors.joinToString(" ") { it.message })
+        }
+    }
+}
