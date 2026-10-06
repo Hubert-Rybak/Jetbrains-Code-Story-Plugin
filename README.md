@@ -5,8 +5,9 @@ target. Requires Rider or IntelliJ IDEA 2025.3 or newer.
 
 An AI agent builds a story (a title and ordered steps, each with a file,
 a line range and a comment) and sends it to the running IDE through the IDE's
-MCP server. The **Code Story** tool window lists the stories and their steps;
-a click on a step opens the file and highlights its lines. See
+MCP server. The story starts in the receiving IDE, with a floating comment card
+beside the highlighted code. The **Code Story** tool window lists stories and
+steps and holds the card when the editor has no room for it. See
 [spec.md](spec.md) for the product specification and
 [issue #1](https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/issues/1)
 for the implementation roadmap.
@@ -36,6 +37,8 @@ The agent calls the `code_story_show` MCP tool with the story and the
 `projectPath` of the project. The IDE checks the story against the project
 files. A valid story is saved in `.codestory/local/` at the Git repository
 root (the project folder when there is no Git) and appears in the tool window.
+It starts at step 1 and brings the IDE to the front. Turn off bring-to-front
+or change the range highlight color in **Settings | Tools | Code Story**.
 `.codestory/local/` has its own `.gitignore`, so local stories stay out of Git.
 A story with errors is not saved: the tool returns each error with the step
 number, a code, a message and a fix hint, so the agent can correct the story.
@@ -43,6 +46,22 @@ number, a code, a message and a fix hint, so the agent can correct the story.
 Story files are named `<yyyy-MM-dd>-<slug>.story.json`. Their format is
 described by the JSON Schema in [`schema/story-v1.schema.json`](schema/story-v1.schema.json).
 Paths are relative to the repository root; line numbers are 1-based and inclusive.
+
+Use **Prev**, **Next** and **Stop** in the card or tool-window toolbar. On the
+last step, **Next** becomes **Finish**. Numbered gutter badges jump to other
+steps in the same file. Closing the card keeps your place and the highlighted
+code; click the current badge or step to reopen it. Scrolling and switching
+tabs hide and restore the card without moving your caret or scrolling back.
+
+**Play** resumes the selected story at your last step. Right-click the story
+and choose **Restart** to start at step 1. Reading positions stay in your IDE
+workspace, and visited marks last for the current session.
+
+The default shortcuts start with **Ctrl+Alt+Shift+Z**; release those keys, then
+press **Right** for Next Step, **Left** for Previous Step, or **End** for Stop
+Story. Change them in **Settings | Keymap** by searching for the action name.
+Comments support inline code, bold, bullet lists and links to http/https URLs
+or repository files (`src/App.kt#L2-L5`). Links open only when clicked.
 
 ## Develop
 
@@ -65,6 +84,8 @@ The installable zip is in `build/distributions/`. `check` runs the story-core
 unit tests (plain JUnit, no IDE) and the IDE-level tests (IntelliJ Platform
 test framework), which call `code_story_show` the way the IDE's MCP server
 does and check the report, the saved files and the tool window.
+They also cover auto-play, playback controls, resume/restart, card dismissal,
+gutter navigation, presentation cleanup and the absence of code-line inlays.
 
 The story core (package `io.github.hubertrybak.codestory.core`) has no IDE
 dependencies: the story model, the validation rules, the file format and the

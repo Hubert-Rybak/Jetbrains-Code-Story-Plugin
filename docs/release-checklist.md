@@ -68,6 +68,19 @@ and dark themes, including narrow and split editors.
       written to the story file.
 - [ ] Closing the target editor or project removes its floating card without
       leaving an orphan card or errors in the IDE log.
+- [ ] **Settings | Tools | Code Story** has bring-to-front enabled and the
+      theme highlight color by default. A custom color takes effect during
+      playback; switching back to the theme default and changing themes works.
+- [ ] Inline code, bold and bullet lists render. URL and project-file links
+      open only on click. Headings, images, tables and HTML stay plain text;
+      no image or other remote content loads when the card appears.
+- [ ] With preview tabs enabled, story files use the preview tab; with them
+      disabled, they open as normal tabs. Navigate between files while typing
+      to check that edited files stay open.
+- [ ] In IntelliJ, Visual Studio and ReSharper keymaps, press
+      **Ctrl+Alt+Shift+Z**, release, then **Right** / **Left** / **End** to run
+      Next Step / Previous Step / Stop Story. Change each shortcut in Keymap
+      and confirm that the new shortcut works.
 
 After the tag workflow finishes, download the release asset and repeat
 the install and open checks in a fresh test profile.
