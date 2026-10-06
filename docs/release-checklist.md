@@ -35,5 +35,39 @@ for the agent, and install `skills/code-story` by hand.
 - [ ] With two projects open, the story goes to the project that the agent
       names in `projectPath`.
 
+## Story playback
+
+Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light
+and dark themes, including narrow and split editors.
+
+- [ ] A step shows a floating card with a pointer to its code range, the step
+      number and title, the Markdown comment and the navigation buttons.
+      Showing and closing the card adds no space between code lines.
+- [ ] The card leaves the target code and caret visible. When it cannot fit
+      beside the code, the same comment and controls appear in the tool window.
+- [ ] Showing or repositioning the card leaves keyboard focus in the editor.
+      Typing, code selection and clicks in the editor keep playback and the
+      card available. Card controls also work from the keyboard.
+- [ ] Scrolling and resizing keep the pointer at the current range without
+      scrolling back automatically. The floating card hides when its target
+      is offscreen or its tab is inactive, and returns when the target is
+      visible again unless it was explicitly dismissed.
+- [ ] Closing the card keeps the current step, highlight and badges.
+      Clicking the current gutter badge or selecting the current step reopens
+      it. Playing another step shows that step's card.
+- [ ] Prev and Next work across files from the card, tool window and Keymap
+      actions. Next becomes Finish on the last step. Stop and Finish remove
+      the card in either location, the highlight and all story badges.
+- [ ] Other steps in the same file have numbered gutter badges; clicking a
+      badge plays that step. Playing another story clears the previous one.
+- [ ] An accepted MCP story opens the tool window and plays step 1 in the
+      receiving IDE. The bring-to-front setting works both on and off; the
+      card does not take keyboard focus from the editor.
+- [ ] Play resumes the last step after Stop; Restart starts at step 1. Visited
+      marks last for the current IDE session, and reading position is not
+      written to the story file.
+- [ ] Closing the target editor or project removes its floating card without
+      leaving an orphan card or errors in the IDE log.
+
 After the tag workflow finishes, download the release asset and repeat
 the install and open checks in a fresh test profile.

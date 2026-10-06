@@ -1,6 +1,6 @@
 # Code Story — Brainstorm
 
-Date: 2026-10-05 · Result: [`spec.md`](spec.md)
+Date: 2026-10-05 · Updated: 2026-10-06 (floating step card) · Result: [`spec.md`](spec.md)
 
 ## 1. The idea
 
@@ -9,7 +9,7 @@ A JetBrains IDE plugin for browsing "stories" about code.
 - An AI coding agent (GitHub Copilot, OpenAI Codex, Claude Code) creates a story with a skill, for example `/code-story "Explain main functionality change for this ticket"`.
 - The agent connects to a running IDE (Rider first) and adds the story to the plugin.
 - A story lets the developer browse code in a structured way. Several modes can exist where they make sense. The first mode is step-by-step: the steps are listed in a tool window that the developer can dock anywhere, and each step can be clicked.
-- Each step has a short comment, shown inline with the code where possible.
+- Each step has a short comment in a floating, non-modal card that points to the code. It preserves line spacing and leaves the editor usable; the tool window shows the card when there is no room beside the code.
 - The wording is short and easy to understand and follows ASD-STE100 (Simplified Technical English).
 
 ## 2. Method
@@ -18,6 +18,7 @@ A JetBrains IDE plugin for browsing "stories" about code.
 - The work went in rounds. Each round asked every open decision whose prerequisites were already settled (the "frontier"), each with a recommended answer.
 - When a decision needed facts (IDE APIs, existing tools, agent capabilities), research ran first, and only the dependent questions waited for it.
 - Five rounds and 32 questions, until no open decision remained. After the spec was published, a new idea (a reader feedback loop) opened a new branch, which took three more rounds (questions 33–47).
+- On 2026-10-06, reader feedback changed Q19 from a card between code lines to an anchored, non-modal floating card. Placement, focus, dismissal, scrolling and a tool-window fallback preserve the normal code reading flow.
 
 ## 3. Final design tree
 
@@ -57,7 +58,7 @@ Code Story
 │  └─ E3 Story root & path base .......... Git repository root; one .codestory per repository
 ├─ F UI / UX
 │  ├─ F0 Dockable tool window ............ default right; user can move it
-│  ├─ F1 Inline comment look ............. card above the range + highlight + gutter badges
+│  ├─ F1 Step card placement ............. floating card + pointer + highlight + gutter badges; tool-window fallback
 │  ├─ F2 Tool window layout .............. toolbar; tree Local/Shared → stories → steps; details pane
 │  └─ F3 Playback & navigation ........... auto-play, shortcuts, resume, finish, preview tab
 ├─ G Content
@@ -92,7 +93,7 @@ Code Story
 |---|---|---|---|
 | Q1 | Use cases and audience | All four: understand your own change, review handoff, explore existing code, bug trace | The skill takes free text, and the step-by-step model fits all four. |
 | Q2 | Who creates and edits stories | The agent only. The plugin plays stories (open, play, delete). Changes go through the agent. | Keeps v1 small; the agent is the author. |
-| Q3 | IDE scope | All IntelliJ-based IDEs; Rider is the primary test target; no .NET part in v1 | Platform APIs (tool window, editor, inlays) work everywhere. File + line + text anchors need no C# symbol resolution. |
+| Q3 | IDE scope | All IntelliJ-based IDEs; Rider is the primary test target; no .NET part in v1 | Platform APIs (tool window, editor, balloons and highlighters) work everywhere. File + line + text anchors need no C# symbol resolution. |
 | Q4 | Agents in v1 | Claude Code (reference for testing), Codex CLI, GitHub Copilot. Junie should work but is not promised. | Agent-neutral mechanisms (open skill format, MCP) cover all three. |
 | Q5 | How the skill finds its subject | From the conversation; the request is free text | "This ticket" was only an example; no ticket-specific logic. |
 | Q6 | Later modes to plan for | Drill-down outline, diff walkthrough, flow map (branching comes free). Build order 1 → 2 → 3. No annotation layer. | The v1 format reserves child steps and links so these modes do not break it. |
@@ -109,7 +110,7 @@ Code Story
 | Q12 | Story-building rules | (1) Conversation first, otherwise explore; verify every location by reading the file. (2) Order by type: change, exploration, bug trace, review handoff. (3) 3–12 steps, 15 at most; otherwise narrow or split. (4) One idea per step; key lines, usually 30 or fewer. (5) Skip mechanical changes. | These rules decide story quality. |
 | Q13 | Copilot variants | Both: the Copilot plugin in Rider and Copilot CLI | Both read the same skill folders. |
 | Q14 | License, name, ID | Apache-2.0, "Code Story", `io.github.hubertrybak.codestory` | Same license as the IntelliJ Platform and the plugin template. |
-| Q15 | Build our own or extend existing work | Build our own plugin; reuse ideas and code from Walkthrough and Marginalis with their license notices | See 5.5: Walkthrough conflicts with inline comments and lacks drift handling, sharing and wording support; Marginalis solves a different problem. |
+| Q15 | Build our own or extend existing work | Build our own plugin; reuse ideas and code from Walkthrough and Marginalis with their license notices | See 5.5: Walkthrough lacks drift handling, sharing and wording support; Marginalis solves a different problem. |
 
 ### Round 3 — Channel, anchoring, format, UI
 
@@ -118,7 +119,7 @@ Code Story
 | Q16 | Channel | MCP tools in the IDE's built-in MCP server as the main path; the agent writes a file into `.codestory/local/` as the fallback | Typed input and an immediate report for the agent; the folder watcher is needed anyway for shared stories. |
 | Q17 | Code anchoring | Line range + anchor text; the plugin corrects small shifts, follows edits and marks lost steps. Symbol anchors only if this proves too weak. | Works without a .NET part and survives code movement. |
 | Q18 | File format | Own JSON format with a JSON Schema and `schemaVersion`; CodeTour import/export in v1.1 | CodeTour's model has no child steps or links, so later modes would fight it. |
-| Q19 | Inline comment look | A card above the range ("Step 3 of 8 · title", the comment, Prev / Next / Stop), a soft range highlight, the step number in the gutter, and small gutter badges for other steps in the same file. Visible only while a story plays. | The same mechanism as the IDE's pull-request review threads; a drawn callout is the fallback. |
+| Q19 | Step card placement (updated 2026-10-06) | A floating, non-modal card beside the range with a pointer, "Step 3 of 8 · title", the comment and Prev / Next / Stop. A soft range highlight and numbered gutter badges identify the steps. Prefer unused space to the right; use the same card panel in the tool window when there is no room. Keep editor focus and line spacing. Follow scrolling and resizing; hide when the target is offscreen or its tab is inactive. Closing the card preserves playback; the current badge reopens it. Stop and Finish clear all story presentation. | Preserves normal code reading and editing. Native Swing balloons support the pointer and controls without code-line inlays or a painted fallback. |
 | Q20 | Tool window and management | Toolbar (Play/Stop, Prev/Next, Share/Unshare, Delete, Copy as Markdown, Refresh); tree Local / Shared → stories → steps; details pane. No rename, edit, cleanup or import in v1. | Fits the agent-only model and the review handoff. |
 | Q21 | Remote development | Not supported in v1; one module | Not used; a two-part plugin would add cost now. |
 
@@ -200,13 +201,14 @@ The idea: readers comment under steps, collect several comments, and "submit" th
 - **Walkthrough** (forketyfork, MIT, first release May 2026, about 1.2k downloads): an agent pushes steps through four MCP tools (show steps, show diff steps, wait for a reader question, insert child steps). Steps appear in a floating popup with a pointer to the code. History in `.idea/walkthroughs/`, Markdown export, a companion skill. Needs 2026.1+; not tested on Rider.
 - **Marginalis** (MuhammadFarag, Apache-2.0, on the Marketplace since August 2026): comment threads inline in the editor, created by an agent through a REST service on the built-in web server; ordered walkthroughs; re-anchoring by text; a 409 "stale anchor" answer to the agent.
 - **Other tools.** Swimm (code-coupled documents), Sourcegraph Deep Search (web), Windsurf Codemaps (agent-built maps, Windsurf only), DeepWiki (generated wikis), JetBrains AI Assistant (explain commit, self-review) and Junie's review command, CodeRabbit walkthroughs (web), the awesome-copilot `code-tour` skill (writes CodeTour files, with a validator), several VS Code-only tour extensions from 2026, and many JetBrains plugins that show agent review comments inline.
-- **Gap.** No tool combines live push from an agent, inline comments in the editor, tested Rider support, controlled wording (ASD-STE100), stories built around a change, sharing through Git, and CodeTour-compatible import/export.
+- **Gap.** No tool combines live push from an agent, comments beside the code, tested Rider support, controlled wording (ASD-STE100), stories built around a change, sharing through Git, and CodeTour-compatible import/export.
 
 ### 5.3 Editor UI, Rider and build tooling
 
-- **Inline UI options.**
-  - Block inlays and after-line-end inlays: stable public API. Clicks reach the renderer, so drawn buttons can work.
-  - Component inlays: real Swing components (real buttons) between code lines. Marked experimental (from 2023.3 to the current version), but JetBrains' own GitHub/GitLab pull-request review threads use them, and they ship in Rider. They are skipped on remote-development hosts.
+- **Editor UI options (updated 2026-10-06).**
+  - Native balloons (`JBPopupFactory.createBalloonBuilder`): Swing content with a callout pointer and configurable focus and dismissal behavior in the 2025.3 baseline. Use for the floating step card; show the same card panel in the tool window when it cannot fit beside the code.
+  - Block inlays and after-line-end inlays were considered: stable public API, with clicks reaching the renderer. They are not used for story cards.
+  - Component inlays were considered: real Swing components between code lines, marked experimental. JetBrains' own GitHub/GitLab pull-request review threads use them, and they ship in Rider; they are skipped on remote-development hosts. They are not used for story cards because they change line spacing.
   - Range highlighters with gutter icons and editor notification banners: stable.
   - Declarative inlay hints and Code Vision: a poor fit for steps placed on demand.
 - **Rider architecture.** The frontend (IntelliJ, JVM) has only a light syntactic model for C#; the semantic model, symbol resolution and find usages live in the ReSharper backend (.NET), reached through the rd protocol. A frontend-only plugin can open files, navigate, add highlighters, inlays and tool windows. C# symbol lookup would need a backend part (or undocumented frontend contributors).
@@ -234,14 +236,14 @@ The idea: readers comment under steps, collect several comments, and "submit" th
 ### 5.5 Build or extend: Walkthrough and Marginalis
 
 - **Walkthrough** (about 5.3k lines of Kotlin, one maintainer, no outside pull request ever merged):
-  - The floating popup is about 55% of the code, and the project requires all UI to stay in Compose/Jewel. Inline comments would go against its design.
+  - The floating popup is about 55% of the code, and the project requires all UI to stay in Compose/Jewel. Code Story uses native IntelliJ Platform balloons with Swing controls.
   - Bad files or lines are not reported to the agent; the step silently shows without an anchor.
   - No delete, no keyboard navigation, no range highlight, no drift handling, no sharing model, no CodeTour support. Needs 2026.1+.
   - Worth reusing: the MCP toolset pattern and tool descriptions that guide the agent's next call, overwriting a saved story by ID, the diff-viewer integration, the parent/child step labels, a wait call that returns before the agent's tool timeout, atomic writes and the path-traversal guard, the Markdown exporter.
 - **Marginalis** (about 9.6k lines, one author, pull requests disabled):
   - Two-way review conversations, which is a different problem; single-line anchors; no diff support.
   - Its REST service trusts every caller, so any web page could post to it; do not copy that.
-  - Worth reusing: the inline panel and its cleanup on plugin unload, the anchor policy (search ±20 lines for the stored text) and its tests, the 409 "stale anchor" / "line adjusted" answers, never guessing the project, a guide served by the plugin so the skill always matches the installed version, batch calls with results per item, navigation bound to shortcuts.
+  - Worth reusing: cleanup on plugin unload, the anchor policy (search ±20 lines for the stored text) and its tests, the 409 "stale anchor" / "line adjusted" answers, never guessing the project, a guide served by the plugin so the skill always matches the installed version, batch calls with results per item, navigation bound to shortcuts.
 - **Verdict:** build our own plugin and reuse these ideas, with typed MCP parameters instead of JSON inside strings, and with the `.codestory/` storage and the CodeTour mapping designed from day one. Walkthrough can serve as a stopgap until v1 exists.
 
 ### 5.6 How a feedback round can reach the agent
@@ -257,7 +259,7 @@ The idea: readers comment under steps, collect several comments, and "submit" th
 
 ## 6. Roadmap
 
-- **v1:** everything in the spec: step-by-step stories through MCP with the file-drop fallback, inline card, tool window, anchoring and drift handling, change information, sharing, text checks, skill installation and setup, and the reader feedback loop (comments, rounds, answers, change requests, steps kept in sync with the code).
+- **v1:** everything in the spec: step-by-step stories through MCP with the file-drop fallback, floating card with the tool-window fallback, tool window, anchoring and drift handling, change information, sharing, text checks, skill installation and setup, and the reader feedback loop (comments, rounds, answers, change requests, steps kept in sync with the code).
 - **v1.1:** CodeTour import and export; listening mode for feedback rounds.
 - **v2:** drill-down mode (child steps) with the live question loop (the reader asks in the card, the agent answers with child steps).
 - **v3:** diff walkthrough mode (steps on the old side of a diff).
@@ -280,11 +282,11 @@ The idea: readers comment under steps, collect several comments, and "submit" th
 ## 8. Risks and watch points
 
 - **The MCP toolset API is not frozen.** Compile against 2025.3, verify against newer versions and the early-access build in CI.
-- **Component inlays are experimental.** Keep the drawn-callout fallback working; test both in C# editors early.
+- **Floating cards can cover code.** Preserve the target code and caret with placement in unused space and the tool-window fallback. Test focus, scrolling, dismissal and narrow C# editors early.
 - **The MCP server is off by default.** Onboarding must make the switch-on step obvious; the file drop covers the gap.
 - **The MCP server has no token.** Any local program can call our tools, so the tools only create and read stories and validate all input.
 - **Agents give wrong line numbers.** The anchor text check corrects small shifts and rejects wrong locations with a fix hint.
-- **The space moves fast.** Most related tools appeared between May and October 2026. Differentiate on Rider quality, inline cards, drift handling, sharing and controlled wording.
+- **The space moves fast.** Most related tools appeared between May and October 2026. Differentiate on Rider quality, cards that preserve code layout, drift handling, sharing and controlled wording.
 - **ASD-STE100 copyright.** Paraphrase the rules; never ship the dictionary.
 - **Name collision.** Check the name "Code Story" before a public release.
 - **Feedback needs a hand-over step.** Without server push, the developer tells the agent `/code-story feedback`; hooks only remind. Keep the copy button and the "waiting for your agent" message obvious.
@@ -316,6 +318,8 @@ Editor UI, Rider and build tooling:
 - https://github.com/JetBrains/intellij-community/blob/master/platform/platform-impl/src/com/intellij/openapi/editor/ComponentInlay.kt
 - https://github.com/JetBrains/intellij-community/blob/master/platform/collaboration-tools/shared/src/com/intellij/collaboration/ui/codereview/editor/editorComponentInlaysUtil.kt
 - https://plugins.jetbrains.com/docs/intellij/inlay-hints.html
+- https://plugins.jetbrains.com/docs/intellij/popups.html
+- https://github.com/JetBrains/intellij-community/blob/idea/253.28294.334/platform/platform-api/src/com/intellij/openapi/ui/popup/BalloonBuilder.java
 - https://plugins.jetbrains.com/docs/intellij/informing-users.html
 - https://plugins.jetbrains.com/docs/intellij/intellij-platform.html#rider
 - https://www.jetbrains.com/help/resharper/sdk/Rider.html

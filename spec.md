@@ -1,6 +1,6 @@
 # Code Story — Specification (v1)
 
-Status: ready for implementation · Date: 2026-10-05 · Design record: [`brainstorm.md`](brainstorm.md)
+Status: ready for implementation · Date: 2026-10-05 · Updated: 2026-10-06 (floating step card) · Design record: [`brainstorm.md`](brainstorm.md)
 
 ## Problem Statement
 
@@ -20,7 +20,7 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 1. The developer types `/code-story "<request>"` in the agent (`$code-story` in Codex), for example `/code-story "Explain the main functionality change for this ticket"`.
 2. The agent uses the conversation context, and explores the code when the conversation does not cover the subject. It writes a **story**: a title, a short summary and 3–12 ordered **steps**. Each step points at a small code range and has a short comment in ASD-STE100 Simplified Technical English.
 3. The agent sends the story to the running IDE through the IDE's built-in MCP server. The plugin checks the story and returns a report (errors, corrections, warnings), so the agent can fix problems at once.
-4. The plugin saves the story in `.codestory/local/`, opens the **Code Story** tool window and plays step 1: the file opens, the range is highlighted, and a card above the code shows "Step 1 of 8", the step title, the comment and the Prev / Next / Stop buttons.
+4. The plugin saves the story in `.codestory/local/`, opens the **Code Story** tool window and plays step 1: the file opens, the range is highlighted, and a floating, non-modal card points to the code and shows "Step 1 of 8", the step title, the comment and the Prev / Next / Stop buttons. The card preserves code layout and leaves the editor usable.
 5. The developer moves through the steps with the card buttons, the tool window or shortcuts. Anchors follow code edits. Stories about a change show which lines were added or modified, and "Show diff" opens the old and the new code side by side.
 6. To hand a change to a reviewer, the developer shares the story (it moves to `.codestory/shared/`) and commits it with the branch. The reviewer plays it after checkout. "Copy as Markdown" gives a text version for the pull request description.
 7. If the MCP connection is not available, the agent writes the story file into `.codestory/local/` directly, and the plugin picks it up.
@@ -80,14 +80,14 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 39. As a developer, I want to change these shortcuts in the Keymap, so that they fit my keymap (Visual Studio, ReSharper or IntelliJ).
 40. As a developer, I want the last step to offer "Finish", so that the story ends cleanly.
 41. As a developer, I want Play to continue at the step where I stopped and Restart to begin again, so that I can pause and come back later.
-42. As a developer, I want only one story to play at a time, so that inline elements from different stories do not mix.
+42. As a developer, I want only one story to play at a time per project, so that cards, highlights and badges from different stories do not mix.
 43. As a developer, I want to edit code while a story plays, so that I can fix things I notice during the walkthrough.
 44. As a developer, I want a story that the agent updates while I read it to reload and stay at my step, so that revisions do not throw me back to the start.
 45. As a developer, I want ✓ marks on the steps that I visited in this session, so that I see my progress.
 
-### Inline card and editor
+### Floating card and editor
 
-46. As a developer, I want a card directly above the highlighted code with the step comment, so that I read the explanation and the code together.
+46. As a developer, I want a floating, non-modal card beside the highlighted code with a pointer to the range and the step comment, so that I read the explanation and the code together without adding space between code lines or blocking the editor.
 47. As a developer, I want the card to show "Step N of M" and the step title, so that I know where I am in the story.
 48. As a developer, I want Prev, Next and Stop buttons in the card, so that I can move through the story without leaving the editor.
 49. As a developer, I want the gutter to show the number of the current step, so that I can find the step range at a glance.
@@ -210,8 +210,8 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 4. **Folder watcher**: listens to file-system events for `.codestory/` only. New or changed story files are loaded and validated; auto-play follows the rules below.
 5. **Anchor tracker**: resolves anchors when a story opens or plays, keeps live range markers while documents are open, and computes the status of each step (ok, moved, code changed, lost).
 6. **Change info** (needs the Git plugin): for stories with a `baseRef`, computes the added/modified status per step and opens the IDE diff viewer (base revision against the working tree) at the step range.
-7. **Player**: holds the one active story per project, runs step navigation, opens files, scrolls, and drives the inline presentation.
-8. **Inline presentation**: the card above the first line of the range, the range highlight, the gutter number for the current step and small gutter badges for other steps in the same file. The card is a component inlay (the same mechanism as the IDE's pull-request review threads); a custom-painted block inlay with clickable areas is the fallback, because the component inlay API is marked experimental. Colors follow the IDE theme.
+7. **Player**: holds the one active story per project, runs step navigation, opens files, scrolls, and drives the step presentation. Card buttons, tool-window actions, gutter clicks and keyboard shortcuts call the same player.
+8. **Step presentation**: a floating, non-modal card pointing to the code range, the range highlight, the gutter number for the current step and small gutter badges for other steps in the same file. The card uses the IntelliJ Platform balloon API (`JBPopupFactory.createBalloonBuilder`) with real Swing controls; it never adds code-line inlays. When there is no room beside the code, the same card panel appears in the tool window. Placement and dismissal follow the rules below. Colors follow the IDE theme.
 9. **Tool window "Code Story"** (default anchor: right): toolbar, story tree and details pane, as described below.
 10. **Setup and onboarding**: the bundled skill, skill install and update, the MCP server check, "Check setup", the first-run notification and the settings page.
 11. **Feedback loop**: comment drafts (kept in IDE storage), rounds and threads (kept in the story file), the pending-feedback index for agent hooks, the feedback, patch and reply tools, and the "code changed" check that keeps steps in sync with the code.
@@ -280,15 +280,23 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - "Show diff" opens the IDE diff viewer for the file (base revision against the current file), scrolled to the step range.
 - Git only; other version control systems are not supported in v1.
 
+### Floating step card
+
+- The card floats beside the current range with a small pointer to the code. Showing or hiding it adds no space between lines and does not change code layout.
+- Prefer unused space to the right of the range. The card must not cover code in the target range or the caret. If it cannot fit, including in narrow or split editors, show the same comment and controls in the Code Story tool window.
+- Showing or repositioning the card does not take keyboard focus from the editor. Typing, selecting code and clicking in the editor do not dismiss the card or stop playback. Card controls remain clickable and keyboard-accessible.
+- Recalculate placement from the range's current editor position during scrolling and resizing. Hide the floating card when its target leaves the viewport or its editor tab is inactive. Restore it when the target is visible again, unless the reader explicitly dismissed it. Browsing does not change the current step or scroll back automatically.
+- Closing the card dismisses it for the current step and keeps playback position, the highlight and the badges. Clicking the current gutter badge or selecting the current step reopens the card. Playing another step shows that step's card. Stop and Finish remove the card in either location, the highlight and all story badges, and release presentation listeners. Editor and project disposal also clean up the floating card and its listeners.
+
 ### Playback rules
 
-- A story delivered through MCP plays in the receiving IDE: the tool window opens, step 1 plays and the IDE window comes to the front (setting, on by default).
+- A story delivered through MCP plays in the receiving IDE: the tool window opens, step 1 plays and the IDE window comes to the front (setting, on by default). The player starts after the story is accepted, independently of tool-window loading; the card does not take keyboard focus from the editor.
 - A new file in `.codestory/local/` without the MCP marker (file drop) plays in every IDE that has the project open.
 - A new file in `.codestory/shared/` (it came through Git) does not auto-play; the tree marks it as new.
 - A step opens its file (in the preview tab when the IDE uses preview tabs), scrolls the range to the upper third of the editor and shows the card, highlight and badges. A text-only step shows in the details pane, and the editor stays as it is.
 - Actions Next Step, Previous Step and Stop Story have default shortcuts that do not clash in the IntelliJ and Visual Studio/ReSharper keymaps; developers can change them in the Keymap.
-- One story plays at a time; playing another story stops the first.
-- On the last step, Next becomes Finish. Finish and Stop remove all inline elements.
+- One story plays at a time per project; playing another story stops the first.
+- On the last step, Next becomes Finish. Finish and Stop remove the card, the highlight, the gutter number and all story badges.
 - Play continues at the last step of that story (kept per user in IDE storage). Restart is in the context menu.
 - When the agent replaces the story that is playing, the plugin reloads it and stays at the same step number (or the last step, if the new story is shorter).
 - ✓ visited marks last for the current IDE session only.
@@ -371,7 +379,8 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 - **What makes a good test:** it tests external behavior through the highest seam, not implementation details. Given project files and a story sent through the agent API (or dropped as a file), a test asserts the report, the saved file and the observable player state (active story, current step, step statuses). Internal classes are not tested directly.
 - **Primary seam: the agent API.** IDE-level tests (IntelliJ Platform test framework, light project fixtures with in-memory files) call the tool handlers (`code_story_show`, `code_story_list`, `code_story_get`, `code_story_guide`) and assert reports, files and player state. The file-drop path is tested at the same seam by creating files in `.codestory/local/` in the fixture. Sharing, drift (edit the fixture document, then assert moved/lost) and change information (fixture Git history) also go through this seam.
 - **Fast seam: the story core.** Plain Kotlin unit tests, mostly table-driven, for the format round trip, the validation rules, anchor matching (in place, moved nearby, moved far, lost, whitespace and line endings, duplicate matches), the text checks and Markdown sanitizing.
-- **UI:** the card, gutter and tool window are verified by a short manual checklist before each release in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark themes. No UI automation in v1.
+- **Playback:** IDE-level tests cover MCP auto-play, next / previous / finish / stop, one story per project, resume / restart, card dismissal and reopening, and cleanup of the card, highlighters and gutter badges. Playback adds no code-line inlays.
+- **UI:** the card, gutter and tool window are verified by a short manual checklist before each release in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark themes. Check unchanged code layout, editor focus, pointer placement, scrolling and resizing, hiding and restoring the card, dismissal versus Stop, and the tool-window fallback in narrow or split editors. No UI automation in v1.
 - **Compatibility:** the Plugin Verifier runs in CI against Rider and IntelliJ IDEA 2025.3, 2026.1, 2026.2 and the current early-access build.
 - **End to end (manual, release gate):** Claude Code, Codex CLI, GitHub Copilot in Rider and Copilot CLI each create a story through MCP; the file drop works with the MCP server off; a shared story plays in a second clone.
 - **Feedback loop at the agent API seam:** IDE-level tests submit a round in the fixture, call `code_story_feedback`, `code_story_patch` and `code_story_reply`, and assert thread states, the "Story changes" line, the "already answered" rule, thread preservation on replace, and the "done" check (edit the fixture code under a step, then assert that "done" is rejected until the step is updated or confirmed). The thread state machine and the "Story changes" calculation also get story-core unit tests.
@@ -394,10 +403,10 @@ Code Story is a JetBrains IDE plugin (Rider first; all IntelliJ-based IDEs from 
 
 ## Further Notes
 
-- **Prior art.** Walkthrough (MIT) already pushes agent steps into JetBrains IDEs through MCP, but it uses floating popups, has no drift handling, sharing or wording rules, and is not tested on Rider. Marginalis (Apache-2.0) solves review conversations and shows how to re-anchor by text. Code Story reuses ideas and, where useful, code from both, with license notices. See `brainstorm.md` for the full comparison.
+- **Prior art.** Walkthrough (MIT) already pushes agent steps into JetBrains IDEs through MCP with floating popups. It has no drift handling, sharing or wording rules, and is not tested on Rider. Marginalis (Apache-2.0) solves review conversations and shows how to re-anchor by text. Code Story reuses ideas and, where useful, code from both, with license notices. See `brainstorm.md` for the full comparison.
 - **MCP server is off by default.** Onboarding is part of the product: without the switch-on step, only the file drop works.
 - **The MCP toolset API is not formally frozen.** Compile against the oldest supported version and verify against all newer ones; watch release notes for toolset changes.
-- **Component inlays are marked experimental.** Keep the drawn-callout fallback working.
+- **Floating cards can cover code.** Keep the target code and caret visible; use the tool-window fallback when there is no room. Story cards never use component or block inlays.
 - **ASD-STE100 copyright.** Do not ship the dictionary or the specification text. The guide paraphrases the rules.
 - **No server push.** No supported agent wakes up on a message from the MCP server, so feedback rounds are pulled by the agent (`/code-story feedback`), with optional hooks as a reminder. Listening mode comes in v1.1.
 - **Roadmap.** v1.1: CodeTour import and export, and listening mode for feedback rounds. v2: drill-down mode and the live question loop. v3: diff walkthrough mode. v4: flow map mode. If needed: C# symbol anchors, remote development support, a word-list check against a user-supplied copy of the ASD-STE100 dictionary. Marketplace after a name check and a few weeks of daily use.
