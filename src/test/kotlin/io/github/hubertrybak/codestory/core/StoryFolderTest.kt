@@ -2,6 +2,7 @@ package io.github.hubertrybak.codestory.core
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -156,6 +157,78 @@ class StoryFolderTest {
     @Test
     fun `lists nothing when there is no story folder`() {
         assertEquals(emptyList<StoredStory>(), folder().list())
+    }
+
+    @Test
+    fun `replacement keeps the file name and original creation metadata`() {
+        val folder = folder()
+        val git = StoryGit("original", "abc123")
+        val first = saved(folder.save(story, date, git))
+        val revised = story.copy(title = "A new title", summary = "The service saves the result.")
+        val result = saved(folder.save(revised, date.plusSeconds(3600), StoryGit("other", "def456"), first.id))
+
+        assertEquals(first.id, result.id)
+        assertEquals(first.file, result.file)
+        assertEquals(revised.copy(createdAt = date, git = git), result.story)
+        assertEquals(StoryFormat.encode(result.story, first.id), Files.readString(first.file))
+        assertEquals(listOf(first.id), folder.list().map { it.id })
+        assertEquals(2, folder.localDir.listDirectoryEntries().size)
+    }
+
+    @Test
+    fun `gets and replaces a shared story in place`() {
+        val folder = folder()
+        val first = saved(folder.save(story, date))
+        Files.createDirectories(folder.sharedDir)
+        val shared = folder.sharedDir.resolve(first.file.fileName)
+        Files.move(first.file, shared)
+        assertEquals(shared, folder.get(first.id)!!.file)
+        val result = saved(folder.save(story.copy(title = "Shared revision"), date.plusSeconds(60), storyId = first.id))
+        assertEquals(shared, result.file)
+        assertEquals("shared", folder.list().single().folder)
+        assertFalse(Files.exists(first.file))
+        assertEquals(listOf(".gitignore"), folder.localDir.listDirectoryEntries().map { it.name })
+    }
+
+    @Test
+    fun `unknown and unsafe IDs cannot create or read files`() {
+        val folder = folder()
+        for (id in listOf("2026-10-05-missing", "../outside", "/tmp/story", "C:\\outside", "2026-10-05-a/../../outside")) {
+            assertNull(folder.get(id))
+            assertTrue(folder.save(story, date, storyId = id) is StoryFolder.SaveResult.NotFound)
+        }
+        assertFalse(Files.exists(folder.localDir))
+    }
+
+    @Test
+    fun `oversized replacement leaves the original file untouched`() {
+        val folder = folder()
+        val first = saved(folder.save(story, date))
+        val before = Files.readString(first.file)
+        val large = story.copy(steps = listOf(story.steps.single().copy(comment = "word ".repeat(60_000))))
+        assertTrue(folder.save(large, date, storyId = first.id) is StoryFolder.SaveResult.TooLarge)
+        assertEquals(before, Files.readString(first.file))
+        assertEquals(2, folder.localDir.listDirectoryEntries().size)
+    }
+
+    @Test
+    fun `storage symlinks do not expose or overwrite outside stories`() {
+        val repo = temp.newFolder("repo").toPath()
+        val outside = temp.newFolder("outside").toPath()
+        val folder = StoryFolder(repo)
+        val id = "2026-10-05-outside"
+        val external = outside.resolve("$id.story.json")
+        val before = StoryFormat.encode(story, id)
+        Files.writeString(external, before)
+        Files.createDirectories(repo.resolve(".codestory"))
+        Files.createSymbolicLink(folder.localDir, outside)
+
+        assertTrue(folder.list().isEmpty())
+        assertNull(folder.get(id))
+        assertTrue(folder.save(story, date, storyId = id) is StoryFolder.SaveResult.NotFound)
+        assertTrue(runCatching { folder.save(story, date) }.exceptionOrNull() is java.io.IOException)
+        assertEquals(before, Files.readString(external))
+        assertEquals(listOf("$id.story.json"), outside.listDirectoryEntries().map { it.name })
     }
 
     @Test

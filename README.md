@@ -36,7 +36,8 @@ Git plugin is optional; it supplies branch and commit metadata when available.
 3. Open the project in the IDE, and ask your agent:
    `/code-story "Explain the main change for this ticket"` (`$code-story` in Codex).
 
-The agent calls the `code_story_show` MCP tool with the story and the
+The agent first calls `code_story_guide` for the writing rules, format and example
+bundled with the installed plugin version. It calls `code_story_show` with the story and the
 `projectPath` of the project. The IDE checks the story against the project
 files. A valid story is saved in `.codestory/local/` at the Git repository
 root (the project folder when there is no Git) and appears in the tool window.
@@ -45,6 +46,19 @@ or change the range highlight color in **Settings | Tools | Code Story**.
 `.codestory/local/` has its own `.gitignore`, so local stories stay out of Git.
 A story with errors is not saved: the tool returns each error with the step
 number, a code, a message and a fix hint, so the agent can correct the story.
+
+`code_story_list` lists local and shared stories with their ID, title, type, date,
+branch, folder and code-location status. `code_story_get(storyId)` returns the full
+saved story. To revise it, the agent calls `code_story_show(story, storyId)`;
+the same file and creation metadata are kept. A playing story reloads at the same
+step number, or the last step if the revision is shorter.
+
+The report also includes writing warnings and warnings for ranges longer than
+30 lines. They never block a story and appear only in the agent report. The guide
+asks the agent to fix them once and replace the story with its returned ID.
+Mechanical checks cover title, sentence and comment lengths, list structure,
+semicolons and contractions. Code names count as one word. Optional passive voice
+and -ing hints are off by default; enable them in **Settings | Tools | Code Story**.
 
 Story files are named `<yyyy-MM-dd>-<slug>.story.json`. Their format is
 described by the JSON Schema in [`schema/story-v1.schema.json`](schema/story-v1.schema.json).
@@ -91,7 +105,8 @@ The installable zip is in `build/distributions/`. `check` runs the story-core
 unit tests (plain JUnit, no IDE) and the IDE-level tests (IntelliJ Platform
 test framework), which call `code_story_show` the way the IDE's MCP server
 does and check the report, the saved files and the tool window.
-They also cover auto-play, playback controls, resume/restart, card dismissal,
+They also cover guide/list/get, replacement in local and shared folders, writing
+reports, auto-play, playback controls, resume/restart, card dismissal,
 gutter navigation, presentation cleanup and the absence of code-line inlays.
 
 The story core (package `io.github.hubertrybak.codestory.core`) has no IDE

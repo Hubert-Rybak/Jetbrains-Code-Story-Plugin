@@ -56,7 +56,7 @@ internal class StepShape(
     val id: String? = null,
     @property:McpDescription("The step title: 8 words or fewer.")
     val title: String,
-    @property:McpDescription("What the code does and why it matters: 1 to 3 short sentences in simple English.")
+    @property:McpDescription("What the code does and why it matters: 1 to 3 sentences, or one lead sentence and up to 4 bullet items; 60 words at most. Instructions have at most 20 words per sentence; descriptions have at most 25.")
     val comment: String,
     @property:McpDescription("One code range, usually 30 lines or fewer. Omit it for an overview or a what-to-check step.")
     val location: LocationShape? = null,

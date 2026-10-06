@@ -73,6 +73,14 @@ and dark themes, including narrow and split editors.
 - [ ] An accepted MCP story opens the tool window and plays step 1 in the
       receiving IDE. The bring-to-front setting works both on and off; the
       card does not take keyboard focus from the editor.
+- [ ] The agent gets the installed version's guide, lists local and shared
+      stories, and fetches a full story. Replacing it keeps its ID, folder and
+      creation metadata. During playback it keeps the current step, or the
+      last step when the revision is shorter, and displays the revised text.
+- [ ] Writing and long-range warnings appear in the agent report and do not
+      block the story. No writing warnings appear in the card, tree or details.
+      Passive voice and -ing hints are off by default and can be enabled in
+      **Settings | Tools | Code Story**.
 - [ ] Play resumes the last step after Stop; Restart starts at step 1. Visited
       marks last for the current IDE session, and reading position is not
       written to the story file.

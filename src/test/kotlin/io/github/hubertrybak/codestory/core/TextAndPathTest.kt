@@ -72,7 +72,12 @@ class TextAndPathTest {
     @Test
     fun `every error code has a test`() {
         val covered = ValidationCases.all.flatMap { case -> case.expected.map { it.second } }.toSet() +
-            ErrorCode.STORY_TOO_LARGE // StoryFolderTest
+            setOf(ErrorCode.STORY_TOO_LARGE, ErrorCode.STORY_NOT_FOUND, ErrorCode.INVALID_STORY_ID) // Folder and agent API tests
         assertEquals(ErrorCode.entries.toSet(), covered)
+    }
+
+    @Test
+    fun `every writing warning has a table-driven test`() {
+        assertEquals(WarningCode.entries.toSet(), WritingCases.all.flatMap { it.expected.toList() }.toSet())
     }
 }
