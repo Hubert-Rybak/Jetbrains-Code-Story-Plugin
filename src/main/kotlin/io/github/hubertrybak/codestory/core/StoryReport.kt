@@ -8,6 +8,8 @@ enum class ErrorCode(val code: String) {
     MISSING_FIELD("missing-field"),
     WRONG_TYPE("wrong-type"),
     EMPTY_TEXT("empty-text"),
+    INVALID_VALUE("invalid-value"),
+    DUPLICATE_STEP_ID("duplicate-step-id"),
     NO_STEPS("no-steps"),
     TOO_MANY_STEPS("too-many-steps"),
     STORY_TOO_LARGE("story-too-large"),

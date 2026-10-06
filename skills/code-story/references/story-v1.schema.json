@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/main/schema/story-v1.schema.json",
+  "title": "Code Story story file",
+  "description": "Schema version 1. Stories are UTF-8, pretty-printed in this field order, at most 256 KB, and saved as .codestory/local/<yyyy-MM-dd>-<slug>.story.json at the repository root. The plugin assigns creation metadata and missing step IDs.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "title",
+    "type",
+    "summary",
+    "request",
+    "author",
+    "createdAt",
+    "git",
+    "steps"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "The version of this format.",
+      "const": 1
+    },
+    "id": {
+      "description": "The file name without .story.json. A number suffix keeps IDs unique across local and shared stories.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "title": {
+      "description": "The story title: 8 words or fewer.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "type": {
+      "description": "The kind of story, supplied by the agent.",
+      "enum": [
+        "change",
+        "exploration",
+        "bug-trace",
+        "review"
+      ]
+    },
+    "summary": {
+      "description": "A summary in 1 to 3 short sentences, supplied by the agent.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "request": {
+      "description": "The original Code Story request text, supplied by the agent.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "author": {
+      "$ref": "#/$defs/author"
+    },
+    "createdAt": {
+      "description": "ISO 8601 creation time, assigned by the plugin.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "git": {
+      "$ref": "#/$defs/git"
+    },
+    "steps": {
+      "description": "Steps in reading order: 3 to 12 are best, 15 at most.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 15,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  },
+  "$defs": {
+    "author": {
+      "type": "object",
+      "required": [
+        "agent",
+        "model"
+      ],
+      "properties": {
+        "agent": {
+          "description": "The agent name.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "model": {
+          "description": "The model that wrote the story.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "git": {
+      "description": "Git state at creation, assigned by the plugin. Null fields indicate unavailable Git, an unborn branch or detached HEAD.",
+      "type": "object",
+      "required": [
+        "branch",
+        "commit"
+      ],
+      "properties": {
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "comment"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable and unique within the story. The agent may omit it in code_story_show; the plugin assigns one and saves it. Keep it on revisions.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "title": {
+          "description": "The step title: 8 words or fewer.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "comment": {
+          "description": "One idea in 1 to 3 short sentences in simple English. Text-only steps can introduce the subject or list what to check.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "location": {
+          "description": "Exactly one location or none. Omit it or use null for a text-only step.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/location"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "children": {
+          "description": "Reserved for later modes; ignored in v1.",
+          "type": "array",
+          "items": {}
+        },
+        "links": {
+          "description": "Reserved for later modes; ignored in v1.",
+          "type": "array",
+          "items": {}
+        }
+      }
+    },
+    "location": {
+      "description": "One range of lines in one file.",
+      "type": "object",
+      "required": [
+        "file",
+        "startLine",
+        "endLine"
+      ],
+      "properties": {
+        "file": {
+          "description": "Repository-relative path with / between folders. No absolute paths or .. segments.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(^|[/\\\\])\\.\\.([/\\\\]|$)).+$"
+        },
+        "startLine": {
+          "description": "First line, 1-based.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "endLine": {
+          "description": "Last line, 1-based and inclusive; not smaller than startLine.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

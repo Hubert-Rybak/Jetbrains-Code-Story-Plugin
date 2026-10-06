@@ -6,6 +6,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
+import java.time.Instant
+import java.time.format.DateTimeParseException
 
 sealed interface ValidationResult {
     class Valid(val story: Story) : ValidationResult
@@ -17,7 +19,7 @@ sealed interface ValidationResult {
  * that the checks find. Without [files], only the structure is checked. The size limit applies
  * to the saved file, so [StoryFolder.save] checks it.
  */
-class StoryValidator(private val files: StoryFiles?) {
+class StoryValidator(private val files: StoryFiles?, private val readMetadata: Boolean = false) {
 
     fun validate(input: JsonElement): ValidationResult {
         val errors = mutableListOf<ReportItem>()
@@ -38,8 +40,49 @@ class StoryValidator(private val files: StoryFiles?) {
                 return error(owner, ErrorCode.WRONG_TYPE, "The story must be a JSON object.", STORY_HINT)
             }
             val title = text(input, "title", owner, TITLE_HINT)
+            val type = storyType(input, owner)
+            val summary = text(input, "summary", owner, "Give the story a summary in 1 to 3 short sentences.")
+            val request = text(input, "request", owner, "Include the original Code Story request.")
+            val author = author(input, owner)
+            // The agent cannot set plugin-owned creation metadata.
+            val createdAt = if (readMetadata) createdAt(input, owner) else null
+            val git = if (readMetadata) git(input, owner) else StoryGit()
             val steps = steps(owner, input)
-            return if (title != null && steps != null) Story(title, steps) else null
+            return if (title != null && type != null && summary != null && request != null && author != null && steps != null) {
+                Story(title, type, summary, request, author, steps, createdAt, git)
+            } else null
+        }
+
+        private fun storyType(story: JsonObject, owner: Owner): StoryType? {
+            val value = text(story, "type", owner, TYPE_HINT) ?: return null
+            return StoryType.entries.firstOrNull { it.value == value }
+                ?: error(owner, ErrorCode.INVALID_VALUE, "The story has an unknown `type`: `${quote(value)}`.", TYPE_HINT)
+        }
+
+        private fun author(story: JsonObject, owner: Owner): StoryAuthor? {
+            val author = obj(story, "author", owner, "Add `author` with your agent name and model.") ?: return null
+            val agent = text(author, "agent", owner, "Set `author.agent` to your agent name.", "author.agent")
+            val model = text(author, "model", owner, "Set `author.model` to your model name.", "author.model")
+            return if (agent != null && model != null) StoryAuthor(agent, model) else null
+        }
+
+        private fun createdAt(story: JsonObject, owner: Owner): Instant? {
+            val hint = "Use an ISO 8601 creation time, for example `2026-10-05T12:00:00Z`."
+            val value = text(story, "createdAt", owner, hint) ?: return null
+            return try {
+                Instant.parse(value)
+            } catch (_: DateTimeParseException) {
+                error(owner, ErrorCode.INVALID_VALUE, "The story has an invalid `createdAt`.", hint)
+            }
+        }
+
+        private fun git(story: JsonObject, owner: Owner): StoryGit {
+            val hint = "Add `git` with `branch` and `commit`; use null when Git is unavailable."
+            val git = obj(story, "git", owner, hint) ?: return StoryGit()
+            return StoryGit(
+                nullableText(git, "branch", owner, hint, "git.branch", required = true),
+                nullableText(git, "commit", owner, hint, "git.commit", required = true),
+            )
         }
 
         private fun steps(owner: Owner, story: JsonObject): List<Step>? {
@@ -58,6 +101,12 @@ class StoryValidator(private val files: StoryFiles?) {
             }
             // Steps after the limit must go anyway, so they are not checked.
             val steps = array.take(StoryLimits.MAX_STEPS).mapIndexed { index, element -> step(Owner(index + 1), element) }
+            val ids = mutableSetOf<String>()
+            steps.forEachIndexed { index, step ->
+                if (step?.id != null && !ids.add(step.id)) {
+                    error(Owner(index + 1), ErrorCode.DUPLICATE_STEP_ID, "Step ${index + 1} repeats the ID `${quote(step.id)}`.", "Give every step a unique ID, or omit IDs and let the plugin assign them.")
+                }
+            }
             return if (steps.isNotEmpty() && steps.all { it != null }) steps.filterNotNull() else null
         }
 
@@ -67,8 +116,24 @@ class StoryValidator(private val files: StoryFiles?) {
             }
             val title = text(element, "title", owner, STEP_TITLE_HINT)
             val comment = text(element, "comment", owner, COMMENT_HINT)
-            val location = location(owner, element)
-            return if (title != null && comment != null && location != null) Step(title, comment, location) else null
+            val id = if (readMetadata) text(element, "id", owner, ID_HINT) else nullableText(element, "id", owner, ID_HINT)
+            val location = if (element["location"] == null || element["location"] == JsonNull) null else location(owner, element)
+            // `children` and `links` are reserved for later modes and ignored in v1.
+            return if (title != null && comment != null) Step(title, comment, location, id) else null
+        }
+
+        private fun obj(parent: JsonObject, name: String, owner: Owner, hint: String): JsonObject? = when (val element = parent[name]) {
+            is JsonObject -> element
+            null, JsonNull -> error(owner, ErrorCode.MISSING_FIELD, "${owner.subject} has no `$name`.", hint)
+            else -> error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `$name` must be a JSON object.", hint)
+        }
+
+        private fun nullableText(obj: JsonObject, name: String, owner: Owner, hint: String, label: String = name, required: Boolean = false): String? {
+            if (name !in obj) {
+                if (required) error(owner, ErrorCode.MISSING_FIELD, "${owner.subject} has no `$label`.", hint)
+                return null
+            }
+            return if (obj[name] == JsonNull) null else text(obj, name, owner, hint, label)
         }
 
         private fun location(owner: Owner, step: JsonObject): Location? {
@@ -166,10 +231,12 @@ class StoryValidator(private val files: StoryFiles?) {
     companion object {
         private const val MAX_QUOTE = 200
 
-        private const val STORY_HINT = "Send the story as an object with `title` and `steps`."
+        private const val STORY_HINT = "Send the story as an object with `title`, `type`, `summary`, `request`, `author` and `steps`."
+        private const val TYPE_HINT = "Set `type` to `change`, `exploration`, `bug-trace` or `review`."
+        private const val ID_HINT = "Give the step a stable, nonempty `id`. Keep it when you revise the step."
         private const val TITLE_HINT = "Give the story a short `title` (8 words or fewer)."
-        private const val STEPS_HINT = "Add `steps`: a list of 3 to 12 steps (15 at most). Each step explains one place in the code."
-        private const val STEP_HINT = "Send each step as an object with `title`, `comment` and `location`."
+        private const val STEPS_HINT = "Add `steps`: a list of 3 to 12 steps (15 at most). Each step explains one idea."
+        private const val STEP_HINT = "Send each step as an object with `title`, `comment` and an optional `location`."
         private const val STEP_TITLE_HINT = "Give the step a short `title` (8 words or fewer)."
         private const val COMMENT_HINT = "Add a `comment` that explains the code of the step in 1 to 3 short sentences."
         private const val LOCATION_HINT = "Add a `location` with `file`, `startLine` and `endLine`."

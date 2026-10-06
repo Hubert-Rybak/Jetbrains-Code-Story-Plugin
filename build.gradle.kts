@@ -17,6 +17,7 @@ dependencies {
         intellijIdea("2025.3")
         // Optional at runtime (see plugin.xml); kotlinx.serialization comes from the IDE.
         bundledPlugin("com.intellij.mcpServer")
+        bundledPlugin("Git4Idea")
         testFramework(TestFrameworkType.Platform)
     }
 }

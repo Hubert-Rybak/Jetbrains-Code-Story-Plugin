@@ -1,6 +1,7 @@
 package io.github.hubertrybak.codestory.mcp
 
 import com.intellij.mcpserver.annotations.McpDescription
+import io.github.hubertrybak.codestory.core.StoryType
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -37,18 +38,36 @@ internal object StoryArgumentSerializer : KSerializer<StoryArgument> {
 internal class StoryShape(
     @property:McpDescription("The story title: 8 words or fewer.")
     val title: String,
+    @property:McpDescription("The story type: change, exploration, bug-trace or review.")
+    val type: StoryType,
+    @property:McpDescription("A summary in 1 to 3 short sentences.")
+    val summary: String,
+    @property:McpDescription("The original Code Story request text.")
+    val request: String,
+    @property:McpDescription("The agent and model that wrote the story.")
+    val author: AuthorShape,
     @property:McpDescription("3 to 12 steps (15 at most), in reading order. Each step explains one idea.")
     val steps: List<StepShape>,
 )
 
 @Serializable
 internal class StepShape(
+    @property:McpDescription("A stable, unique step ID. Omit it to let the plugin assign one; keep it on revisions.")
+    val id: String? = null,
     @property:McpDescription("The step title: 8 words or fewer.")
     val title: String,
     @property:McpDescription("What the code does and why it matters: 1 to 3 short sentences in simple English.")
     val comment: String,
-    @property:McpDescription("The code range that the step explains: usually 30 lines or fewer.")
-    val location: LocationShape,
+    @property:McpDescription("One code range, usually 30 lines or fewer. Omit it for an overview or a what-to-check step.")
+    val location: LocationShape? = null,
+)
+
+@Serializable
+internal class AuthorShape(
+    @property:McpDescription("Your agent name.")
+    val agent: String,
+    @property:McpDescription("Your model name.")
+    val model: String,
 )
 
 @Serializable

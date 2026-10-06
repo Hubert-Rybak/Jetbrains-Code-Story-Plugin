@@ -14,6 +14,7 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.testFramework.ExtensionTestUtil
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.testFramework.PlatformTestUtil
 import io.github.hubertrybak.codestory.ui.StoryPlayer
@@ -22,18 +23,21 @@ import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
+import io.github.hubertrybak.codestory.core.StoryJson.withoutField
 import io.github.hubertrybak.codestory.mcp.CodeStoryToolset
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
@@ -59,9 +63,12 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
         val story = schema.propertiesSchema.getValue("story").jsonObject
 
         assertEquals("object", story.getValue("type").jsonPrimitive.content)
-        assertEquals(listOf("title", "steps"), story.getValue("properties").jsonObject.keys.toList())
+        assertEquals(listOf("title", "type", "summary", "request", "author", "steps"), story.getValue("properties").jsonObject.keys.toList())
+        val author = story.getValue("properties").jsonObject.getValue("author").jsonObject
+        assertEquals(listOf("agent", "model"), author.getValue("properties").jsonObject.keys.toList())
         val step = story.getValue("properties").jsonObject.getValue("steps").jsonObject.getValue("items").jsonObject
-        assertEquals(listOf("title", "comment", "location"), step.getValue("properties").jsonObject.keys.toList())
+        assertEquals(listOf("id", "title", "comment", "location"), step.getValue("properties").jsonObject.keys.toList())
+        assertEquals(listOf("title", "comment"), step.getValue("required").jsonArray.map { it.jsonPrimitive.content })
         val location = step.getValue("properties").jsonObject.getValue("location").jsonObject
         assertEquals("integer", location.getValue("properties").jsonObject.getValue("startLine").jsonObject.getValue("type").jsonPrimitive.content)
         assertTrue("story" in schema.requiredProperties)
@@ -81,7 +88,7 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
 
         val file = root.resolve(report.file!!)
         val saved = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        assertEquals(listOf("schemaVersion", "id", "title", "steps"), saved.keys.toList())
+        assertEquals(listOf("schemaVersion", "id", "title", "type", "summary", "request", "author", "createdAt", "git", "steps"), saved.keys.toList())
         assertEquals(1, saved.getValue("schemaVersion").jsonPrimitive.content.toInt())
         assertEquals(id, saved.getValue("id").jsonPrimitive.content)
         assertEquals("src/Billing.kt", saved.getValue("steps").jsonArray[1].jsonObject.getValue("location").jsonObject.getValue("file").jsonPrimitive.content)
@@ -99,7 +106,7 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
 
         assertEquals("accepted", report.status)
         val saved = StoryFormat.decode(Files.readString(root.resolve(report.file!!))) as StoryFormat.Decoded.Valid
-        assertEquals("src/App.kt", saved.story.steps.single().location.file)
+        assertEquals("src/App.kt", saved.story.steps.single().location!!.file)
     }
 
     fun `test accepted MCP story auto plays without a loaded tool window`() {
@@ -107,6 +114,7 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
         val player = StoryPlayer.getInstance(project)
         PlatformTestUtil.waitWithEventsDispatching("MCP story did not start", { player.currentStory?.id == first.storyId }, 10)
         assertEquals(0, player.stepIndex)
+        assertEquals(CodeStoryService.getInstance(project).stories().single().story, player.currentStory!!.story)
         assertEquals("App.kt", player.presentation!!.editor.virtualFile!!.name)
         player.next()
         val previous = player.presentation!!
@@ -134,7 +142,12 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
             """{"title": "Payment flow"}""" to (null to ErrorCode.MISSING_FIELD),
             story() to (null to ErrorCode.NO_STEPS),
             story(*Array(16) { step() }) to (null to ErrorCode.TOO_MANY_STEPS),
-            story(step(), "{\"title\": \"No location\", \"comment\": \"Text.\"}") to (2 to ErrorCode.MISSING_FIELD),
+            story(step(), step(location = "{}")) to (2 to ErrorCode.MISSING_FIELD),
+            withoutField(story(step()), "type") to (null to ErrorCode.MISSING_FIELD),
+            story(step(), type = quoted("tour")) to (null to ErrorCode.INVALID_VALUE),
+            story(step(), summary = quoted(" ")) to (null to ErrorCode.EMPTY_TEXT),
+            story(step(), author = "{}") to (null to ErrorCode.MISSING_FIELD),
+            story(step(id = quoted("same")), step(id = quoted("same"))) to (2 to ErrorCode.DUPLICATE_STEP_ID),
             story(step(start = "\"2\"")) to (1 to ErrorCode.WRONG_TYPE),
             story(step(file = quoted(root.resolve("src/App.kt").toString()))) to (1 to ErrorCode.ABSOLUTE_PATH),
             story(step(file = quoted("../outside.kt"))) to (1 to ErrorCode.PARENT_PATH),
@@ -184,6 +197,82 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
             listOf(".gitignore", "$first-2.story.json", "$first.story.json"),
             root.resolve(".codestory/local").listDirectoryEntries().map { it.name }.sorted(),
         )
+    }
+
+    fun `test text-only steps are saved and stable IDs are assigned or preserved`() {
+        val report = call(story(
+            step(location = null, id = quoted("overview")),
+            step(),
+            step(location = "null"),
+        ))
+        assertEquals("accepted", report.status)
+        val first = CodeStoryService.getInstance(project).stories().single().story.steps
+        assertEquals("overview", first.first().id)
+        assertNull(first.first().location)
+        assertNull(first.last().location)
+        assertEquals(3, first.map { it.id }.toSet().size)
+        assertTrue(first.all { !it.id.isNullOrBlank() })
+        val reread = CodeStoryService.getInstance(project).stories().single().story.steps
+        assertEquals(first, reread)
+    }
+
+    fun `test plugin supplies creation time and unavailable Git instead of trusting agent metadata`() {
+        val before = Instant.now()
+        val input = JsonObject(Json.parseToJsonElement(story(step())).jsonObject + mapOf(
+            "createdAt" to JsonPrimitive("2000-01-01T00:00:00Z"),
+            "git" to JsonObject(mapOf("branch" to JsonPrimitive("invented"), "commit" to JsonPrimitive("invented"))),
+        ))
+        val report = call(input.toString())
+        val after = Instant.now()
+        assertEquals("accepted", report.status)
+        val saved = CodeStoryService.getInstance(project).stories().single().story
+        val createdAt = saved.createdAt!!
+        assertTrue(createdAt.toString(), createdAt >= before && createdAt <= after)
+        assertNull(saved.git.branch)
+        assertNull(saved.git.commit)
+        val json = Json.parseToJsonElement(Files.readString(root.resolve(report.file!!))).jsonObject
+        assertEquals(JsonNull, json.getValue("git").jsonObject.getValue("branch"))
+        assertEquals(JsonNull, json.getValue("git").jsonObject.getValue("commit"))
+    }
+
+    fun `test plugin captures Git branch and commit at creation`() {
+        val git = GitFixture(root)
+        git.init()
+        val commit = git.command("rev-parse", "HEAD")
+        val report = call(story(step()))
+        assertEquals("accepted", report.status)
+        git.command("checkout", "-b", "other-branch")
+        val saved = CodeStoryService.getInstance(project).stories().single().story
+        assertEquals("story-branch", saved.git.branch)
+        assertEquals(commit, saved.git.commit)
+    }
+
+    fun `test detached HEAD has a commit and no branch`() {
+        val git = GitFixture(root)
+        git.init()
+        val commit = git.command("rev-parse", "HEAD")
+        git.command("checkout", "--detach", commit)
+        assertEquals("accepted", call(story(step())).status)
+        val saved = CodeStoryService.getInstance(project).stories().single().story
+        assertNull(saved.git.branch)
+        assertEquals(commit, saved.git.commit)
+    }
+
+    fun `test unborn Git branch has no commit`() {
+        GitFixture(root).init(commit = false)
+        assertEquals("accepted", call(story(step())).status)
+        val saved = CodeStoryService.getInstance(project).stories().single().story
+        assertEquals("story-branch", saved.git.branch)
+        assertNull(saved.git.commit)
+    }
+
+    fun `test stories still save when optional Git integration is absent`() {
+        GitFixture(root).init()
+        ExtensionTestUtil.maskExtensions(StoryGitMetadata.EP, emptyList(), testRootDisposable)
+        assertEquals("accepted", call(story(step())).status)
+        val saved = CodeStoryService.getInstance(project).stories().single().story
+        assertNull(saved.git.branch)
+        assertNull(saved.git.commit)
     }
 
     fun `test without a project path the plugin does not guess`() {

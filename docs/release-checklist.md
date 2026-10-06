@@ -29,6 +29,16 @@ for the agent, and install `skills/code-story` by hand.
 - [ ] A click on each step opens the right file, puts the range in the upper
       part of the editor and highlights the range. The highlight is readable
       in light and dark themes.
+- [ ] Stories appear newest first with title, date, branch and distinct type
+      icons. Code steps show their number, title, file and line range.
+- [ ] Selecting a story shows its summary, original request, "Written by
+      <agent> (<model>)", creation date, branch and commit in the details pane.
+- [ ] Switching Git branches updates the note in the selected story's details.
+      Detached HEAD and repositories without commits display clearly.
+- [ ] Clicking or pressing Enter on a text-only step shows its comment in
+      the details pane and leaves editor tabs, caret, scroll and highlights as they are.
+- [ ] Without the Git plugin, stories still save and play; creation time and
+      author remain visible, and Git metadata is shown as unavailable.
 - [ ] A story with a wrong path or wrong lines is rejected: the agent gets the
       errors, fixes the story, and sends it again. Nothing is saved for the
       rejected story.

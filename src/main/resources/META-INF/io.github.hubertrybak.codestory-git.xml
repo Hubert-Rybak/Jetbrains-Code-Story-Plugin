@@ -1,1 +1,5 @@
-<idea-plugin/>
+<idea-plugin>
+    <extensions defaultExtensionNs="io.github.hubertrybak.codestory">
+        <gitMetadata implementation="io.github.hubertrybak.codestory.git.GitStoryMetadata"/>
+    </extensions>
+</idea-plugin>

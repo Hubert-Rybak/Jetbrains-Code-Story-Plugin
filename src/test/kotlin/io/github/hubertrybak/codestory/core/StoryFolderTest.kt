@@ -9,7 +9,7 @@ import org.junit.rules.TemporaryFolder
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
-import java.time.LocalDate
+import java.time.Instant
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.readText
@@ -18,10 +18,15 @@ class StoryFolderTest {
     @get:Rule
     val temp = TemporaryFolder()
 
-    private val date = LocalDate.of(2026, 10, 5)
+    private val date = Instant.parse("2026-10-05T12:00:00Z")
     private val story = Story(
         "Explain the payment flow",
-        listOf(Step("Entry point", "The controller takes the request.", Location("src/App.kt", 2, 4))),
+        StoryType.CHANGE,
+        "The controller takes the request.",
+        "Explain the payment flow",
+        StoryAuthor("Test Agent", "test-model"),
+        listOf(Step("Entry point", "The controller takes the request.", Location("src/App.kt", 2, 4), "entry")),
+        createdAt = date,
     )
 
     private fun folder(): StoryFolder = StoryFolder(temp.root.toPath())
@@ -80,10 +85,18 @@ class StoryFolderTest {
     }
 
     @Test
+    fun `story ID comes from the file name when a file is renamed`() {
+        val folder = folder()
+        val original = saved(folder.save(story, date))
+        Files.move(original.file, folder.localDir.resolve("2026-10-05-renamed.story.json"))
+        assertEquals("2026-10-05-renamed", folder.list().single().id)
+    }
+
+    @Test
     fun `rejects a story file larger than 256 KB and saves nothing`() {
         val folder = folder()
         val longComment = "word ".repeat(StoryLimits.MAX_FILE_BYTES / 5)
-        val large = Story("Large", listOf(Step("Step", longComment, Location("src/App.kt", 1, 1))))
+        val large = story.copy(title = "Large", steps = listOf(Step("Step", longComment, Location("src/App.kt", 1, 1), "entry")))
 
         val result = folder.save(large, date)
 
@@ -98,25 +111,26 @@ class StoryFolderTest {
     @Test
     fun `a story of exactly 256 KB is saved`() {
         val folder = folder()
-        val base = StoryFormat.encode(Story("Large", listOf(Step("Step", "x", Location("src/App.kt", 1, 1)))), "2026-10-05-large")
+        val large = story.copy(title = "Large", steps = listOf(Step("Step", "x", Location("src/App.kt", 1, 1), "entry")))
+        val base = StoryFormat.encode(large, "2026-10-05-large")
         val comment = "x".repeat(StoryLimits.MAX_FILE_BYTES - base.toByteArray().size + 1)
-        val result = saved(folder.save(Story("Large", listOf(Step("Step", comment, Location("src/App.kt", 1, 1)))), date))
+        val result = saved(folder.save(large.copy(steps = listOf(large.steps.single().copy(comment = comment))), date))
 
         assertEquals(StoryLimits.MAX_FILE_BYTES.toLong(), Files.size(result.file))
     }
 
     @Test
-    fun `lists stories newest first`() {
+    fun `lists stories by creation time even when an older file is modified later`() {
         val folder = folder()
         val first = saved(folder.save(story, date))
-        val second = saved(folder.save(story.copy(title = "Bug trace"), date))
+        val second = saved(folder.save(story.copy(title = "Bug trace"), date.plusSeconds(60)))
         Files.setLastModifiedTime(first.file, FileTime.fromMillis(2_000_000))
         Files.setLastModifiedTime(second.file, FileTime.fromMillis(1_000_000))
 
         val stories = folder.list()
 
-        assertEquals(listOf(first.id, second.id), stories.map { it.id })
-        assertEquals(story, stories.first().story)
+        assertEquals(listOf(second.id, first.id), stories.map { it.id })
+        assertEquals(story, stories.last().story)
         assertEquals("2026-10-05", stories.first().date)
         assertEquals(folder.root, stories.first().root)
     }

@@ -3,6 +3,7 @@ package io.github.hubertrybak.codestory.core
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
+import io.github.hubertrybak.codestory.core.StoryJson.withoutField
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -35,14 +36,35 @@ object ValidationCases {
         valid("one-line range", story(step(start = "10", end = "10"))),
         valid("CRLF file", story(step(file = quoted("src/Windows.kt"), start = "1", end = "3"))),
         valid("symbolic link inside the project", story(step(file = quoted("inside-link.kt"))), needsSymlinks = true),
+        valid("text-only step", story(step(location = null))),
+        valid("null location", story(step(location = "null"))),
+        valid("stable step ID", story(step(id = quoted("entry")))),
+        valid("reserved fields are ignored", story("""{"title": "Overview", "comment": "Text.", "children": [{}], "links": ["later"]}""")),
+        *StoryType.entries.map { valid("type ${it.value}", story(step(), type = quoted(it.value))) }.toTypedArray(),
 
         invalid("story is not an object", "[]", null to ErrorCode.WRONG_TYPE),
-        invalid("no title", """{"steps": [${step()}]}""", null to ErrorCode.MISSING_FIELD),
+        invalid("no title", withoutField(story(step()), "title"), null to ErrorCode.MISSING_FIELD),
         invalid("null title", story(step(), title = "null"), null to ErrorCode.MISSING_FIELD),
         invalid("title is not text", story(step(), title = "42"), null to ErrorCode.WRONG_TYPE),
         invalid("blank title", story(step(), title = quoted("  ")), null to ErrorCode.EMPTY_TEXT),
-        invalid("no steps field", """{"title": "Payment flow"}""", null to ErrorCode.MISSING_FIELD),
-        invalid("steps is not a list", """{"title": "Payment flow", "steps": {}}""", null to ErrorCode.WRONG_TYPE),
+        invalid("no steps field", withoutField(story(step()), "steps"), null to ErrorCode.MISSING_FIELD),
+        invalid("steps is not a list", story().replace("\"steps\": []", "\"steps\": {}"), null to ErrorCode.WRONG_TYPE),
+        invalid("no story type", withoutField(story(step()), "type"), null to ErrorCode.MISSING_FIELD),
+        invalid("unknown story type", story(step(), type = quoted("tour")), null to ErrorCode.INVALID_VALUE),
+        invalid("type is not text", story(step(), type = "7"), null to ErrorCode.WRONG_TYPE),
+        invalid("no summary", withoutField(story(step()), "summary"), null to ErrorCode.MISSING_FIELD),
+        invalid("blank summary", story(step(), summary = quoted(" ")), null to ErrorCode.EMPTY_TEXT),
+        invalid("no request", withoutField(story(step()), "request"), null to ErrorCode.MISSING_FIELD),
+        invalid("blank request", story(step(), request = quoted(" ")), null to ErrorCode.EMPTY_TEXT),
+        invalid("no author", withoutField(story(step()), "author"), null to ErrorCode.MISSING_FIELD),
+        invalid("author is not an object", story(step(), author = "[]"), null to ErrorCode.WRONG_TYPE),
+        invalid("no agent", story(step(), author = """{"model": "test"}"""), null to ErrorCode.MISSING_FIELD),
+        invalid("no model", story(step(), author = """{"agent": "Test Agent"}"""), null to ErrorCode.MISSING_FIELD),
+        invalid("blank agent", story(step(), author = """{"agent": " ", "model": "test"}"""), null to ErrorCode.EMPTY_TEXT),
+        invalid("model is not text", story(step(), author = """{"agent": "Test Agent", "model": 3}"""), null to ErrorCode.WRONG_TYPE),
+        invalid("empty step ID", story(step(id = quoted(""))), 1 to ErrorCode.EMPTY_TEXT),
+        invalid("step ID is not text", story(step(id = "4")), 1 to ErrorCode.WRONG_TYPE),
+        invalid("duplicate step IDs", story(step(id = quoted("entry")), step(id = quoted("entry"))), 2 to ErrorCode.DUPLICATE_STEP_ID),
         invalid("empty story", story(), null to ErrorCode.NO_STEPS),
         invalid("more than 15 steps", story(*Array(16) { step() }), null to ErrorCode.TOO_MANY_STEPS),
         invalid(
@@ -54,8 +76,8 @@ object ValidationCases {
         invalid("no step title", story("""{"comment": "Text.", "location": {"file": "src/App.kt", "startLine": 1, "endLine": 2}}"""), 1 to ErrorCode.MISSING_FIELD),
         invalid("empty comment", story(step(comment = quoted(""))), 1 to ErrorCode.EMPTY_TEXT),
         invalid("comment is not text", story(step(comment = "[\"a\"]")), 1 to ErrorCode.WRONG_TYPE),
-        invalid("no location", story("""{"title": "Entry point", "comment": "Text."}"""), 1 to ErrorCode.MISSING_FIELD),
         invalid("location is not an object", story("""{"title": "Entry point", "comment": "Text.", "location": "src/App.kt:2"}"""), 1 to ErrorCode.WRONG_TYPE),
+        invalid("multiple locations", story(step(location = """[{"file": "src/App.kt", "startLine": 1, "endLine": 2}]""")), 1 to ErrorCode.WRONG_TYPE),
         invalid("no file", story("""{"title": "T", "comment": "C.", "location": {"startLine": 1, "endLine": 2}}"""), 1 to ErrorCode.MISSING_FIELD),
         invalid("absolute path", story(step(file = quoted("/etc/passwd"))), 1 to ErrorCode.ABSOLUTE_PATH),
         invalid("Windows absolute path", story(step(file = quoted("C:\\repo\\src\\App.kt"))), 1 to ErrorCode.ABSOLUTE_PATH),
@@ -130,7 +152,7 @@ class StoryValidatorPathTest {
     private fun savedPath(files: StoryFiles?, path: String): String {
         val json = Json.parseToJsonElement(story(step(file = quoted(path))))
         val result = StoryValidator(files).validate(json) as ValidationResult.Valid
-        return result.story.steps.single().location.file
+        return result.story.steps.single().location!!.file
     }
 
     private fun fixture() = FixtureFiles(temp.newFolder("repo").toPath(), temp.root.toPath().resolve("outside"))

@@ -1,13 +1,22 @@
 package io.github.hubertrybak.codestory.core
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
 /** JSON builders for stories in tests. Values are JSON literals, so tests can send wrong types. */
 object StoryJson {
-    fun story(vararg steps: String, title: String = "\"Payment flow\""): String =
-        """{"title": $title, "steps": [${steps.joinToString(", ")}]}"""
+    fun story(
+        vararg steps: String,
+        title: String = "\"Payment flow\"",
+        type: String = "\"change\"",
+        summary: String = "\"The controller charges the card.\"",
+        request: String = "\"Explain the payment flow\"",
+        author: String = """{"agent": "Test Agent", "model": "test-model"}""",
+    ): String = """{"title": $title, "type": $type, "summary": $summary, "request": $request, "author": $author, "steps": [${steps.joinToString(", ")}]}"""
 
     fun step(
         file: String = "\"src/App.kt\"",
@@ -15,7 +24,11 @@ object StoryJson {
         end: String = "4",
         title: String = "\"Entry point\"",
         comment: String = "\"The app starts here.\"",
-    ): String = """{"title": $title, "comment": $comment, "location": {"file": $file, "startLine": $start, "endLine": $end}}"""
+        id: String? = null,
+        location: String? = """{"file": $file, "startLine": $start, "endLine": $end}""",
+    ): String = """{${if (id == null) "" else "\"id\": $id, "}"title": $title, "comment": $comment${if (location == null) "" else ", \"location\": $location"}}"""
+
+    fun withoutField(json: String, field: String): String = JsonObject(Json.parseToJsonElement(json).jsonObject - field).toString()
 
     fun quoted(text: String): String = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
