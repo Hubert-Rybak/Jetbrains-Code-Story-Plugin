@@ -1,8 +1,6 @@
 package io.github.hubertrybak.codestory.ui
 
 import com.intellij.icons.AllIcons
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -17,6 +15,7 @@ import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.util.Condition
 import com.intellij.ui.ClickListener
 import com.intellij.ui.ColoredTreeCellRenderer
+import com.intellij.ui.PopupHandler
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.treeStructure.Tree
@@ -29,6 +28,8 @@ import io.github.hubertrybak.codestory.core.StoredStory
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
+import java.awt.BorderLayout
+import javax.swing.JPanel
 import javax.swing.JTree
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
@@ -47,6 +48,8 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     private val rootNode = DefaultMutableTreeNode()
     private val treeModel = DefaultTreeModel(rootNode)
     val tree: Tree = Tree(treeModel)
+    val cardContainer = JPanel(BorderLayout())
+    private val player = StoryPlayer.getInstance(project)
     private val loader = AppExecutorUtil.createBoundedApplicationPoolExecutor("Code Story story list", 1)
 
     @Volatile
@@ -56,13 +59,19 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     init {
         tree.isRootVisible = false
         tree.showsRootHandles = true
-        tree.cellRenderer = StoryTreeCellRenderer()
+        tree.cellRenderer = StoryTreeCellRenderer(player)
         tree.emptyText.text = "No stories yet"
         tree.emptyText.appendSecondaryText("Ask your agent: /code-story \"<request>\"", SimpleTextAttributes.GRAYED_ATTRIBUTES, null)
         installStepOpening()
-        setContent(ScrollPaneFactory.createScrollPane(tree, true))
+        setContent(JPanel(BorderLayout()).apply {
+            add(ScrollPaneFactory.createScrollPane(tree, true), BorderLayout.CENTER)
+            add(cardContainer, BorderLayout.SOUTH)
+        })
         toolbar = createToolbar()
+        PopupHandler.installPopupMenu(tree, DefaultActionGroup(RestartAction()), "CodeStory.StoryMenu")
         project.messageBus.connect(this).subscribe(StoryListListener.TOPIC, StoryListListener { reload(it) })
+        project.messageBus.connect(this).subscribe(StoryPlaybackListener.TOPIC, StoryPlaybackListener { updatePlayback() })
+        updatePlayback()
         reload(CodeStoryService.getInstance(project).lastShownStoryId)
     }
 
@@ -105,11 +114,13 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
 
         val toSelect = selectStoryId?.let { findNode(it, null) } ?: selected?.let { (id, step) -> findNode(id, step) }
         if (toSelect != null) TreeUtil.selectPath(tree, TreePath(toSelect.path))
+        updatePlayback()
     }
 
     override fun dispose() {
         disposed = true
         loader.shutdownNow()
+        cardContainer.removeAll()
     }
 
     private fun installStepOpening() {
@@ -132,16 +143,18 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     }
 
     private fun openStep(item: StepItem) {
-        val location = item.step.location
-        if (StepNavigator.getInstance(project).open(item.stored.root, location) == null) {
-            NotificationGroupManager.getInstance().getNotificationGroup(NOTIFICATION_GROUP)
-                .createNotification("Code Story cannot open ${location.file}.", NotificationType.WARNING)
-                .notify(project)
-        }
+        player.play(item.stored, item.index)
     }
 
     private fun createToolbar() = ActionManager.getInstance()
-        .createActionToolbar("CodeStory.ToolWindow", DefaultActionGroup(RefreshAction()), true)
+        .createActionToolbar("CodeStory.ToolWindow", DefaultActionGroup().apply {
+            add(PlayAction())
+            add(ActionManager.getInstance().getAction("CodeStory.PreviousStep"))
+            add(ActionManager.getInstance().getAction("CodeStory.NextStep"))
+            add(ActionManager.getInstance().getAction("CodeStory.StopStory"))
+            addSeparator()
+            add(RefreshAction())
+        }, true)
         .also { it.targetComponent = this }
         .component
 
@@ -149,6 +162,35 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun actionPerformed(e: AnActionEvent) = reload()
+    }
+
+    private inner class PlayAction : DumbAwareAction("Play", "Continue the selected story", AllIcons.Actions.Execute) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
+        override fun actionPerformed(e: AnActionEvent) { selectedStory()?.let { player.play(it) } }
+    }
+
+    private inner class RestartAction : DumbAwareAction("Restart", "Play the selected story from step 1", AllIcons.Actions.Restart) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
+        override fun actionPerformed(e: AnActionEvent) { selectedStory()?.let { player.restart(it) } }
+    }
+
+    private fun selectedStory(): StoredStory? = when (val item = (tree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject) {
+        is StoryItem -> item.stored
+        is StepItem -> item.stored
+        else -> null
+    }
+
+    private fun updatePlayback() {
+        val fallback = player.presentation?.takeIf { it.inToolWindow && !it.cardDismissed }?.card
+        if (cardContainer.components.singleOrNull() !== fallback) {
+            cardContainer.removeAll()
+            if (fallback != null) cardContainer.add(fallback, BorderLayout.CENTER)
+            cardContainer.revalidate()
+            cardContainer.repaint()
+        }
+        tree.repaint()
     }
 
     private fun storyNodes(): List<DefaultMutableTreeNode> = rootNode.children().toList().map { it as DefaultMutableTreeNode }
@@ -176,7 +218,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     }
 }
 
-private class StoryTreeCellRenderer : ColoredTreeCellRenderer() {
+private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTreeCellRenderer() {
     override fun customizeCellRenderer(
         tree: JTree, value: Any?, selected: Boolean, expanded: Boolean, leaf: Boolean, row: Int, hasFocus: Boolean,
     ) {
@@ -190,8 +232,11 @@ private class StoryTreeCellRenderer : ColoredTreeCellRenderer() {
             }
             is StepItem -> {
                 val location = item.step.location
-                append("${item.index + 1}. ${item.step.title}")
+                val attributes = if (player.currentStory?.id == item.stored.id && player.stepIndex == item.index)
+                    SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else SimpleTextAttributes.REGULAR_ATTRIBUTES
+                append("${item.index + 1}. ${item.step.title}", attributes)
                 append("  ${location.file.substringAfterLast('/')}:${lines(location)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                if (player.wasVisited(item.stored.id, item.index)) append("  ✓", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 toolTipText = location.file
             }
         }

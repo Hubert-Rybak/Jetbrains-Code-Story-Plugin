@@ -51,7 +51,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
 
         assertEquals(3, tree.rowCount)
         assertEquals("Payment flow  ${id.take(10)}", rowText(0))
-        assertEquals("1. Entry point  App.kt:40–52", rowText(1))
+        assertEquals("1. Entry point  App.kt:40–52  ✓", rowText(1))
         assertEquals("2. Charge  Billing.kt:2", rowText(2))
     }
 

@@ -15,6 +15,8 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.HeavyPlatformTestCase
+import com.intellij.testFramework.PlatformTestUtil
+import io.github.hubertrybak.codestory.ui.StoryPlayer
 import io.github.hubertrybak.codestory.core.ErrorCode
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
@@ -98,6 +100,21 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
         assertEquals("accepted", report.status)
         val saved = StoryFormat.decode(Files.readString(root.resolve(report.file!!))) as StoryFormat.Decoded.Valid
         assertEquals("src/App.kt", saved.story.steps.single().location.file)
+    }
+
+    fun `test accepted MCP story auto plays without a loaded tool window`() {
+        val first = call(story(step(), step(file = quoted("src/Billing.kt"), start = "2", end = "2")))
+        val player = StoryPlayer.getInstance(project)
+        PlatformTestUtil.waitWithEventsDispatching("MCP story did not start", { player.currentStory?.id == first.storyId }, 10)
+        assertEquals(0, player.stepIndex)
+        assertEquals("App.kt", player.presentation!!.editor.virtualFile!!.name)
+        player.next()
+        val previous = player.presentation!!
+        val second = call(story(step(), title = quoted("New story")))
+        PlatformTestUtil.waitWithEventsDispatching("new MCP story did not replace playback", { player.currentStory?.id == second.storyId }, 10)
+        assertEquals(0, player.stepIndex)
+        assertTrue(previous.disposed)
+        assertFalse(previous.range.isValid)
     }
 
     fun `test checks lines against the text that the IDE shows`() {

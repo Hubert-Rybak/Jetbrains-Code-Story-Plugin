@@ -16,5 +16,22 @@
         <toolWindow id="Code Story" anchor="right" icon="AllIcons.Toolwindows.Documentation"
                     factoryClass="io.github.hubertrybak.codestory.CodeStoryToolWindowFactory"/>
         <notificationGroup id="Code Story" displayType="BALLOON"/>
+        <applicationConfigurable parentId="tools" id="io.github.hubertrybak.codestory.settings"
+                                 displayName="Code Story" instance="io.github.hubertrybak.codestory.CodeStoryConfigurable"/>
     </extensions>
+
+    <actions>
+        <action id="CodeStory.NextStep" class="io.github.hubertrybak.codestory.ui.NextStepAction"
+                text="Next Step" description="Play the next step, or finish the story" icon="AllIcons.Actions.Forward">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift Z" second-keystroke="RIGHT"/>
+        </action>
+        <action id="CodeStory.PreviousStep" class="io.github.hubertrybak.codestory.ui.PreviousStepAction"
+                text="Previous Step" description="Play the previous step" icon="AllIcons.Actions.Back">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift Z" second-keystroke="LEFT"/>
+        </action>
+        <action id="CodeStory.StopStory" class="io.github.hubertrybak.codestory.ui.StopStoryAction"
+                text="Stop Story" description="Stop playback and clear the story presentation" icon="AllIcons.Actions.Suspend">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift Z" second-keystroke="END"/>
+        </action>
+    </actions>
 </idea-plugin>

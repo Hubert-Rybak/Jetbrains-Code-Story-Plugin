@@ -9,6 +9,8 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.wm.IdeFocusManager
+import com.intellij.openapi.wm.WindowManager
 import com.intellij.util.messages.Topic
 import io.github.hubertrybak.codestory.core.ReportItem
 import io.github.hubertrybak.codestory.core.RootStoryFiles
@@ -18,9 +20,11 @@ import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryValidator
 import io.github.hubertrybak.codestory.core.TextFiles
 import io.github.hubertrybak.codestory.core.ValidationResult
+import io.github.hubertrybak.codestory.ui.StoryPlayer
 import kotlinx.serialization.json.JsonElement
 import java.io.IOException
 import java.nio.file.Path
+import java.nio.file.Files
 import java.time.LocalDate
 
 /** Tells the tool window that the stories changed. */
@@ -66,7 +70,7 @@ class CodeStoryService(private val project: Project) {
             is StoryFolder.SaveResult.Saved -> {
                 lastShownStoryId = saved.id
                 project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(saved.id)
-                showToolWindow()
+                startPlayback(StoredStory(saved.id, folder.root, saved.file, checked, Files.getLastModifiedTime(saved.file)))
                 ShowReport.accepted(saved.id, folder.relativePath(saved.file))
             }
         }
@@ -93,9 +97,15 @@ class CodeStoryService(private val project: Project) {
         path.toAbsolutePath().normalize()
     }
 
-    private fun showToolWindow() {
+    private fun startPlayback(stored: StoredStory) {
         ApplicationManager.getApplication().invokeLater(
-            { ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.show() },
+            {
+                StoryPlayer.getInstance(project).restart(stored)
+                ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.show()
+                if (CodeStorySettings.getInstance().state.bringToFront) {
+                    WindowManager.getInstance().getFrame(project)?.let { IdeFocusManager.getInstance(project).toFront(it.rootPane) }
+                }
+            },
             ModalityState.nonModal(),
             project.disposed,
         )
