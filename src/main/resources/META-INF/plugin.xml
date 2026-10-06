@@ -12,6 +12,10 @@
     <depends optional="true" config-file="io.github.hubertrybak.codestory-mcp.xml">com.intellij.mcpServer</depends>
     <depends optional="true" config-file="io.github.hubertrybak.codestory-git.xml">Git4Idea</depends>
 
+    <extensionPoints>
+        <extensionPoint name="gitMetadata" interface="io.github.hubertrybak.codestory.StoryGitMetadata" dynamic="true"/>
+    </extensionPoints>
+
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Code Story" anchor="right" icon="AllIcons.Toolwindows.Documentation"
                     factoryClass="io.github.hubertrybak.codestory.CodeStoryToolWindowFactory"/>

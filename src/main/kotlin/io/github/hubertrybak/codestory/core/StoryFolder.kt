@@ -8,18 +8,14 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.FileTime
 import java.text.Normalizer
-import java.time.LocalDate
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.Locale
 import java.util.UUID
 
 /** A story file in `.codestory/local/`. Story paths are relative to [root]. */
 class StoredStory(val id: String, val root: Path, val file: Path, val story: Story, val modified: FileTime) {
-    /** The `yyyy-MM-dd` part of the ID. */
-    val date: String get() = id.take(DATE_LENGTH)
-
-    private companion object {
-        const val DATE_LENGTH = 10
-    }
+    val date: String get() = checkNotNull(story.createdAt).atOffset(ZoneOffset.UTC).toLocalDate().toString()
 }
 
 /**
@@ -30,7 +26,7 @@ class StoryFolder(val root: Path) {
     val localDir: Path = root.resolve(CODESTORY_DIR).resolve(LOCAL_DIR)
 
     sealed interface SaveResult {
-        class Saved(val id: String, val file: Path) : SaveResult
+        class Saved(val id: String, val file: Path, val story: Story) : SaveResult
         class TooLarge(val bytes: Int) : SaveResult
     }
 
@@ -39,19 +35,31 @@ class StoryFolder(val root: Path) {
      * exists. The file is written to a temporary file first and then renamed, so a reader never
      * sees a partial story.
      */
-    fun save(story: Story, date: LocalDate): SaveResult = synchronized(saveLock) {
+    fun save(story: Story, createdAt: Instant, git: StoryGit = StoryGit()): SaveResult = synchronized(saveLock) {
+        val date = createdAt.atOffset(ZoneOffset.UTC).toLocalDate()
         val baseId = "$date-${slug(story.title)}"
         val id = generateSequence(1) { it + 1 }
             .map { if (it == 1) baseId else "$baseId-$it" }
             .first { !exists(it) }
-        val bytes = StoryFormat.encode(story, id).toByteArray(Charsets.UTF_8)
+        val assignedIds = story.steps.mapNotNull { it.id }.toMutableSet()
+        val saved = story.copy(
+            createdAt = createdAt,
+            git = git,
+            steps = story.steps.map { step ->
+                if (step.id != null) step else {
+                    val stepId = generateSequence { UUID.randomUUID().toString() }.first { assignedIds.add(it) }
+                    step.copy(id = stepId)
+                }
+            },
+        )
+        val bytes = StoryFormat.encode(saved, id).toByteArray(Charsets.UTF_8)
         if (bytes.size > StoryLimits.MAX_FILE_BYTES) return SaveResult.TooLarge(bytes.size)
 
         Files.createDirectories(localDir)
         ensureGitIgnore()
         val file = localDir.resolve(id + StoryFormat.FILE_SUFFIX)
         writeAtomically(file, bytes)
-        SaveResult.Saved(id, file)
+        SaveResult.Saved(id, file, saved)
     }
 
     /** Stories in `.codestory/local/`, newest first. Files that cannot be read are skipped. */
@@ -59,7 +67,7 @@ class StoryFolder(val root: Path) {
         if (!Files.isDirectory(localDir)) return emptyList()
         val files = Files.newDirectoryStream(localDir, "*" + StoryFormat.FILE_SUFFIX).use { it.toList() }
         return files.mapNotNull { file -> read(file, onSkipped) }
-            .sortedWith(compareByDescending<StoredStory> { it.modified }.thenByDescending { it.id })
+            .sortedWith(compareByDescending<StoredStory> { it.story.createdAt }.thenByDescending { it.id })
     }
 
     /** [file] relative to the root, with `/` between folders. */

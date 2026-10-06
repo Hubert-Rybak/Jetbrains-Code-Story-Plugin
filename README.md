@@ -3,11 +3,14 @@
 A JetBrains plugin for guided code walkthroughs, with Rider as the primary
 target. Requires Rider or IntelliJ IDEA 2025.3 or newer.
 
-An AI agent builds a story (a title and ordered steps, each with a file,
-a line range and a comment) and sends it to the running IDE through the IDE's
-MCP server. The story starts in the receiving IDE, with a floating comment card
-beside the highlighted code. The **Code Story** tool window lists stories and
-steps and holds the card when the editor has no room for it. See
+An AI agent builds a story with a type, summary, original request, author and
+ordered steps, and sends it to the running IDE through the IDE's MCP server.
+The story starts in the receiving IDE, with a floating comment card beside
+the highlighted code. The **Code Story** tool window lists stories newest first
+and shows their details, including who wrote them and the Git branch and
+commit at creation. It holds the card when the editor has no room for it.
+Text-only steps show their comment in the details pane and leave the editor
+as it is. See
 [spec.md](spec.md) for the product specification and
 [issue #1](https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/issues/1)
 for the implementation roadmap.
@@ -20,7 +23,7 @@ select the zip, and restart if prompted. Open **View | Tool Windows | Code Story
 The window starts on the right; use the IDE's normal tool window controls to move it.
 
 The MCP Server plugin is optional, but agents need it to send stories. The
-Git plugin is optional and not used yet.
+Git plugin is optional; it supplies branch and commit metadata when available.
 
 ## Use
 
@@ -46,6 +49,10 @@ number, a code, a message and a fix hint, so the agent can correct the story.
 Story files are named `<yyyy-MM-dd>-<slug>.story.json`. Their format is
 described by the JSON Schema in [`schema/story-v1.schema.json`](schema/story-v1.schema.json).
 Paths are relative to the repository root; line numbers are 1-based and inclusive.
+The plugin records creation time and Git state, assigns stable IDs to steps
+that have none, and adds a number suffix when a story name already exists.
+The story details show a note when the current branch differs from the branch
+where the story was created. Without Git, the metadata is shown as unavailable.
 
 Use **Prev**, **Next** and **Stop** in the card or tool-window toolbar. On the
 last step, **Next** becomes **Finish**. Numbered gutter badges jump to other

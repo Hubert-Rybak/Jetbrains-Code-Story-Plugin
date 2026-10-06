@@ -11,15 +11,19 @@ import io.github.hubertrybak.codestory.core.ShowStatus
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
+import io.github.hubertrybak.codestory.core.StoryType
 import io.github.hubertrybak.codestory.ui.StepNavigator
+import io.github.hubertrybak.codestory.ui.StoryItem
 import io.github.hubertrybak.codestory.ui.StoryListPanel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.nio.file.Files
 import java.nio.file.Path
+import javax.swing.tree.DefaultMutableTreeNode
 
 /** The Code Story tool window lists the saved stories, and a click on a step opens its code. */
 class StoryListPanelTest : HeavyPlatformTestCase() {
@@ -60,7 +64,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         assertEquals(0, tree.rowCount)
 
         show(story(step(), title = quoted("Bug trace")))
-        PlatformTestUtil.waitWithEventsDispatching("the new story is not selected", { tree.rowCount == 2 && tree.minSelectionRow == 0 }, TIMEOUT_SECONDS)
+        PlatformTestUtil.waitWithEventsDispatching("the new story is not selected", { tree.rowCount == 2 && tree.minSelectionRow == 1 }, TIMEOUT_SECONDS)
 
         assertTrue(rowText(0).startsWith("Bug trace"))
     }
@@ -74,6 +78,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         val editor = FileEditorManager.getInstance(project).selectedTextEditor!!
         assertEquals("App.kt", FileDocumentManager.getInstance().getFile(editor.document)!!.name)
         assertEquals(39, editor.caretModel.logicalPosition.line)
+        assertTrue(panel!!.details.displayedText.contains("The app starts here."))
         val highlighter = StepNavigator.getInstance(project).currentHighlighter!!
         assertTrue(highlighter in editor.markupModel.allHighlighters)
         assertEquals(39, editor.document.getLineNumber(highlighter.startOffset))
@@ -87,6 +92,95 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         assertEquals(1, billing.document.getLineNumber(next.startOffset))
         assertEquals(2, billing.document.getLineNumber(next.endOffset))
         assertFalse("the earlier highlight is removed", highlighter.isValid)
+    }
+
+    fun `test story details show the full header`() {
+        val git = GitFixture(root)
+        git.init()
+        val commit = git.command("rev-parse", "HEAD")
+        show(story(step(), type = quoted("review")))
+        openPanel()
+        panel!!.tree.setSelectionRow(0)
+        val text = panel!!.details.displayedText
+        assertTrue(text, text.contains("Payment flow"))
+        assertTrue(text, text.contains("Type: review"))
+        assertTrue(text, text.contains("The controller charges the card."))
+        assertTrue(text, text.contains("Request: Explain the payment flow"))
+        assertTrue(text, text.contains("Written by Test Agent (test-model)"))
+        assertTrue(text, text.contains("Date:"))
+        assertTrue(text, text.contains("Branch: story-branch"))
+        assertTrue(text, text.contains("Commit: $commit"))
+        assertFalse(text, text.contains("Current branch is"))
+        assertTrue(rowText(0), rowText(0).endsWith("  story-branch"))
+    }
+
+    fun `test clicking and pressing Enter on a text-only step leave the editor as it is`() {
+        show(story(step(start = "40", end = "52"), step(title = quoted("Overview"), location = null)))
+        openPanel()
+        click(1)
+        val manager = FileEditorManager.getInstance(project)
+        val editor = manager.selectedTextEditor!!
+        val files = manager.openFiles.toList()
+        val caret = editor.caretModel.offset
+        val scroll = editor.scrollingModel.visibleArea
+        val highlighter = StepNavigator.getInstance(project).currentHighlighter
+
+        click(2)
+        assertEquals("2. Overview  ✓", rowText(2))
+        assertTrue(panel!!.details.displayedText.contains("Step 2 of 2: Overview"))
+        assertTrue(panel!!.details.displayedText.contains("The app starts here."))
+        val event = KeyEvent(panel!!.tree, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, KeyEvent.VK_ENTER, '\n')
+        panel!!.tree.keyListeners.forEach { it.keyPressed(event) }
+        assertTrue(event.isConsumed)
+        assertSame(editor, manager.selectedTextEditor)
+        assertEquals(files, manager.openFiles.toList())
+        assertEquals(caret, editor.caretModel.offset)
+        assertEquals(scroll, editor.scrollingModel.visibleArea)
+        assertSame(highlighter, StepNavigator.getInstance(project).currentHighlighter)
+    }
+
+    fun `test a text-only step can be opened without an editor`() {
+        show(story(step(location = null)))
+        openPanel()
+        click(1)
+        assertTrue(panel!!.details.displayedText.contains("The app starts here."))
+        assertEmpty(FileEditorManager.getInstance(project).openFiles.toList())
+        assertNull(StepNavigator.getInstance(project).currentHighlighter)
+    }
+
+    fun `test refreshing on another branch shows a note without changing stored metadata`() {
+        val git = GitFixture(root)
+        git.init()
+        show(story(step()))
+        openPanel()
+        panel!!.tree.setSelectionRow(0)
+        git.command("checkout", "-b", "other-branch")
+        panel!!.reload()
+        PlatformTestUtil.waitWithEventsDispatching(
+            "branch difference is not shown",
+            { panel!!.details.displayedText.contains("Current branch is other-branch") },
+            TIMEOUT_SECONDS,
+        )
+        assertTrue(panel!!.details.displayedText.contains("this story was created on story-branch"))
+        assertEquals("story-branch", CodeStoryService.getInstance(project).stories().single().story.git.branch)
+    }
+
+    fun `test each story type has a distinct icon`() {
+        val icons = StoryType.entries.map { type ->
+            val id = show(story(step(), title = quoted(type.value), type = quoted(type.value)))
+            if (panel == null) openPanel()
+            panel!!.showStories(CodeStoryService.getInstance(project).stories(), id)
+            val tree = panel!!.tree
+            val path = (0 until tree.rowCount).map { tree.getPathForRow(it) }.first {
+                ((it.lastPathComponent as DefaultMutableTreeNode).userObject as? StoryItem)?.stored?.id == id
+            }
+            tree.selectionPath = path
+            val row = tree.getRowForPath(path)
+            val renderer = tree.cellRenderer.getTreeCellRendererComponent(tree, tree.getPathForRow(row).lastPathComponent, false, true, false, row, false)
+            (renderer as SimpleColoredComponent).icon
+        }
+        assertEquals(4, icons.toSet().size)
+        assertTrue(icons.all { it != null })
     }
 
     private fun show(json: String): String {

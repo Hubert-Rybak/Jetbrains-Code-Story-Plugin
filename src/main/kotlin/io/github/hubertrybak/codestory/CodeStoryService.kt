@@ -17,6 +17,7 @@ import io.github.hubertrybak.codestory.core.RootStoryFiles
 import io.github.hubertrybak.codestory.core.ShowReport
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryFolder
+import io.github.hubertrybak.codestory.core.StoryGit
 import io.github.hubertrybak.codestory.core.StoryValidator
 import io.github.hubertrybak.codestory.core.TextFiles
 import io.github.hubertrybak.codestory.core.ValidationResult
@@ -25,7 +26,7 @@ import kotlinx.serialization.json.JsonElement
 import java.io.IOException
 import java.nio.file.Path
 import java.nio.file.Files
-import java.time.LocalDate
+import java.time.Instant
 
 /** Tells the tool window that the stories changed. */
 fun interface StoryListListener {
@@ -65,12 +66,13 @@ class CodeStoryService(private val project: Project) {
             is ValidationResult.Invalid -> return ShowReport.rejected(result.errors)
             is ValidationResult.Valid -> result.story
         }
-        return when (val saved = folder.save(checked, LocalDate.now())) {
+        val git = currentGit(folder.root)
+        return when (val saved = folder.save(checked, Instant.now(), git)) {
             is StoryFolder.SaveResult.TooLarge -> ShowReport.rejected(listOf(ReportItem.storyTooLarge(saved.bytes)))
             is StoryFolder.SaveResult.Saved -> {
                 lastShownStoryId = saved.id
                 project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(saved.id)
-                startPlayback(StoredStory(saved.id, folder.root, saved.file, checked, Files.getLastModifiedTime(saved.file)))
+                startPlayback(StoredStory(saved.id, folder.root, saved.file, saved.story, Files.getLastModifiedTime(saved.file)))
                 ShowReport.accepted(saved.id, folder.relativePath(saved.file))
             }
         }
@@ -78,6 +80,9 @@ class CodeStoryService(private val project: Project) {
 
     /** The saved stories, newest first. */
     fun stories(): List<StoredStory> = storyFolder().list { file, reason -> LOG.warn("Code Story skipped $file: $reason") }
+
+    /** The current repository state; unavailable Git fields stay null. Call in the background. */
+    fun currentGit(root: Path): StoryGit = StoryGitMetadata.EP.extensionList.firstOrNull()?.snapshot(project, root) ?: StoryGit()
 
     /** Documents with unsaved edits, by real path: for these files, the IDE shows other text than the disk has. */
     private suspend fun unsavedTexts(): Map<Path, CharSequence> {

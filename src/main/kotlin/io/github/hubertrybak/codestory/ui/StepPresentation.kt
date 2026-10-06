@@ -231,10 +231,11 @@ class StepPresentation(
     }
 
     private fun installBadges() {
-        val currentFile = stored.story.steps[index].location.file
+        val currentFile = checkNotNull(stored.story.steps[index].location).file
         for ((stepIndex, step) in stored.story.steps.withIndex()) {
-            if (step.location.file != currentFile) continue
-            val line = (step.location.startLine - 1).coerceIn(0, editor.document.lineCount - 1)
+            val location = step.location ?: continue
+            if (location.file != currentFile) continue
+            val line = (location.startLine - 1).coerceIn(0, editor.document.lineCount - 1)
             badges += editor.markupModel.addRangeHighlighter(
                 editor.document.getLineStartOffset(line), editor.document.getLineStartOffset(line),
                 HighlighterLayer.ADDITIONAL_SYNTAX, null, HighlighterTargetArea.LINES_IN_RANGE,

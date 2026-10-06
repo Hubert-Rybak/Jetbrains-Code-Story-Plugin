@@ -4,6 +4,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
@@ -30,15 +31,30 @@ object StoryFormat {
             put("schemaVersion", SCHEMA_VERSION)
             put("id", id)
             put("title", story.title)
+            put("type", story.type.value)
+            put("summary", story.summary)
+            put("request", story.request)
+            putJsonObject("author") {
+                put("agent", story.author.agent)
+                put("model", story.author.model)
+            }
+            put("createdAt", checkNotNull(story.createdAt).toString())
+            putJsonObject("git") {
+                put("branch", story.git.branch?.let(::JsonPrimitive) ?: JsonNull)
+                put("commit", story.git.commit?.let(::JsonPrimitive) ?: JsonNull)
+            }
             putJsonArray("steps") {
                 for (step in story.steps) {
                     addJsonObject {
+                        put("id", checkNotNull(step.id))
                         put("title", step.title)
                         put("comment", step.comment)
-                        putJsonObject("location") {
-                            put("file", step.location.file)
-                            put("startLine", step.location.startLine)
-                            put("endLine", step.location.endLine)
+                        step.location?.let { location ->
+                            putJsonObject("location") {
+                                put("file", location.file)
+                                put("startLine", location.startLine)
+                                put("endLine", location.endLine)
+                            }
                         }
                     }
                 }
@@ -61,7 +77,7 @@ object StoryFormat {
         }
         val version = ((element as? JsonObject)?.get("schemaVersion") as? JsonPrimitive)?.intOrNull
         if (version != SCHEMA_VERSION) return Decoded.Invalid("Unsupported schemaVersion: $version")
-        return when (val result = StoryValidator(files = null).validate(element)) {
+        return when (val result = StoryValidator(files = null, readMetadata = true).validate(element)) {
             is ValidationResult.Valid -> Decoded.Valid(result.story)
             is ValidationResult.Invalid -> Decoded.Invalid(result.errors.joinToString(" ") { it.message })
         }

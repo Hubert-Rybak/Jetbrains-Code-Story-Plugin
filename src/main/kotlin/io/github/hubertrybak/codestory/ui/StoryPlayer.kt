@@ -12,7 +12,9 @@ import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.util.messages.Topic
+import io.github.hubertrybak.codestory.CodeStoryService
 import io.github.hubertrybak.codestory.core.StoredStory
 
 @Service(Service.Level.PROJECT)
@@ -43,7 +45,10 @@ class StoryPlayer(private val project: Project) : Disposable {
         private set
     var stepIndex = 0
         private set
+    /** Kept through text-only steps so their playback does not change the editor. */
     var presentation: StepPresentation? = null
+        private set
+    internal var playbackVersion = 0
         private set
     private val visited = mutableMapOf<String, MutableSet<Int>>()
 
@@ -57,23 +62,30 @@ class StoryPlayer(private val project: Project) : Disposable {
         ApplicationManager.getApplication().assertIsDispatchThread()
         val target = (index ?: project.service<StoryReadingPosition>().state.steps[stored.id] ?: 0)
             .coerceIn(stored.story.steps.indices)
-        clearPresentation()
         val step = stored.story.steps[target]
-        val editor = StepNavigator.getInstance(project).open(stored.root, step.location)
-        if (editor == null) {
-            currentStory = null
-            changed()
-            NotificationGroupManager.getInstance().getNotificationGroup(StoryListPanel.NOTIFICATION_GROUP)
-                .createNotification("Code Story cannot open ${step.location.file}.", NotificationType.WARNING).notify(project)
-            return
+        val location = step.location
+        if (location != null) {
+            clearPresentation()
+            val editor = StepNavigator.getInstance(project).open(stored.root, location)
+            if (editor == null) {
+                currentStory = null
+                changed()
+                NotificationGroupManager.getInstance().getNotificationGroup(StoryListPanel.NOTIFICATION_GROUP)
+                    .createNotification("Code Story cannot open ${location.file}.", NotificationType.WARNING).notify(project)
+                return
+            }
+            presentation = StepPresentation(project, editor, stored, target, this).also { Disposer.register(this, it) }
+        } else {
+            presentation?.dismissCard()
         }
         currentStory = stored
         stepIndex = target
         project.service<StoryReadingPosition>().state.steps[stored.id] = target
         visited.getOrPut(stored.id) { mutableSetOf() }.add(target)
-        presentation = StepPresentation(project, editor, stored, target, this).also { Disposer.register(this, it) }
+        playbackVersion++
         changed()
-        presentation!!.showCard()
+        if (location != null) presentation!!.showCard()
+        else ToolWindowManager.getInstance(project).getToolWindow(CodeStoryService.TOOL_WINDOW_ID)?.show()
     }
 
     fun restart(stored: StoredStory) = play(stored, 0)
@@ -84,6 +96,7 @@ class StoryPlayer(private val project: Project) : Disposable {
         ApplicationManager.getApplication().assertIsDispatchThread()
         clearPresentation()
         currentStory = null
+        playbackVersion++
         changed()
     }
 

@@ -17,13 +17,17 @@ import io.github.hubertrybak.codestory.core.Location
 import io.github.hubertrybak.codestory.core.Step
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.Story
+import io.github.hubertrybak.codestory.core.StoryAuthor
 import io.github.hubertrybak.codestory.core.StoryFormat
+import io.github.hubertrybak.codestory.core.StoryType
+import io.github.hubertrybak.codestory.ui.StepNavigator
 import io.github.hubertrybak.codestory.ui.StoryListPanel
 import io.github.hubertrybak.codestory.ui.StoryPlayer
 import io.github.hubertrybak.codestory.ui.StoryReadingPosition
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.time.Instant
 
 class StoryPlayerTest : HeavyPlatformTestCase() {
     private lateinit var root: Path
@@ -88,6 +92,74 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
         assertNull(current.card.parent)
         assertNull(current.balloon)
         assertFalse(current.inToolWindow)
+    }
+
+    fun `test text-only playback shows details without changing the editor`() {
+        val stored = story(steps = listOf(step("first.txt", 2), Step("Overview", "Keep the current code in view."), step("second.txt", 1)))
+        val panel = StoryListPanel(project)
+        try {
+            panel.showStories(listOf(stored))
+            player.play(stored)
+            val current = player.presentation!!
+            val manager = FileEditorManager.getInstance(project)
+            val files = manager.openFiles.toList()
+            val caret = current.editor.caretModel.offset
+            val scroll = current.editor.scrollingModel.visibleArea
+            val badges = current.badges.toList()
+            assertEquals(1, badges.size)
+
+            player.next()
+
+            assertEquals(1, player.stepIndex)
+            assertTrue(player.wasVisited(stored.id, 1))
+            assertTrue(panel.details.displayedText.contains("Step 2 of 3: Overview"))
+            assertTrue(panel.details.displayedText.contains("Keep the current code in view."))
+            assertSame(current.editor, manager.selectedTextEditor)
+            assertEquals(files, manager.openFiles.toList())
+            assertEquals(caret, current.editor.caretModel.offset)
+            assertEquals(scroll, current.editor.scrollingModel.visibleArea)
+            assertSame(current.range, StepNavigator.getInstance(project).currentHighlighter)
+            assertTrue(badges.all { it.isValid })
+            assertTrue(current.cardDismissed)
+            assertNull(current.card.parent)
+
+            panel.tree.setSelectionRow(0)
+            assertTrue(panel.details.displayedText.contains("Written by Test Agent"))
+            player.play(stored, 1)
+            assertTrue(panel.details.displayedText.contains("Step 2 of 3: Overview"))
+
+            player.next()
+            assertEquals("second.txt", manager.selectedTextEditor!!.virtualFile!!.name)
+            assertTrue(current.disposed)
+            assertFalse(current.range.isValid)
+            val next = player.presentation!!
+            player.previous()
+            assertEquals(1, player.stepIndex)
+            assertSame(next.range, StepNavigator.getInstance(project).currentHighlighter)
+            assertTrue(panel.details.displayedText.contains("Step 2 of 3: Overview"))
+            player.stop()
+            assertFalse(next.range.isValid)
+        } finally { Disposer.dispose(panel) }
+    }
+
+    fun `test a text-only story can play and finish without opening an editor`() {
+        val stored = story(steps = listOf(Step("Overview", "Start here."), Step("Checks", "Check the result.")))
+        player.play(stored)
+        val panel = StoryListPanel(project)
+        try {
+            panel.showStories(listOf(stored))
+            assertTrue(panel.details.displayedText.contains("Step 1 of 2: Overview"))
+            assertTrue(player.isPlaying)
+            assertNull(player.presentation)
+            assertEmpty(FileEditorManager.getInstance(project).openFiles.toList())
+            player.next()
+            assertTrue(panel.details.displayedText.contains("Step 2 of 2: Checks"))
+            assertEquals(1, player.stepIndex)
+            player.next()
+            assertFalse(player.isPlaying)
+            assertNull(StepNavigator.getInstance(project).currentHighlighter)
+            assertEmpty(FileEditorManager.getInstance(project).openFiles.toList())
+        } finally { Disposer.dispose(panel) }
     }
 
     fun `test play resumes and restart uses workspace position without changing the story`() {
@@ -265,5 +337,9 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
     private fun step(file: String, line: Int) = Step("Read $file", "Read `line` and **continue**.", Location(file, line, line))
 
     private fun story(id: String = "2026-10-06-example", steps: List<Step> = listOf(step("first.txt", 2), step("second.txt", 1))) =
-        StoredStory(id, root, root.resolve("$id.story.json"), Story("Example", steps), FileTime.fromMillis(0))
+        StoredStory(id, root, root.resolve("$id.story.json"), Story(
+            "Example", StoryType.CHANGE, "Read both files.", "Explain the change.", StoryAuthor("Test Agent", "test-model"),
+            steps.mapIndexed { index, step -> step.copy(id = step.id ?: "step-${index + 1}") },
+            Instant.parse("2026-10-06T12:00:00Z"),
+        ), FileTime.fromMillis(0))
 }
