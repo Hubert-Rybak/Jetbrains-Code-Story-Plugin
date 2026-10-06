@@ -13,6 +13,8 @@ enum class ErrorCode(val code: String) {
     NO_STEPS("no-steps"),
     TOO_MANY_STEPS("too-many-steps"),
     STORY_TOO_LARGE("story-too-large"),
+    STORY_NOT_FOUND("story-not-found"),
+    INVALID_STORY_ID("invalid-story-id"),
     ABSOLUTE_PATH("absolute-path"),
     PARENT_PATH("parent-path"),
     INVALID_PATH("invalid-path"),
@@ -62,23 +64,28 @@ data class ShowReport(
     /** The saved story file, relative to the repository root, or `null` when the story was rejected. */
     val file: String?,
     val errors: List<ReportItem>,
+    /** Advice for the author only. Warnings never reject a story or appear in reader UI. */
+    val warnings: List<ReportItem>,
     /** What the agent does next. */
     val next: String,
 ) {
     companion object {
-        fun accepted(storyId: String, file: String) = ShowReport(
+        fun accepted(storyId: String, file: String, warnings: List<ReportItem> = emptyList()) = ShowReport(
             status = ShowStatus.ACCEPTED,
             storyId = storyId,
             file = file,
             errors = emptyList(),
-            next = "Tell the developer that the story is in the Code Story tool window.",
+            warnings = warnings,
+            next = if (warnings.isEmpty()) "Tell the developer that the story is in the Code Story tool window."
+                else "Fix the warnings once, then call code_story_show with the whole story and storyId \"$storyId\" to replace it.",
         )
 
-        fun rejected(errors: List<ReportItem>) = ShowReport(
+        fun rejected(errors: List<ReportItem>, warnings: List<ReportItem> = emptyList()) = ShowReport(
             status = ShowStatus.REJECTED,
             storyId = null,
             file = null,
             errors = errors,
+            warnings = warnings,
             next = "Nothing was saved. Fix all errors, then call code_story_show again with the whole story.",
         )
     }

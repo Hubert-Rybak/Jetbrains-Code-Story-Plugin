@@ -89,6 +89,13 @@ class StoryPlayer(private val project: Project) : Disposable {
     }
 
     fun restart(stored: StoredStory) = play(stored, 0)
+    /** Replace all presentation objects, even when the new current step is text-only. */
+    fun reload(stored: StoredStory) {
+        ApplicationManager.getApplication().assertIsDispatchThread()
+        val index = stepIndex.coerceAtMost(stored.story.steps.lastIndex)
+        clearPresentation()
+        play(stored, index)
+    }
     fun previous() { currentStory?.takeIf { stepIndex > 0 }?.let { play(it, stepIndex - 1) } }
     fun next() { currentStory?.let { if (isLastStep) stop() else play(it, stepIndex + 1) } }
 

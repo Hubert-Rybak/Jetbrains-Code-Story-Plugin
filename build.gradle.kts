@@ -72,3 +72,7 @@ intellijPlatformTesting.runIde.register("runLocalIde") {
 tasks.jar {
     from(files("LICENSE", "THIRD_PARTY_NOTICES.md")) { into("META-INF") }
 }
+
+tasks.processResources {
+    from("skills/code-story/references/guide.md") { into("code-story") }
+}

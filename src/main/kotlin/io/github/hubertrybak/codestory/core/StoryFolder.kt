@@ -13,9 +13,10 @@ import java.time.ZoneOffset
 import java.util.Locale
 import java.util.UUID
 
-/** A story file in `.codestory/local/`. Story paths are relative to [root]. */
+/** A local or shared story file. Story paths are relative to [root]. */
 class StoredStory(val id: String, val root: Path, val file: Path, val story: Story, val modified: FileTime) {
     val date: String get() = checkNotNull(story.createdAt).atOffset(ZoneOffset.UTC).toLocalDate().toString()
+    val folder: String get() = file.parent.fileName.toString()
 }
 
 /**
@@ -24,27 +25,31 @@ class StoredStory(val id: String, val root: Path, val file: Path, val story: Sto
  */
 class StoryFolder(val root: Path) {
     val localDir: Path = root.resolve(CODESTORY_DIR).resolve(LOCAL_DIR)
+    val sharedDir: Path = root.resolve(CODESTORY_DIR).resolve(SHARED_DIR)
 
     sealed interface SaveResult {
         class Saved(val id: String, val file: Path, val story: Story) : SaveResult
         class TooLarge(val bytes: Int) : SaveResult
+        class NotFound(val id: String) : SaveResult
     }
 
     /**
      * Saves a new story as `<yyyy-MM-dd>-<slug>.story.json`, with a number suffix when the name
      * exists. The file is written to a temporary file first and then renamed, so a reader never
-     * sees a partial story.
+     * sees a partial story. With [storyId], replaces that story in its current folder while
+     * preserving its ID and creation metadata. An unknown ID saves nothing.
      */
-    fun save(story: Story, createdAt: Instant, git: StoryGit = StoryGit()): SaveResult = synchronized(saveLock) {
+    fun save(story: Story, createdAt: Instant, git: StoryGit = StoryGit(), storyId: String? = null): SaveResult = synchronized(saveLock) {
+        val existing = if (storyId == null) null else get(storyId) ?: return SaveResult.NotFound(storyId)
         val date = createdAt.atOffset(ZoneOffset.UTC).toLocalDate()
         val baseId = "$date-${slug(story.title)}"
-        val id = generateSequence(1) { it + 1 }
+        val id = existing?.id ?: generateSequence(1) { it + 1 }
             .map { if (it == 1) baseId else "$baseId-$it" }
             .first { !exists(it) }
         val assignedIds = story.steps.mapNotNull { it.id }.toMutableSet()
         val saved = story.copy(
-            createdAt = createdAt,
-            git = git,
+            createdAt = existing?.story?.createdAt ?: createdAt,
+            git = existing?.story?.git ?: git,
             steps = story.steps.map { step ->
                 if (step.id != null) step else {
                     val stepId = generateSequence { UUID.randomUUID().toString() }.first { assignedIds.add(it) }
@@ -55,19 +60,30 @@ class StoryFolder(val root: Path) {
         val bytes = StoryFormat.encode(saved, id).toByteArray(Charsets.UTF_8)
         if (bytes.size > StoryLimits.MAX_FILE_BYTES) return SaveResult.TooLarge(bytes.size)
 
-        Files.createDirectories(localDir)
-        ensureGitIgnore()
-        val file = localDir.resolve(id + StoryFormat.FILE_SUFFIX)
+        val file = existing?.file ?: localDir.resolve(id + StoryFormat.FILE_SUFFIX)
+        if (hasStorageSymlink(file)) throw IOException("The story folder or file is a symbolic link.")
+        Files.createDirectories(file.parent)
+        if (file.parent == localDir) ensureGitIgnore()
         writeAtomically(file, bytes)
         SaveResult.Saved(id, file, saved)
     }
 
-    /** Stories in `.codestory/local/`, newest first. Files that cannot be read are skipped. */
+    /** Local and shared stories, newest first. Files that cannot be read are skipped. */
     fun list(onSkipped: (Path, String) -> Unit = { _, _ -> }): List<StoredStory> {
-        if (!Files.isDirectory(localDir)) return emptyList()
-        val files = Files.newDirectoryStream(localDir, "*" + StoryFormat.FILE_SUFFIX).use { it.toList() }
+        val files = listOf(localDir, sharedDir).flatMap { dir ->
+            if (Files.isSymbolicLink(root.resolve(CODESTORY_DIR)) || Files.isSymbolicLink(dir) || !Files.isDirectory(dir)) emptyList()
+            else Files.newDirectoryStream(dir, "*" + StoryFormat.FILE_SUFFIX).use { it.toList() }
+        }
         return files.mapNotNull { file -> read(file, onSkipped) }
             .sortedWith(compareByDescending<StoredStory> { it.story.createdAt }.thenByDescending { it.id })
+    }
+
+    /** Finds an existing ID without interpreting agent input as a path. */
+    fun get(id: String): StoredStory? {
+        if (!isValidId(id)) return null
+        return listOf(localDir, sharedDir).firstNotNullOfOrNull { dir ->
+            read(dir.resolve(id + StoryFormat.FILE_SUFFIX)) { _, _ -> }
+        }
     }
 
     /** [file] relative to the root, with `/` between folders. */
@@ -75,6 +91,10 @@ class StoryFolder(val root: Path) {
 
     private fun read(file: Path, onSkipped: (Path, String) -> Unit): StoredStory? {
         try {
+            if (hasStorageSymlink(file)) {
+                onSkipped(file, "The story folder or file is a symbolic link.")
+                return null
+            }
             if (!Files.isRegularFile(file)) return null
             val size = Files.size(file)
             if (size > StoryLimits.MAX_FILE_BYTES) {
@@ -100,6 +120,9 @@ class StoryFolder(val root: Path) {
         }
     }
 
+    private fun hasStorageSymlink(file: Path): Boolean =
+        listOf(root.resolve(CODESTORY_DIR), file.parent, file).any { Files.isSymbolicLink(it) }
+
     /** Story IDs stay unique in both story folders, so sharing a story never changes its ID. */
     private fun exists(id: String): Boolean = listOf(LOCAL_DIR, SHARED_DIR).any {
         Files.exists(root.resolve(CODESTORY_DIR).resolve(it).resolve(id + StoryFormat.FILE_SUFFIX))
@@ -118,7 +141,7 @@ class StoryFolder(val root: Path) {
         try {
             Files.write(temp, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
             try {
-                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE)
+                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING)
             }
@@ -133,6 +156,9 @@ class StoryFolder(val root: Path) {
         const val SHARED_DIR = "shared"
         private const val MAX_SLUG_LENGTH = 60
         private val saveLock = Any()
+        private val storyIdPattern = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*")
+
+        fun isValidId(id: String): Boolean = storyIdPattern.matches(id)
 
         /** The story folder for a project: at the nearest Git repository root, or in the project folder. */
         fun forProject(projectDir: Path): StoryFolder = StoryFolder(findRoot(projectDir))

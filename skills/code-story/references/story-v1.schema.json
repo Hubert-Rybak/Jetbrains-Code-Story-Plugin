@@ -143,7 +143,7 @@
           "pattern": "\\S"
         },
         "comment": {
-          "description": "One idea in 1 to 3 short sentences in simple English. Text-only steps can introduce the subject or list what to check.",
+          "description": "One idea in 1 to 3 sentences, or one lead sentence and up to 4 bullet items; 60 words at most. Instructions have at most 20 words per sentence, descriptions 25. These writing limits produce agent warnings only. Text-only steps can introduce the subject or list what to check.",
           "type": "string",
           "minLength": 1,
           "pattern": "\\S"
