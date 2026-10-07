@@ -25,6 +25,13 @@ enum class ErrorCode(val code: String) {
     INVALID_LINE("invalid-line"),
     REVERSED_RANGE("reversed-range"),
     LINES_OUTSIDE_FILE("lines-outside-file"),
+    ANCHOR_NOT_FOUND("anchor-not-found"),
+    ANCHOR_AMBIGUOUS("anchor-ambiguous"),
+}
+
+/** Machine-readable codes of changes that the plugin made to keep a story. */
+enum class CorrectionCode(val code: String) {
+    LINES_SHIFTED("lines-shifted"),
 }
 
 @Serializable
@@ -41,7 +48,7 @@ data class ReportItem(
         fun storyTooLarge(bytes: Int) = ReportItem(
             null, ErrorCode.STORY_TOO_LARGE,
             "The story is ${(bytes + 1023) / 1024} KB. The limit is ${StoryLimits.MAX_FILE_BYTES / 1024} KB.",
-            "Make the comments shorter, or use fewer steps.",
+            "Make the comments shorter, point at fewer lines, or use fewer steps.",
         )
     }
 }
@@ -64,27 +71,41 @@ data class ShowReport(
     /** The saved story file, relative to the repository root, or `null` when the story was rejected. */
     val file: String?,
     val errors: List<ReportItem>,
+    /** Line numbers that the plugin corrected by means of the anchor text. Corrections never reject a story. */
+    val corrections: List<ReportItem>,
     /** Advice for the author only. Warnings never reject a story or appear in reader UI. */
     val warnings: List<ReportItem>,
     /** What the agent does next. */
     val next: String,
 ) {
     companion object {
-        fun accepted(storyId: String, file: String, warnings: List<ReportItem> = emptyList()) = ShowReport(
+        fun accepted(
+            storyId: String,
+            file: String,
+            warnings: List<ReportItem> = emptyList(),
+            corrections: List<ReportItem> = emptyList(),
+        ) = ShowReport(
             status = ShowStatus.ACCEPTED,
             storyId = storyId,
             file = file,
             errors = emptyList(),
+            corrections = corrections,
             warnings = warnings,
-            next = if (warnings.isEmpty()) "Tell the developer that the story is in the Code Story tool window."
-                else "Fix the warnings once, then call code_story_show with the whole story and storyId \"$storyId\" to replace it.",
+            next = when {
+                warnings.isNotEmpty() && corrections.isNotEmpty() ->
+                    "Fix the warnings once, then call code_story_show with the whole story, the corrected lines and storyId \"$storyId\" to replace it."
+                warnings.isNotEmpty() -> "Fix the warnings once, then call code_story_show with the whole story and storyId \"$storyId\" to replace it."
+                corrections.isNotEmpty() -> "The plugin corrected some line numbers. Tell the developer that the story is in the Code Story tool window."
+                else -> "Tell the developer that the story is in the Code Story tool window."
+            },
         )
 
-        fun rejected(errors: List<ReportItem>, warnings: List<ReportItem> = emptyList()) = ShowReport(
+        fun rejected(errors: List<ReportItem>, warnings: List<ReportItem> = emptyList(), corrections: List<ReportItem> = emptyList()) = ShowReport(
             status = ShowStatus.REJECTED,
             storyId = null,
             file = null,
             errors = errors,
+            corrections = corrections,
             warnings = warnings,
             next = "Nothing was saved. Fix all errors, then call code_story_show again with the whole story.",
         )

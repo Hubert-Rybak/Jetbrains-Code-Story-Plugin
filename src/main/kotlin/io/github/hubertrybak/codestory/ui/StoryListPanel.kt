@@ -15,6 +15,7 @@ import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.util.Condition
 import com.intellij.ui.ClickListener
 import com.intellij.ui.ColoredTreeCellRenderer
+import com.intellij.ui.JBColor
 import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.ScrollPaneFactory
@@ -26,6 +27,7 @@ import io.github.hubertrybak.codestory.CodeStoryService
 import io.github.hubertrybak.codestory.StoryListListener
 import io.github.hubertrybak.codestory.StoryGitMetadata
 import io.github.hubertrybak.codestory.core.Location
+import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryGit
 import io.github.hubertrybak.codestory.core.StoryType
@@ -276,6 +278,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
                 val git = item.stored.story.git
                 (git.branch ?: if (git.commit != null) "Detached HEAD" else null)
                     ?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
+                staleSteps(item.stored)?.let { append("  $it", WARNING) }
                 toolTipText = item.stored.id
             }
             is StepItem -> {
@@ -284,6 +287,11 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
                     SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else SimpleTextAttributes.REGULAR_ATTRIBUTES
                 append("${item.index + 1}. ${item.step.title}", attributes)
                 if (location != null) append("  ${location.file.substringAfterLast('/')}:${lines(location)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                when (item.stored.status(item.index)) {
+                    StepStatus.CODE_CHANGED -> append("  code changed", WARNING)
+                    StepStatus.LOST -> append("  lost", WARNING)
+                    StepStatus.OK, StepStatus.MOVED -> Unit
+                }
                 if (player.wasVisited(item.stored.id, item.index)) append("  ✓", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 toolTipText = location?.file
             }
@@ -292,4 +300,17 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
 
     private fun lines(location: Location): String =
         if (location.startLine == location.endLine) "${location.startLine}" else "${location.startLine}–${location.endLine}"
+
+    /** For example "1 lost, 2 code changed", or `null` when no step is lost or changed. */
+    private fun staleSteps(stored: StoredStory): String? {
+        val statuses = stored.story.steps.indices.map { stored.status(it) }
+        return listOfNotNull(
+            statuses.count { it == StepStatus.LOST }.takeIf { it > 0 }?.let { "$it lost" },
+            statuses.count { it == StepStatus.CODE_CHANGED }.takeIf { it > 0 }?.let { "$it code changed" },
+        ).joinToString(", ").ifEmpty { null }
+    }
+
+    private companion object {
+        val WARNING = SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, JBColor.namedColor("Label.warningForeground", JBColor(0xA35F00, 0xD9A343)))
+    }
 }

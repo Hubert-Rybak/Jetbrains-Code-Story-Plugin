@@ -53,22 +53,37 @@ Paths in steps are relative to its Git repository root, or the project folder wi
 Use `/` between folders. Line numbers start at 1 and include `endLine`. Absolute paths,
 `..`, and symbolic links outside the repository are rejected.
 
+Each location has `anchorText`: copy the exact text of line `startLine` from the file.
+Start each range at a line with code, for example a declaration, not at an empty line or
+a lone brace. The plugin compares `anchorText` with the line that the IDE shows, including
+unsaved edits. Indentation, trailing spaces and line endings do not matter. If the text is
+at another line within 20 lines, the plugin moves the range to that line and reports a
+correction, for example `Step 4: lines 120–131 changed to 123–134.` If the plugin cannot
+find the text there, it rejects the story. The plugin stores the code of each range, so it
+can find the code again when it moves and mark steps whose code changed.
+
 For a new story, call `code_story_show(story)` without `storyId`. For a revision:
 
 1. Call `code_story_list()` to find the ID. It lists local and shared stories with
-   their title, type, creation date, branch, folder and status. `ok` means the code
-   locations can be read; `lost` and `lostSteps` identify unavailable locations.
+   their title, type, creation date, branch, folder and status. `ok` means that every
+   step points at its code. `moved` means that the plugin found code at other lines and
+   updated them. `code-changed` means that the code in a range is different from the code
+   that the step explains. `lost` means that the plugin cannot find the code of a step.
+   `movedSteps`, `changedSteps` and `lostSteps` count the steps. Read the code again and
+   revise `code-changed` and `lost` steps.
 2. Call `code_story_get(storyId)` to read the full saved story.
 3. Keep the IDs of steps you retain. Call `code_story_show(story, storyId)` with the
    revised whole story. It replaces the same file, in the same local or shared folder.
    Its story ID and creation time, branch and commit stay the same. A playing story
    reloads at the same step number, or at the last step if it is now shorter.
 
-Read the report. It contains `status`, `storyId`, `file`, `errors`, `warnings` and `next`.
-Each error or warning has a 1-based step number (`null` for the whole story), a code,
-a message and a fix hint. Structural, file and size errors reject the whole story;
-nothing is saved. Writing checks and ranges longer than 30 lines are warnings only:
-the story is saved and plays. Warnings appear only in the agent report, never in reader UI.
+Read the report. It contains `status`, `storyId`, `file`, `errors`, `corrections`,
+`warnings` and `next`. Each error, correction or warning has a 1-based step number (`null`
+for the whole story), a code, a message and a fix hint. Structural, file, anchor and size
+errors reject the whole story; nothing is saved. Corrections keep the story: the saved
+story uses the corrected lines, so use them when you send the story again. Writing checks
+and ranges longer than 30 lines are warnings only: the story is saved and plays. Warnings
+appear only in the agent report, never in reader UI.
 
 Fix all reported errors and writing warnings once, then send the whole story again.
 For an accepted story, use the returned `storyId` on that second call so it replaces
@@ -82,11 +97,13 @@ Code Story tool window. Explain any remaining rejection if the story could not b
 The `story` parameter is a typed JSON object, not a JSON string. Supply `title`,
 `type`, `summary`, the original `request`, `author` (agent and model), and `steps`.
 Each step has `title`, `comment`, an optional stable `id`, and either one `location`
-object or no location. The plugin assigns IDs to new steps whose IDs are omitted.
+object or no location. A location has `file`, `startLine`, `endLine` and `anchorText`.
+The plugin assigns IDs to new steps whose IDs are omitted.
 `children` and `links` are reserved and ignored in v1; do not use them.
 
-The plugin adds `schemaVersion: 1`, the story `id`, `createdAt` in ISO 8601 and `git`
-(branch and commit, or null when unavailable). Do not supply creation metadata.
+The plugin adds `schemaVersion: 1`, the story `id`, `createdAt` in ISO 8601, `git`
+(branch and commit, or null when unavailable) and `rangeText`, the stored code of each
+range. Do not supply creation metadata or `rangeText`.
 Files are UTF-8 JSON, at most 256 KB. A new file is saved as
 `.codestory/local/<yyyy-MM-dd>-<slug>.story.json`, with a number suffix for collisions.
 The saved format is also described by `references/story-v1.schema.json` in the skill.
@@ -108,12 +125,22 @@ This example illustrates the format; verify paths and lines in the actual projec
     {
       "title": "The controller takes the request",
       "comment": "`PaymentController.Charge` checks the amount and calls the billing service.",
-      "location": { "file": "src/Payments/PaymentController.cs", "startLine": 42, "endLine": 57 }
+      "location": {
+        "file": "src/Payments/PaymentController.cs",
+        "startLine": 42,
+        "endLine": 57,
+        "anchorText": "public IActionResult Charge(ChargeRequest request)"
+      }
     },
     {
       "title": "Charge the card",
       "comment": "The billing service sends the amount to the payment provider and saves the result.",
-      "location": { "file": "src/Payments/BillingService.cs", "startLine": 20, "endLine": 35 }
+      "location": {
+        "file": "src/Payments/BillingService.cs",
+        "startLine": 20,
+        "endLine": 35,
+        "anchorText": "public ChargeResult Charge(Card card, decimal amount)"
+      }
     }
   ]
 }

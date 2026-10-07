@@ -2,21 +2,27 @@ package io.github.hubertrybak.codestory
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
+import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.messages.Topic
 import io.github.hubertrybak.codestory.core.ReportItem
 import io.github.hubertrybak.codestory.core.ErrorCode
 import io.github.hubertrybak.codestory.core.RootStoryFiles
 import io.github.hubertrybak.codestory.core.ShowReport
+import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
+import io.github.hubertrybak.codestory.core.StoryAnchors
+import io.github.hubertrybak.codestory.core.StoryFiles
 import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryListEntry
@@ -50,6 +56,9 @@ fun interface StoryListListener {
 @Service(Service.Level.PROJECT)
 class CodeStoryService(private val project: Project) {
 
+    /** Writes moved anchors in the order of the checks. */
+    private val anchorWriter = AppExecutorUtil.createBoundedApplicationPoolExecutor("Code Story anchors", 1)
+
     /** The story that an agent showed last. The tool window selects it when it opens. */
     @Volatile
     var lastShownStoryId: String? = null
@@ -70,69 +79,113 @@ class CodeStoryService(private val project: Project) {
         if (storyId != null && !StoryFolder.isValidId(storyId)) return ShowReport.rejected(listOf(
             ReportItem(null, ErrorCode.INVALID_STORY_ID, "The story ID is not valid.", "Use an ID returned by code_story_list."),
         ))
-        val unsaved = unsavedTexts()
-        val files = RootStoryFiles(folder.root) { path -> unsaved[realPath(path)] ?: TextFiles.readDisk(path) }
+        val (documents, live) = readAction { openDocuments() to AnchorTracker.getInstance(project).snapshot() }
+        val files = ideFiles(folder.root, documents.associate { (path, text) -> realPath(path) to text } + live?.texts.orEmpty())
         val checked = when (val result = StoryValidator(files).validate(story)) {
-            is ValidationResult.Invalid -> return ShowReport.rejected(result.errors)
-            is ValidationResult.Valid -> result.story
+            is ValidationResult.Invalid -> return ShowReport.rejected(result.errors, corrections = result.corrections)
+            is ValidationResult.Valid -> result
         }
-        val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(checked)
+        val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(checked.story)
         val git = currentGit(folder.root)
-        return when (val saved = folder.save(checked, Instant.now(), git, storyId)) {
-            is StoryFolder.SaveResult.TooLarge -> ShowReport.rejected(listOf(ReportItem.storyTooLarge(saved.bytes)), warnings)
+        return when (val saved = folder.save(checked.story, Instant.now(), git, storyId)) {
+            is StoryFolder.SaveResult.TooLarge -> ShowReport.rejected(listOf(ReportItem.storyTooLarge(saved.bytes)), warnings, checked.corrections)
             is StoryFolder.SaveResult.NotFound -> ShowReport.rejected(listOf(
                 ReportItem(null, ErrorCode.STORY_NOT_FOUND, "The story `${saved.id}` was not found.", "Call code_story_list to find the current story ID."),
-            ), warnings)
+            ), warnings, checked.corrections)
             is StoryFolder.SaveResult.Saved -> {
                 lastShownStoryId = saved.id
                 project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(saved.id)
                 startPlayback(StoredStory(saved.id, folder.root, saved.file, saved.story, Files.getLastModifiedTime(saved.file)), storyId != null)
-                ShowReport.accepted(saved.id, folder.relativePath(saved.file), warnings)
+                ShowReport.accepted(saved.id, folder.relativePath(saved.file), warnings, checked.corrections)
             }
         }
     }
 
-    /** The saved stories, newest first. */
-    fun stories(): List<StoredStory> = storyFolder().list { file, reason -> LOG.warn("Code Story skipped $file: $reason") }
-
-    /** Full saved story, including plugin-owned metadata and stable step IDs. */
-    fun get(storyId: String): JsonObject? = storyFolder().get(storyId)?.let {
-        Json.parseToJsonElement(StoryFormat.encode(it.story, it.id)).jsonObject
-    }
-
-    suspend fun list(): List<StoryListEntry> {
+    /**
+     * The saved stories, newest first, with the code of their steps found again: a story opens.
+     * Moved anchors are written back to local stories. Reads files, so call it in the background.
+     */
+    fun stories(): List<StoredStory> {
         val folder = storyFolder()
-        val unsaved = unsavedTexts()
-        val files = RootStoryFiles(folder.root) { path -> unsaved[realPath(path)] ?: TextFiles.readDisk(path) }
-        return stories().map { stored ->
-            val input = Json.parseToJsonElement(StoryFormat.encode(stored.story, stored.id))
-            val result = StoryValidator(files).validate(input)
-            val lost = if (result is ValidationResult.Invalid) result.errors.mapNotNull { it.step }.distinct().size else 0
-            StoryListEntry(stored.id, stored.story.title, stored.story.type, stored.date, stored.story.git.branch,
-                stored.folder, if (lost == 0) "ok" else "lost", lost)
-        }
+        val stored = folder.list { file, reason -> LOG.warn("Code Story skipped $file: $reason") }
+        if (stored.isEmpty()) return stored
+        val live = AnchorTracker.getInstance(project).snapshot()
+        val files = ideFiles(folder.root, live)
+        return stored.map { resolve(folder, it, files, live) }
     }
+
+    /** Full saved story, including plugin-owned metadata and stable step IDs, with its anchors checked. */
+    fun get(storyId: String): JsonObject? {
+        val folder = storyFolder()
+        val stored = folder.get(storyId) ?: return null
+        val live = AnchorTracker.getInstance(project).snapshot()
+        val resolved = resolve(folder, stored, ideFiles(folder.root, live), live)
+        return Json.parseToJsonElement(StoryFormat.encode(resolved.story, resolved.id)).jsonObject
+    }
+
+    fun list(): List<StoryListEntry> = stories().map(StoryListEntry::of)
 
     /** The current repository state; unavailable Git fields stay null. Call in the background. */
     fun currentGit(root: Path): StoryGit = StoryGitMetadata.EP.extensionList.firstOrNull()?.snapshot(project, root) ?: StoryGit()
 
-    /** Documents with unsaved edits, by real path: for these files, the IDE shows other text than the disk has. */
-    private suspend fun unsavedTexts(): Map<Path, CharSequence> {
-        val documents = readAction {
-            val manager = FileDocumentManager.getInstance()
-            manager.unsavedDocuments.mapNotNull { document ->
-                val file = manager.getFile(document) ?: return@mapNotNull null
-                file.fileSystem.getNioPath(file)?.let { it to document.immutableCharSequence }
-            }
-        }
-        return documents.associate { (path, text) -> realPath(path) to text }
+    /**
+     * The files under [root] as the IDE shows them: the text of open documents, including unsaved
+     * edits, before the text on disk. The documents of [live] markers give the text that their
+     * lines refer to.
+     */
+    fun ideFiles(root: Path, live: LiveSnapshot? = AnchorTracker.getInstance(project).snapshot()): StoryFiles {
+        val documents = ReadAction.compute<List<Pair<Path, CharSequence>>, RuntimeException> { openDocuments() }
+        return ideFiles(root, documents.associate { (path, text) -> realPath(path) to text } + live?.texts.orEmpty())
     }
 
-    private fun realPath(path: Path): Path = try {
-        path.toRealPath()
-    } catch (_: IOException) {
-        path.toAbsolutePath().normalize()
+    /**
+     * Saves the anchors that a check moved: [resolved] is [stored] after the check. Only local
+     * stories change; corrections for shared stories stay in memory. New lines, and steps that
+     * become or stop being lost or changed, also refresh the story list. Writes in the background.
+     */
+    fun anchorsChecked(stored: StoredStory, resolved: StoredStory) {
+        // The list shows lost and changed steps only, so it needs no refresh for moved ones.
+        fun shown(story: StoredStory, index: Int) = story.status(index).takeIf { it == StepStatus.LOST || it == StepStatus.CODE_CHANGED }
+        val unchanged = stored.story.steps.indices.all { shown(stored, it) == shown(resolved, it) }
+        if (resolved.story == stored.story && unchanged) return
+        anchorWriter.execute {
+            if (resolved.story != stored.story) saveAnchors(StoryFolder(stored.root), stored, resolved)
+            if (!project.isDisposed) project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(null)
+        }
     }
+
+    private fun resolve(folder: StoryFolder, stored: StoredStory, files: StoryFiles, live: LiveSnapshot?): StoredStory {
+        val ranges = live?.takeIf { it.storyId == stored.id }?.ranges.orEmpty()
+        val resolved = stored.resolved(StoryAnchors.resolve(stored.story, files, ranges))
+        if (resolved.story != stored.story) saveAnchors(folder, stored, resolved)
+        return resolved
+    }
+
+    private fun saveAnchors(folder: StoryFolder, stored: StoredStory, resolved: StoredStory) {
+        try {
+            folder.updateAnchors(stored.id, stored.story, resolved.story)
+        } catch (e: IOException) {
+            LOG.warn("Code Story cannot save the moved anchors of ${stored.id}", e)
+        }
+    }
+
+    private fun ideFiles(root: Path, texts: Map<Path, CharSequence>): StoryFiles {
+        // Many steps and stories point at the same files.
+        val disk = HashMap<Path, CharSequence>()
+        return RootStoryFiles(root) { path -> texts[realPath(path)] ?: disk.getOrPut(path) { TextFiles.readDisk(path) } }
+    }
+
+    /** Documents with unsaved edits or in an editor: for these files, the IDE can show other text than the disk has. */
+    private fun openDocuments(): List<Pair<Path, CharSequence>> {
+        val manager = FileDocumentManager.getInstance()
+        val documents = (manager.unsavedDocuments.asSequence() + EditorFactory.getInstance().allEditors.asSequence().map { it.document }).distinct()
+        return documents.mapNotNull { document ->
+            val file = manager.getFile(document) ?: return@mapNotNull null
+            file.fileSystem.getNioPath(file)?.let { it to document.immutableCharSequence }
+        }.toList()
+    }
+
+    private fun realPath(path: Path): Path = AnchorTracker.realPath(path)
 
     private fun startPlayback(stored: StoredStory, replacing: Boolean) {
         ApplicationManager.getApplication().invokeLater(

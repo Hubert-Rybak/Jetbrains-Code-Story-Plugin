@@ -78,4 +78,6 @@ internal class LocationShape(
     val startLine: Int,
     @property:McpDescription("The last line of the range. The range includes this line.")
     val endLine: Int,
+    @property:McpDescription("The exact text of line startLine, copied from the file. Indentation and trailing spaces do not matter. The IDE uses it to check the lines and to find the code again after it moves.")
+    val anchorText: String,
 )

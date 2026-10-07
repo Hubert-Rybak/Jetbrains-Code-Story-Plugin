@@ -18,6 +18,7 @@ object StoryJson {
         author: String = """{"agent": "Test Agent", "model": "test-model"}""",
     ): String = """{"title": $title, "type": $type, "summary": $summary, "request": $request, "author": $author, "steps": [${steps.joinToString(", ")}]}"""
 
+    /** The default anchor is the text of the start line in the fixture files, where line N is `line N`. */
     fun step(
         file: String = "\"src/App.kt\"",
         start: String = "2",
@@ -25,7 +26,8 @@ object StoryJson {
         title: String = "\"Entry point\"",
         comment: String = "\"The app starts here.\"",
         id: String? = null,
-        location: String? = """{"file": $file, "startLine": $start, "endLine": $end}""",
+        anchor: String? = quoted("line ${start.toIntOrNull() ?: 1}"),
+        location: String? = """{"file": $file, "startLine": $start, "endLine": $end${if (anchor == null) "" else ", \"anchorText\": $anchor"}}""",
     ): String = """{${if (id == null) "" else "\"id\": $id, "}"title": $title, "comment": $comment${if (location == null) "" else ", \"location\": $location"}}"""
 
     fun withoutField(json: String, field: String): String = JsonObject(Json.parseToJsonElement(json).jsonObject - field).toString()
@@ -41,6 +43,8 @@ class FixtureFiles(val root: Path, val outside: Path) {
     init {
         write("src/App.kt", (1..10).joinToString("\n", postfix = "\n") { "line $it" })
         write("src/Windows.kt", "one\r\ntwo\r\nthree\r\n")
+        write("src/Long.kt", (1..60).joinToString("\n", postfix = "\n") { "line $it" })
+        write("src/Twice.kt", "fun a() {\n    return\n}\n\nfun b() {\n    return\n}\n")
         write("src/empty.txt", "")
         Files.createDirectories(root.resolve("docs"))
         Files.write(root.resolve("src/logo.png"), byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0, 0, 0, 0x0D))

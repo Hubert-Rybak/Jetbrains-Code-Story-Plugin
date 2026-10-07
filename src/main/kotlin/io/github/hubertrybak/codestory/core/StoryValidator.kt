@@ -10,21 +10,26 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 
 sealed interface ValidationResult {
-    class Valid(val story: Story) : ValidationResult
-    class Invalid(val errors: List<ReportItem>) : ValidationResult
+    /** [corrections] lists the line numbers that the anchor check corrected. */
+    class Valid(val story: Story, val corrections: List<ReportItem> = emptyList()) : ValidationResult
+    class Invalid(val errors: List<ReportItem>, val corrections: List<ReportItem> = emptyList()) : ValidationResult
 }
 
 /**
  * Checks a story as JSON. Any error rejects the whole story, and the result lists every error
- * that the checks find. Without [files], only the structure is checked. The size limit applies
+ * that the checks find. Without [files], only the structure is checked. With [files], the anchor
+ * text of each location must be at its start line or nearby: a match nearby moves the range and
+ * adds a correction, and the code of the range is stored in the story. The size limit applies
  * to the saved file, so [StoryFolder.save] checks it.
  */
 class StoryValidator(private val files: StoryFiles?, private val readMetadata: Boolean = false) {
 
     fun validate(input: JsonElement): ValidationResult {
         val errors = mutableListOf<ReportItem>()
-        val story = Checker(errors).story(input)
-        return if (story != null && errors.isEmpty()) ValidationResult.Valid(story) else ValidationResult.Invalid(errors)
+        val corrections = mutableListOf<ReportItem>()
+        val story = Checker(errors, corrections).story(input)
+        return if (story != null && errors.isEmpty()) ValidationResult.Valid(story, corrections)
+            else ValidationResult.Invalid(errors, corrections)
     }
 
     private class Owner(val step: Int?) {
@@ -32,7 +37,7 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
         val where = if (step == null) "In the story" else "In step $step"
     }
 
-    private inner class Checker(private val errors: MutableList<ReportItem>) {
+    private inner class Checker(private val errors: MutableList<ReportItem>, private val corrections: MutableList<ReportItem>) {
 
         fun story(input: JsonElement): Story? {
             val owner = Owner(null)
@@ -145,6 +150,9 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             val file = text(location, "file", owner, FILE_HINT, label = "location.file")?.let { path(owner, it) }
             val start = line(location, "startLine", owner, START_LINE_HINT)
             val end = line(location, "endLine", owner, END_LINE_HINT)
+            val anchorText = anchorText(owner, location)
+            // The plugin stores the code of the range itself; an agent cannot set it.
+            val rangeText = if (readMetadata) storedCode(owner, location) else null
             val reversed = start != null && end != null && end < start
             if (reversed) {
                 error(
@@ -155,22 +163,79 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             }
             if (file == null) return null
             val found = if (files == null) null else lookUp(owner, file) ?: return null
-            if (start == null || end == null || reversed) return null
-            if (found == null) return Location(file, start, end)
-            val lineCount = TextFiles.lineCount(found.text)
-            if (end > lineCount) {
-                return if (lineCount == 0) {
-                    error(owner, ErrorCode.LINES_OUTSIDE_FILE, "${owner.where}, the file `${quote(file)}` is empty.", "Point the step at a file that has code.")
-                } else {
+            if (start == null || end == null || reversed || (anchorText == null && !readMetadata)) return null
+            if (found == null) return Location(file, start, end, anchorText, rangeText)
+            val lines = TextFiles.lines(found.text)
+            if (lines.isEmpty()) {
+                return error(owner, ErrorCode.LINES_OUTSIDE_FILE, "${owner.where}, the file `${quote(file)}` is empty.", "Point the step at a file that has code.")
+            }
+            // A story file without anchors keeps its lines.
+            val first = if (anchorText == null) start else anchoredStart(owner, file, lines, start, end, anchorText) ?: return null
+            val last = first + (end - start)
+            if (last > lines.size) {
+                return if (first == start) outside(owner, file, start, end, lines.size) else error(
+                    owner, ErrorCode.LINES_OUTSIDE_FILE,
+                    "${owner.where}, `location.anchorText` is at line $first, so the range ends at line $last. `${quote(file)}` has ${lines.size} lines.",
+                    "Read the file again. Then set `location.startLine` and `location.endLine` to the first and the last line of the range.",
+                )
+            }
+            if (first != start) {
+                corrections += ReportItem(
+                    owner.step, CorrectionCode.LINES_SHIFTED.code,
+                    "Step ${owner.step}: ${lineRange(start, end)} changed to ${if (first == last) "$first" else "$first–$last"}.",
+                    "`location.anchorText` is at line $first, not at line $start. The saved story uses the corrected lines.",
+                )
+            }
+            val code = if (anchorText == null) rangeText else AnchorPolicy.rangeText(lines, first, last)
+            // The real path keeps the letter case of the file system and matches Git.
+            return Location(found.path, first, last, anchorText, code)
+        }
+
+        /** The first line of the range: where the anchor text is, at the given line or nearby. `null` after an error. */
+        private fun anchoredStart(owner: Owner, file: String, lines: List<String>, start: Int, end: Int, anchorText: String): Int? =
+            when (val verification = AnchorPolicy.verify(lines, start, anchorText)) {
+                AnchorPolicy.Verification.InPlace -> start
+                is AnchorPolicy.Verification.Shifted -> verification.startLine
+                is AnchorPolicy.Verification.Ambiguous -> error(
+                    owner, ErrorCode.ANCHOR_AMBIGUOUS,
+                    "${owner.where}, `location.anchorText` is not at line $start of `${quote(file)}`. " +
+                        "It is at lines ${verification.startLines.joinToString(" and ")}, at the same distance.",
+                    "Read the file again and set `location.startLine` to the first line of the range.",
+                )
+                AnchorPolicy.Verification.NotFound -> if (start > lines.size) outside(owner, file, start, end, lines.size) else {
+                    val actual = lines[start - 1].trim()
                     error(
-                        owner, ErrorCode.LINES_OUTSIDE_FILE,
-                        "${owner.where}, lines $start-$end are outside `${quote(file)}`. The file has $lineCount lines.",
-                        "Read the file again and use line numbers from 1 to $lineCount.",
+                        owner, ErrorCode.ANCHOR_NOT_FOUND,
+                        "${owner.where}, `location.anchorText` is not at line $start of `${quote(file)}` or within ${AnchorPolicy.NEARBY_LINES} lines of it. " +
+                            if (actual.isEmpty()) "Line $start is empty." else "Line $start is `${quote(actual)}`.",
+                        "Read the file again. Set `location.startLine` to the first line of the range, and copy that line into `location.anchorText`.",
                     )
                 }
             }
-            // The real path keeps the letter case of the file system and matches Git.
-            return Location(found.path, start, end)
+
+        private fun outside(owner: Owner, file: String, start: Int, end: Int, lineCount: Int): Nothing? = error(
+            owner, ErrorCode.LINES_OUTSIDE_FILE,
+            "${owner.where}, lines $start-$end are outside `${quote(file)}`. The file has $lineCount lines.",
+            "Read the file again and use line numbers from 1 to $lineCount.",
+        )
+
+        private fun anchorText(owner: Owner, location: JsonObject): String? {
+            val label = "location.anchorText"
+            // An agent must send the anchor text. Story files saved without anchors can still be read.
+            val text = if (readMetadata) nullableText(location, "anchorText", owner, ANCHOR_HINT, label)
+                else text(location, "anchorText", owner, ANCHOR_HINT, label)
+            if (text == null || text.none { it == '\n' || it == '\r' }) return text
+            return error(owner, ErrorCode.INVALID_VALUE, "${owner.where}, `$label` has more than one line.", "Copy only the text of line `location.startLine` into `$label`.")
+        }
+
+        /** The code of the range as the plugin stored it, with indentation and empty lines. */
+        private fun storedCode(owner: Owner, location: JsonObject): String? {
+            val element = location["rangeText"]
+            return when {
+                element == null || element is JsonNull -> null
+                element is JsonPrimitive && element.isString -> element.content
+                else -> error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `location.rangeText` must be text.", "Remove `location.rangeText`. The plugin stores the code of the range.")
+            }
         }
 
         private fun path(owner: Owner, raw: String): String? = when (val result = StoryPaths.normalize(raw)) {
@@ -239,12 +304,15 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
         private const val STEP_HINT = "Send each step as an object with `title`, `comment` and an optional `location`."
         private const val STEP_TITLE_HINT = "Give the step a short `title` (8 words or fewer)."
         private const val COMMENT_HINT = "Add a `comment` that explains the code of the step in 1 to 3 short sentences."
-        private const val LOCATION_HINT = "Add a `location` with `file`, `startLine` and `endLine`."
+        private const val LOCATION_HINT = "Add a `location` with `file`, `startLine`, `endLine` and `anchorText`."
+        private const val ANCHOR_HINT = "Copy the exact text of line `location.startLine` into `location.anchorText`. Start the range at a line with code."
         private const val FILE_HINT = "Set `location.file` to the path of the file, relative to the repository root."
         private const val START_LINE_HINT = "Set `location.startLine` to the first line of the range. The first line of a file is line 1."
         private const val END_LINE_HINT = "Set `location.endLine` to the last line of the range. The range includes this line."
         private const val RELATIVE_PATH_HINT = "Use a path relative to the repository root, with `/` between folders, for example `src/App.kt`."
 
         private fun quote(text: String): String = if (text.length <= MAX_QUOTE) text else text.take(MAX_QUOTE) + "…"
+
+        private fun lineRange(start: Int, end: Int): String = if (start == end) "line $start" else "lines $start–$end"
     }
 }

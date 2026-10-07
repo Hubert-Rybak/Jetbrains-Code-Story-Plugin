@@ -12,9 +12,12 @@ import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.util.messages.Topic
+import io.github.hubertrybak.codestory.AnchorTracker
 import io.github.hubertrybak.codestory.CodeStoryService
+import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
 
 @Service(Service.Level.PROJECT)
@@ -38,7 +41,10 @@ fun interface StoryPlaybackListener {
     }
 }
 
-/** All reader controls call this one project player, on the EDT. */
+/**
+ * All reader controls call this one project player, on the EDT. Each play checks the anchors of
+ * the story, so [currentStory] has the current lines and step statuses.
+ */
 @Service(Service.Level.PROJECT)
 class StoryPlayer(private val project: Project) : Disposable {
     var currentStory: StoredStory? = null
@@ -60,31 +66,34 @@ class StoryPlayer(private val project: Project) : Disposable {
     /** Without an explicit index, Play resumes the position saved in this IDE's workspace. */
     fun play(stored: StoredStory, index: Int? = null) {
         ApplicationManager.getApplication().assertIsDispatchThread()
+        if (currentStory?.id != stored.id) syncAnchors()
         val target = (index ?: project.service<StoryReadingPosition>().state.steps[stored.id] ?: 0)
             .coerceIn(stored.story.steps.indices)
-        val step = stored.story.steps[target]
-        val location = step.location
-        if (location != null) {
+        // The anchor check reads the file as the IDE has it, so refresh it from disk first.
+        stored.story.steps[target].location?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(stored.root.resolve(it.file)) }
+        val resolved = checkAnchors(stored)
+        val location = resolved.story.steps[target].location
+        // A lost step plays at its stored lines. When its file cannot open, it plays like a text-only step.
+        val editor = location?.let {
             clearPresentation()
-            val editor = StepNavigator.getInstance(project).open(stored.root, location)
-            if (editor == null) {
-                currentStory = null
-                changed()
-                NotificationGroupManager.getInstance().getNotificationGroup(StoryListPanel.NOTIFICATION_GROUP)
-                    .createNotification("Code Story cannot open ${location.file}.", NotificationType.WARNING).notify(project)
-                return
-            }
-            presentation = StepPresentation(project, editor, stored, target, this).also { Disposer.register(this, it) }
+            StepNavigator.getInstance(project).open(resolved.root, it)
+        }
+        if (location != null && editor == null && resolved.status(target) != StepStatus.LOST) {
+            NotificationGroupManager.getInstance().getNotificationGroup(StoryListPanel.NOTIFICATION_GROUP)
+                .createNotification("Code Story cannot open ${location.file}.", NotificationType.WARNING).notify(project)
+        }
+        if (editor != null) {
+            presentation = StepPresentation(project, editor, resolved, target, this).also { Disposer.register(this, it) }
         } else {
             presentation?.dismissCard()
         }
-        currentStory = stored
+        currentStory = resolved
         stepIndex = target
         project.service<StoryReadingPosition>().state.steps[stored.id] = target
         visited.getOrPut(stored.id) { mutableSetOf() }.add(target)
         playbackVersion++
         changed()
-        if (location != null) presentation!!.showCard()
+        if (editor != null) presentation!!.showCard()
         else ToolWindowManager.getInstance(project).getToolWindow(CodeStoryService.TOOL_WINDOW_ID)?.show()
     }
 
@@ -101,6 +110,7 @@ class StoryPlayer(private val project: Project) : Disposable {
 
     fun stop() {
         ApplicationManager.getApplication().assertIsDispatchThread()
+        syncAnchors()
         clearPresentation()
         currentStory = null
         playbackVersion++
@@ -108,6 +118,21 @@ class StoryPlayer(private val project: Project) : Disposable {
     }
 
     internal fun changed() = project.messageBus.syncPublisher(StoryPlaybackListener.TOPIC).playbackChanged()
+
+    /** Finds the code of every step, following live markers, and saves moved anchors of a local story. */
+    private fun checkAnchors(stored: StoredStory): StoredStory {
+        val service = CodeStoryService.getInstance(project)
+        val resolved = AnchorTracker.getInstance(project).track(stored, service.ideFiles(stored.root))
+        service.anchorsChecked(stored, resolved)
+        return resolved
+    }
+
+    /** Keeps what the live markers of the current story followed, then removes them. */
+    private fun syncAnchors() {
+        if (project.isDisposed) return
+        currentStory?.let { checkAnchors(it) }
+        AnchorTracker.getInstance(project).release()
+    }
 
     private fun clearPresentation() {
         presentation?.let { Disposer.dispose(it) }

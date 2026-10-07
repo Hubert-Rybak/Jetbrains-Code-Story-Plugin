@@ -100,5 +100,30 @@ and dark themes, including narrow and split editors.
       Next Step / Previous Step / Stop Story. Change each shortcut in Keymap
       and confirm that the new shortcut works.
 
+## Anchoring
+
+Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).
+
+- [ ] A story whose start line is a few lines off is accepted. The report lists
+      the correction, and the step opens at the right code.
+- [ ] A story whose anchor text is not near its start line is rejected with
+      `anchor-not-found`, and nothing is saved.
+- [ ] While a story plays, add and remove lines above the current and later
+      steps, in the editor and from outside the IDE. Prev and Next open the
+      right lines, and the card and highlight stay on the range.
+- [ ] While a story plays, edit the code of a later step, including its first
+      line, then play that step. The tree shows "code changed" for the step,
+      and the card shows a note.
+- [ ] With no story playing, edit the code inside a step's range (not its first
+      line) and click Refresh. The step shows "code changed".
+- [ ] Delete the code of a step. The tree shows "lost"; the step plays at its
+      stored lines, and the card warns "The code changed. This step can be wrong."
+- [ ] The story row shows the number of lost and changed steps, and
+      `code_story_list` reports the same status.
+- [ ] Moved lines are saved in a local story file. A shared story file does not
+      change (`git status` stays clean), but its steps still open at the moved code.
+- [ ] After `git checkout` of another branch, stories find moved code again, and
+      steps whose code is gone are lost.
+
 After the tag workflow finishes, download the release asset and repeat
 the install and open checks in a fresh test profile.

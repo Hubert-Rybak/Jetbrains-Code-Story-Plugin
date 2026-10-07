@@ -191,6 +191,26 @@ class StoryFolderTest {
     }
 
     @Test
+    fun `moved anchors are written only into the local story that was checked`() {
+        val folder = folder()
+        val first = saved(folder.save(story, date))
+        val moved = first.story.copy(steps = first.story.steps.map { it.copy(location = it.location!!.copy(startLine = 5, endLine = 7)) })
+
+        assertTrue(folder.updateAnchors(first.id, first.story, moved))
+        assertEquals(StoryFormat.encode(moved, first.id), Files.readString(first.file))
+        // The file now holds another version, for example a revision by an agent.
+        assertFalse(folder.updateAnchors(first.id, first.story, moved.copy(title = "Old check")))
+        assertEquals(moved, folder.get(first.id)!!.story)
+        assertFalse(folder.updateAnchors("2026-10-05-missing", first.story, moved))
+
+        Files.createDirectories(folder.sharedDir)
+        val shared = Files.move(first.file, folder.sharedDir.resolve(first.file.fileName))
+        val before = Files.readString(shared)
+        assertFalse(folder.updateAnchors(first.id, moved, first.story))
+        assertEquals(before, Files.readString(shared))
+    }
+
+    @Test
     fun `unknown and unsafe IDs cannot create or read files`() {
         val folder = folder()
         for (id in listOf("2026-10-05-missing", "../outside", "/tmp/story", "C:\\outside", "2026-10-05-a/../../outside")) {
