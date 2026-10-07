@@ -75,4 +75,8 @@ tasks.jar {
 
 tasks.processResources {
     from("skills/code-story/references/guide.md") { into("code-story") }
+    // The guide names the installed version; the IDE's plugin lookups are internal API from 2026.2.
+    val pluginVersion = project.version.toString()
+    inputs.property("pluginVersion", pluginVersion)
+    filesMatching("code-story/version.txt") { expand("version" to pluginVersion) }
 }
