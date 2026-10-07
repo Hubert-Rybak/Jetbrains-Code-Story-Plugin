@@ -85,9 +85,14 @@ class CodeStoryService(private val project: Project) {
             is ValidationResult.Invalid -> return ShowReport.rejected(result.errors, corrections = result.corrections)
             is ValidationResult.Valid -> result
         }
-        val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(checked.story)
+        // The plugin saves the commit that the base names, so `HEAD` keeps its meaning after a commit.
+        val baseRef = checked.story.baseRef
+        val base = baseRef?.let { StoryChangeInfo.getInstance(project).baseCommit(folder.root, it) }
+        val warnings = listOfNotNull(if (baseRef != null && base == null) ReportItem.unknownBaseRef(baseRef) else null) +
+            StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(checked.story)
+        val story = checked.story.copy(baseRef = base ?: baseRef)
         val git = currentGit(folder.root)
-        return when (val saved = folder.save(checked.story, Instant.now(), git, storyId)) {
+        return when (val saved = folder.save(story, Instant.now(), git, storyId)) {
             is StoryFolder.SaveResult.TooLarge -> ShowReport.rejected(listOf(ReportItem.storyTooLarge(saved.bytes)), warnings, checked.corrections)
             is StoryFolder.SaveResult.NotFound -> ShowReport.rejected(listOf(
                 ReportItem(null, ErrorCode.STORY_NOT_FOUND, "The story `${saved.id}` was not found.", "Call code_story_list to find the current story ID."),

@@ -34,6 +34,11 @@ enum class CorrectionCode(val code: String) {
     LINES_SHIFTED("lines-shifted"),
 }
 
+/** Machine-readable codes of warnings about the story's Git data. Writing warnings have a [WarningCode]. */
+enum class GitWarningCode(val code: String) {
+    UNKNOWN_BASE_REF("unknown-base-ref"),
+}
+
 @Serializable
 data class ReportItem(
     /** The 1-based step number, or `null` for a problem of the whole story. */
@@ -45,6 +50,12 @@ data class ReportItem(
     constructor(step: Int?, code: ErrorCode, message: String, hint: String) : this(step, code.code, message, hint)
 
     companion object {
+        fun unknownBaseRef(baseRef: String) = ReportItem(
+            null, GitWarningCode.UNKNOWN_BASE_REF.code,
+            "Git does not know the `baseRef` `${StoryValidator.quote(baseRef)}`. The story shows no change information.",
+            "Set `baseRef` to the commit before the change, or to `HEAD` for uncommitted work. Omit it for a story that is not about a change.",
+        )
+
         fun storyTooLarge(bytes: Int) = ReportItem(
             null, ErrorCode.STORY_TOO_LARGE,
             "The story is ${(bytes + 1023) / 1024} KB. The limit is ${StoryLimits.MAX_FILE_BYTES / 1024} KB.",

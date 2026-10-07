@@ -13,6 +13,18 @@ interface StoryGitMetadata {
 
     fun subscribe(project: Project, disposable: Disposable, changed: () -> Unit)
 
+    /**
+     * The full SHA of the commit that [revision] names in the repository at [root], or `null` when
+     * Git does not know it. Call on a background thread.
+     */
+    fun commit(project: Project, root: Path, revision: String): String?
+
+    /**
+     * The content of [path], relative to [root], at [commit]: a full SHA from [commit]. `null` when
+     * the file is not in that commit. Call on a background thread.
+     */
+    fun fileAt(project: Project, root: Path, commit: String, path: String): ByteArray?
+
     companion object {
         val EP: ExtensionPointName<StoryGitMetadata> = ExtensionPointName.create("io.github.hubertrybak.codestory.gitMetadata")
     }

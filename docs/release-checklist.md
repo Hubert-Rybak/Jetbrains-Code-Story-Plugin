@@ -125,5 +125,23 @@ Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).
 - [ ] After `git checkout` of another branch, stories find moved code again, and
       steps whose code is gone are lost.
 
+## Change information
+
+Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).
+
+- [ ] Ask the agent for a story about uncommitted work. The saved story has
+      `baseRef` set to the full SHA of `HEAD`, and the details show the diff base.
+- [ ] Steps on new code show **A**, steps on changed code show **M**, and steps
+      on unchanged code show no badge. The badges stay the same after a commit.
+- [ ] **Show diff** in the step details and in the context menu opens the IDE
+      diff viewer with the base revision against the current file, at the step's
+      lines. A file that is new since the base has an empty left side.
+- [ ] A story with a `baseRef` that Git does not know is saved with an
+      `unknown-base-ref` warning, and shows no badges and no **Show diff**.
+- [ ] Exploration and bug-trace stories have no `baseRef`, no badges and no
+      **Show diff**.
+- [ ] With the Git plugin disabled, a story with `baseRef` saves and plays
+      without badges, **Show diff** or errors in the IDE log.
+
 After the tag workflow finishes, download the release asset and repeat
 the install and open checks in a fresh test profile.

@@ -41,6 +41,8 @@ internal class SavedStoryShape(
     val author: AuthorShape,
     val createdAt: String,
     val git: GitShape,
+    /** The full commit SHA of the base of a story about a change, or the value that the agent sent when Git did not know it. */
+    val baseRef: String? = null,
     val steps: List<SavedStepShape>,
 )
 

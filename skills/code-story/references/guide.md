@@ -72,10 +72,11 @@ For a new story, call `code_story_show(story)` without `storyId`. For a revision
    `movedSteps`, `changedSteps` and `lostSteps` count the steps. Read the code again and
    revise `code-changed` and `lost` steps.
 2. Call `code_story_get(storyId)` to read the full saved story.
-3. Keep the IDs of steps you retain. Call `code_story_show(story, storyId)` with the
-   revised whole story. It replaces the same file, in the same local or shared folder.
-   Its story ID and creation time, branch and commit stay the same. A playing story
-   reloads at the same step number, or at the last step if it is now shorter.
+3. Keep the IDs of steps you retain, and keep the saved `baseRef`. Call
+   `code_story_show(story, storyId)` with the revised whole story. It replaces the same
+   file, in the same local or shared folder. Its story ID and creation time, branch and
+   commit stay the same. A playing story reloads at the same step number, or at the last
+   step if it is now shorter.
 
 Read the report. It contains `status`, `storyId`, `file`, `errors`, `corrections`,
 `warnings` and `next`. Each error, correction or warning has a 1-based step number (`null`
@@ -92,10 +93,25 @@ Read files again before changing locations. After this one fix round, do not loo
 style hints. Tell the developer the story's title, step count and that it is in the
 Code Story tool window. Explain any remaining rejection if the story could not be saved.
 
+## Show what changed
+
+Set `baseRef` only for a story about a change: types `change` and `review`. Use the
+commit before the change, for example the output of `git merge-base HEAD main` for a
+branch. Use `HEAD` for uncommitted work. Do not set `baseRef` for `exploration` or
+`bug-trace` stories, because their readers do not need diffs.
+
+The plugin saves the full commit SHA, so `HEAD` keeps its meaning after the developer
+commits. Each step then shows `A` when every line of its range is new since that commit,
+or `M` when some lines changed. Steps without changes show no badge. The reader can open
+"Show diff" to compare the base with the current file at the step. A `baseRef` that Git
+does not know gives the warning `unknown-base-ref`; the story is saved but shows no
+change information.
+
 ## Format and example
 
 The `story` parameter is a typed JSON object, not a JSON string. Supply `title`,
 `type`, `summary`, the original `request`, `author` (agent and model), and `steps`.
+For a story about a change, also supply `baseRef`.
 Each step has `title`, `comment`, an optional stable `id`, and either one `location`
 object or no location. A location has `file`, `startLine`, `endLine` and `anchorText`.
 The plugin assigns IDs to new steps whose IDs are omitted.

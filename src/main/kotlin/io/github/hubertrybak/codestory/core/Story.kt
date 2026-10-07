@@ -20,6 +20,11 @@ data class Story(
     /** Assigned by the plugin when the story is created. */
     val createdAt: Instant? = null,
     val git: StoryGit = StoryGit(),
+    /**
+     * The commit that a story about a change compares the code with, set by the agent. The plugin
+     * saves the full commit SHA when Git knows the commit. `null` for stories without change information.
+     */
+    val baseRef: String? = null,
 )
 
 @Serializable

@@ -48,6 +48,8 @@ object ValidationCases {
         valid("stable step ID", story(step(id = quoted("entry")))),
         valid("reserved fields are ignored", story("""{"title": "Overview", "comment": "Text.", "children": [{}], "links": ["later"]}""")),
         *StoryType.entries.map { valid("type ${it.value}", story(step(), type = quoted(it.value))) }.toTypedArray(),
+        valid("diff base", story(step(), baseRef = quoted("HEAD"))),
+        valid("null diff base", story(step(), baseRef = "null")),
 
         invalid("story is not an object", "[]", null to ErrorCode.WRONG_TYPE),
         invalid("no title", withoutField(story(step()), "title"), null to ErrorCode.MISSING_FIELD),
@@ -58,6 +60,8 @@ object ValidationCases {
         invalid("steps is not a list", story().replace("\"steps\": []", "\"steps\": {}"), null to ErrorCode.WRONG_TYPE),
         invalid("no story type", withoutField(story(step()), "type"), null to ErrorCode.MISSING_FIELD),
         invalid("unknown story type", story(step(), type = quoted("tour")), null to ErrorCode.INVALID_VALUE),
+        invalid("diff base is not text", story(step(), baseRef = "42"), null to ErrorCode.WRONG_TYPE),
+        invalid("blank diff base", story(step(), baseRef = quoted(" ")), null to ErrorCode.EMPTY_TEXT),
         invalid("type is not text", story(step(), type = "7"), null to ErrorCode.WRONG_TYPE),
         invalid("no summary", withoutField(story(step()), "summary"), null to ErrorCode.MISSING_FIELD),
         invalid("blank summary", story(step(), summary = quoted(" ")), null to ErrorCode.EMPTY_TEXT),

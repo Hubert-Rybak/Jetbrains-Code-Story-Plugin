@@ -52,9 +52,10 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             // The agent cannot set plugin-owned creation metadata.
             val createdAt = if (readMetadata) createdAt(input, owner) else null
             val git = if (readMetadata) git(input, owner) else StoryGit()
+            val baseRef = nullableText(input, "baseRef", owner, BASE_REF_HINT)
             val steps = steps(owner, input)
             return if (title != null && type != null && summary != null && request != null && author != null && steps != null) {
-                Story(title, type, summary, request, author, steps, createdAt, git)
+                Story(title, type, summary, request, author, steps, createdAt, git, baseRef)
             } else null
         }
 
@@ -298,6 +299,7 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
 
         private const val STORY_HINT = "Send the story as an object with `title`, `type`, `summary`, `request`, `author` and `steps`."
         private const val TYPE_HINT = "Set `type` to `change`, `exploration`, `bug-trace` or `review`."
+        private const val BASE_REF_HINT = "Set `baseRef` to the commit before the change, or omit it for a story that is not about a change."
         private const val ID_HINT = "Give the step a stable, nonempty `id`. Keep it when you revise the step."
         private const val TITLE_HINT = "Give the story a short `title` (8 words or fewer)."
         private const val STEPS_HINT = "Add `steps`: a list of 3 to 12 steps (15 at most). Each step explains one idea."
@@ -311,7 +313,8 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
         private const val END_LINE_HINT = "Set `location.endLine` to the last line of the range. The range includes this line."
         private const val RELATIVE_PATH_HINT = "Use a path relative to the repository root, with `/` between folders, for example `src/App.kt`."
 
-        private fun quote(text: String): String = if (text.length <= MAX_QUOTE) text else text.take(MAX_QUOTE) + "…"
+        /** Agent text in a message, cut to a readable length. */
+        internal fun quote(text: String): String = if (text.length <= MAX_QUOTE) text else text.take(MAX_QUOTE) + "…"
 
         private fun lineRange(start: Int, end: Int): String = if (start == end) "line $start" else "lines $start–$end"
     }

@@ -80,7 +80,7 @@ class StoryFormatTest {
     fun `round trips every story type, metadata, stable IDs and optional locations`() {
         for (type in StoryType.entries) {
             for (git in listOf(story.git, StoryGit(), StoryGit("unborn", null), StoryGit(null, "detached-commit"))) {
-                val original = story.copy(type = type, git = git)
+                val original = story.copy(type = type, git = git, baseRef = if (type == StoryType.CHANGE) BASE else null)
                 assertEquals(original, (StoryFormat.decode(StoryFormat.encode(original, "id")) as StoryFormat.Decoded.Valid).story)
             }
         }
@@ -125,6 +125,7 @@ class StoryFormatTest {
             text.replace("\"anchorText\": \"class PaymentController(\"", "\"anchorText\": \" \""),
             text.replace("\"anchorText\": \"class PaymentController(\"", "\"anchorText\": \"one\\ntwo\""),
             text.replace("\"rangeText\": \"class PaymentController(", "\"rangeText\": 7, \"x\": \"("),
+            text.replace("\"steps\": [", "\"baseRef\": 7, \"steps\": ["),
             "[1, 2]",
             "{ broken",
         )
@@ -137,7 +138,7 @@ class StoryFormatTest {
         assertEquals(published, Files.readString(Path.of("skills/code-story/references/story-v1.schema.json")))
         val schema = Json.parseToJsonElement(published).jsonObject
         val definitions = schema.getValue("\$defs").jsonObject
-        val file = Json.parseToJsonElement(StoryFormat.encode(story, "2026-10-05-explain-the-payment-flow")).jsonObject
+        val file = Json.parseToJsonElement(StoryFormat.encode(story.copy(baseRef = BASE), "2026-10-05-explain-the-payment-flow")).jsonObject
         val steps = file.getValue("steps").jsonArray.map { it.jsonObject }
 
         assertFields(schema, file)
@@ -152,10 +153,21 @@ class StoryFormatTest {
         assertEquals(listOf("id", "title", "comment"), definitions.getValue("step").jsonObject.getValue("required").jsonArray.map { it.jsonPrimitive.content })
     }
 
+    @Test
+    fun `writes the diff base after the Git metadata, only when the story has one`() {
+        val text = StoryFormat.encode(story.copy(baseRef = BASE), "id")
+        assertTrue(text, text.contains("    \"commit\": \"0123456789abcdef\"\n  },\n  \"baseRef\": \"$BASE\",\n  \"steps\": ["))
+        assertFalse(StoryFormat.encode(story, "id").contains("baseRef"))
+    }
+
     private fun assertFields(schema: JsonObject, written: JsonObject) {
         val properties = schema.getValue("properties").jsonObject.keys.toList()
         val required = schema.getValue("required").jsonArray.map { it.jsonPrimitive.content }
         assertEquals(written.keys.toList(), properties.filter { it in written })
         assertTrue(required.all { it in written })
+    }
+
+    private companion object {
+        const val BASE = "89abcdef0123456789abcdef0123456789abcdef"
     }
 }
