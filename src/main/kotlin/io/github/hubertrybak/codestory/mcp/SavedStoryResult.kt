@@ -48,4 +48,14 @@ internal class SavedStoryShape(
 internal class GitShape(val branch: String?, val commit: String?)
 
 @Serializable
-internal class SavedStepShape(val id: String, val title: String, val comment: String, val location: LocationShape? = null)
+internal class SavedStepShape(val id: String, val title: String, val comment: String, val location: SavedLocationShape? = null)
+
+/** [anchorText] follows the code; [rangeText] is the code that the step explains, stored by the plugin. */
+@Serializable
+internal class SavedLocationShape(
+    val file: String,
+    val startLine: Int,
+    val endLine: Int,
+    val anchorText: String? = null,
+    val rangeText: String? = null,
+)

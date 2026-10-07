@@ -54,6 +54,8 @@ object StoryFormat {
                                 put("file", location.file)
                                 put("startLine", location.startLine)
                                 put("endLine", location.endLine)
+                                location.anchorText?.let { put("anchorText", it) }
+                                location.rangeText?.let { put("rangeText", it) }
                             }
                         }
                     }

@@ -64,6 +64,13 @@ object TextFiles {
 
     fun readDisk(path: Path): CharSequence = String(Files.readAllBytes(path), Charsets.UTF_8)
 
+    /** The lines of [text] without their line breaks, numbered like [lineCount]. */
+    fun lines(text: CharSequence): List<String> {
+        if (text.isEmpty()) return emptyList()
+        val lines = text.split("\r\n", "\n", "\r")
+        return if (lines.last().isEmpty()) lines.dropLast(1) else lines
+    }
+
     /** Counts lines the way an editor numbers them; a final line break does not start a new line. */
     fun lineCount(text: CharSequence): Int {
         if (text.isEmpty()) return 0

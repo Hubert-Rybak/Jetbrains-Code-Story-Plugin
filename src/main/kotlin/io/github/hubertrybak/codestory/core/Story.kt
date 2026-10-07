@@ -37,7 +37,19 @@ data class StoryGit(val branch: String? = null, val commit: String? = null)
 
 data class Step(val title: String, val comment: String, val location: Location? = null, val id: String? = null)
 
-data class Location(val file: String, val startLine: Int, val endLine: Int)
+/**
+ * One range of lines. [anchorText] is the first line of the range without indentation; the plugin
+ * uses it to find the range again after the code moves. [rangeText] is the code that the step
+ * explains, with `\n` between lines; a step whose range has other code has "code changed" status.
+ * Both are `null` in story files without anchors.
+ */
+data class Location(
+    val file: String,
+    val startLine: Int,
+    val endLine: Int,
+    val anchorText: String? = null,
+    val rangeText: String? = null,
+)
 
 object StoryLimits {
     const val MAX_STEPS = 15

@@ -47,9 +47,28 @@ or change the range highlight color in **Settings | Tools | Code Story**.
 A story with errors is not saved: the tool returns each error with the step
 number, a code, a message and a fix hint, so the agent can correct the story.
 
+Each step location also carries `anchorText`, the exact text of its first line.
+The IDE compares it with the line that it shows, including unsaved edits;
+indentation, trailing spaces and line endings do not matter. When the text is
+within 20 lines of the given line, the IDE moves the range and the report lists
+a correction (for example `Step 4: lines 120–131 changed to 123–134.`). When it
+cannot find the text, it rejects the story. The plugin stores the code of each
+range in the story.
+
+While a story plays, live range markers follow your edits, so the card and the
+highlight stay on the right code. When a story is listed or played, the plugin
+finds the code of each step again. A step is **ok**; **moved** (the lines are
+updated); **code changed** (the range has other code than the step explains:
+the tree shows a badge and the card a note); or **lost** (the code is gone: the
+step plays at its stored lines, and the card warns "The code changed. This step
+can be wrong."). The story row shows the number of lost and changed steps, and
+`code_story_list` reports the status. Moved lines are saved in local stories
+only; shared story files never change, and their corrections stay in memory.
+
 `code_story_list` lists local and shared stories with their ID, title, type, date,
-branch, folder and code-location status. `code_story_get(storyId)` returns the full
-saved story. To revise it, the agent calls `code_story_show(story, storyId)`;
+branch, folder and status: `ok`, `moved`, `code-changed` or `lost`, with the number
+of moved, changed and lost steps. `code_story_get(storyId)` returns the full saved
+story. To revise it, the agent calls `code_story_show(story, storyId)`;
 the same file and creation metadata are kept. A playing story reloads at the same
 step number, or the last step if the revision is shorter.
 
@@ -108,12 +127,14 @@ does and check the report, the saved files and the tool window.
 They also cover guide/list/get, replacement in local and shared folders, writing
 reports, auto-play, playback controls, resume/restart, card dismissal,
 gutter navigation, presentation cleanup and the absence of code-line inlays.
+Anchoring tests edit fixture documents and check corrections, step statuses, live
+markers during playback and the rewrite of local (never shared) stories.
 
 The story core (package `io.github.hubertrybak.codestory.core`) has no IDE
-dependencies: the story model, the validation rules, the file format and the
-story folder. The plugin compiles against the bundled MCP Server plugin and
-uses the kotlinx.serialization library that ships with the IDE; it does not
-bundle its own copy.
+dependencies: the story model, the validation rules, the anchor policy, the file
+format and the story folder. The plugin compiles against the bundled MCP Server
+plugin and uses the kotlinx.serialization library that ships with the IDE; it does
+not bundle its own copy.
 
 ```sh
 # Full compatibility matrix: Rider and IDEA, three releases and latest EAP.

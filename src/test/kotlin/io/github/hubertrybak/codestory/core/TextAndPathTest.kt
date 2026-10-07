@@ -22,7 +22,10 @@ class TextAndPathTest {
         )
         for ((text, lines) in cases) {
             assertEquals("lines of ${text.replace("\n", "\\n").replace("\r", "\\r")}", lines, TextFiles.lineCount(text))
+            assertEquals("split lines of ${text.replace("\n", "\\n").replace("\r", "\\r")}", lines, TextFiles.lines(text).size)
         }
+        assertEquals(listOf("a", "", "b"), TextFiles.lines("a\r\n\rb\n"))
+        assertEquals(listOf("  indented", "tab\tinside "), TextFiles.lines("  indented\ntab\tinside \n"))
     }
 
     @Test

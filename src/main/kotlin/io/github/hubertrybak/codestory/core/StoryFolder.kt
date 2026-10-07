@@ -13,10 +13,26 @@ import java.time.ZoneOffset
 import java.util.Locale
 import java.util.UUID
 
-/** A local or shared story file. Story paths are relative to [root]. */
-class StoredStory(val id: String, val root: Path, val file: Path, val story: Story, val modified: FileTime) {
+/**
+ * A local or shared story file. Story paths are relative to [root]. After the anchor check,
+ * [story] has the lines where the code of each step is now, and [statuses] has the status of
+ * each step by index.
+ */
+class StoredStory(
+    val id: String,
+    val root: Path,
+    val file: Path,
+    val story: Story,
+    val modified: FileTime,
+    val statuses: List<StepStatus> = emptyList(),
+) {
     val date: String get() = checkNotNull(story.createdAt).atOffset(ZoneOffset.UTC).toLocalDate().toString()
     val folder: String get() = file.parent.fileName.toString()
+
+    /** Steps are ok until their anchors are checked. */
+    fun status(index: Int): StepStatus = statuses.getOrElse(index) { StepStatus.OK }
+
+    fun resolved(resolution: AnchorResolution) = StoredStory(id, root, file, resolution.story, modified, resolution.statuses)
 }
 
 /**
@@ -66,6 +82,20 @@ class StoryFolder(val root: Path) {
         if (file.parent == localDir) ensureGitIgnore()
         writeAtomically(file, bytes)
         SaveResult.Saved(id, file, saved)
+    }
+
+    /**
+     * Writes anchors that moved with the code into a local story. Writes only while the file still
+     * holds [expected], so that a newer version from an agent is never overwritten, and never
+     * changes a shared story. Returns whether the file was written.
+     */
+    fun updateAnchors(id: String, expected: Story, updated: Story): Boolean = synchronized(saveLock) {
+        val current = get(id) ?: return false
+        if (current.file.parent != localDir || current.story != expected) return false
+        val bytes = StoryFormat.encode(updated, id).toByteArray(Charsets.UTF_8)
+        if (bytes.size > StoryLimits.MAX_FILE_BYTES) return false
+        writeAtomically(current.file, bytes)
+        true
     }
 
     /** Local and shared stories, newest first. Files that cannot be read are skipped. */

@@ -34,7 +34,14 @@ object ValidationCases {
     val all: List<ValidationCase> = listOf(
         valid("valid story", story(step(), step(start = "1", end = "10"))),
         valid("one-line range", story(step(start = "10", end = "10"))),
-        valid("CRLF file", story(step(file = quoted("src/Windows.kt"), start = "1", end = "3"))),
+        valid("CRLF file", story(step(file = quoted("src/Windows.kt"), start = "1", end = "3", anchor = quoted("one")))),
+        valid("anchor with other indentation and spaces", story(step(anchor = "\"\\t  line 2   \""))),
+        valid("anchor a few lines above", story(step(start = "5", end = "7", anchor = quoted("line 2")))),
+        valid("anchor a few lines below", story(step(start = "2", end = "4", anchor = quoted("line 7")))),
+        valid("anchor 20 lines away", story(step(file = quoted("src/Long.kt"), start = "30", end = "31", anchor = quoted("line 10")))),
+        valid("anchor in a CRLF file", story(step(file = quoted("src/Windows.kt"), start = "1", end = "2", anchor = quoted("two")))),
+        valid("start line after the end, anchor nearby", story(step(start = "14", end = "15", anchor = quoted("line 9")))),
+        valid("rangeText from an agent is ignored", story(step(location = """{"file": "src/App.kt", "startLine": 2, "endLine": 2, "anchorText": "line 2", "rangeText": 7}"""))),
         valid("symbolic link inside the project", story(step(file = quoted("inside-link.kt"))), needsSymlinks = true),
         valid("text-only step", story(step(location = null))),
         valid("null location", story(step(location = "null"))),
@@ -73,12 +80,12 @@ object ValidationCases {
             null to ErrorCode.TOO_MANY_STEPS,
         ),
         invalid("step is not an object", story("\"step\""), 1 to ErrorCode.WRONG_TYPE),
-        invalid("no step title", story("""{"comment": "Text.", "location": {"file": "src/App.kt", "startLine": 1, "endLine": 2}}"""), 1 to ErrorCode.MISSING_FIELD),
+        invalid("no step title", story("""{"comment": "Text.", "location": {"file": "src/App.kt", "startLine": 1, "endLine": 2, "anchorText": "line 1"}}"""), 1 to ErrorCode.MISSING_FIELD),
         invalid("empty comment", story(step(comment = quoted(""))), 1 to ErrorCode.EMPTY_TEXT),
         invalid("comment is not text", story(step(comment = "[\"a\"]")), 1 to ErrorCode.WRONG_TYPE),
         invalid("location is not an object", story("""{"title": "Entry point", "comment": "Text.", "location": "src/App.kt:2"}"""), 1 to ErrorCode.WRONG_TYPE),
         invalid("multiple locations", story(step(location = """[{"file": "src/App.kt", "startLine": 1, "endLine": 2}]""")), 1 to ErrorCode.WRONG_TYPE),
-        invalid("no file", story("""{"title": "T", "comment": "C.", "location": {"startLine": 1, "endLine": 2}}"""), 1 to ErrorCode.MISSING_FIELD),
+        invalid("no file", story("""{"title": "T", "comment": "C.", "location": {"startLine": 1, "endLine": 2, "anchorText": "line 1"}}"""), 1 to ErrorCode.MISSING_FIELD),
         invalid("absolute path", story(step(file = quoted("/etc/passwd"))), 1 to ErrorCode.ABSOLUTE_PATH),
         invalid("Windows absolute path", story(step(file = quoted("C:\\repo\\src\\App.kt"))), 1 to ErrorCode.ABSOLUTE_PATH),
         invalid("UNC path", story(step(file = quoted("\\\\server\\share\\App.kt"))), 1 to ErrorCode.ABSOLUTE_PATH),
@@ -92,7 +99,7 @@ object ValidationCases {
         invalid("file does not exist", story(step(file = quoted("src/Missing.kt"))), 1 to ErrorCode.FILE_NOT_FOUND),
         invalid("folder instead of a file", story(step(file = quoted("docs"))), 1 to ErrorCode.NOT_A_FILE),
         invalid("binary file", story(step(file = quoted("src/logo.png"), start = "1", end = "1")), 1 to ErrorCode.NOT_A_TEXT_FILE),
-        invalid("no start line", story("""{"title": "T", "comment": "C.", "location": {"file": "src/App.kt", "endLine": 2}}"""), 1 to ErrorCode.MISSING_FIELD),
+        invalid("no start line", story("""{"title": "T", "comment": "C.", "location": {"file": "src/App.kt", "endLine": 2, "anchorText": "line 1"}}"""), 1 to ErrorCode.MISSING_FIELD),
         invalid("start line as text", story(step(start = "\"2\"")), 1 to ErrorCode.WRONG_TYPE),
         invalid("fractional start line", story(step(start = "2.5")), 1 to ErrorCode.WRONG_TYPE),
         invalid("start line 0", story(step(start = "0")), 1 to ErrorCode.INVALID_LINE),
@@ -102,6 +109,17 @@ object ValidationCases {
         invalid("range after the last line", story(step(start = "40", end = "45")), 1 to ErrorCode.LINES_OUTSIDE_FILE),
         invalid("final line break is not a line", story(step(file = quoted("src/Windows.kt"), start = "4", end = "4")), 1 to ErrorCode.LINES_OUTSIDE_FILE),
         invalid("empty file", story(step(file = quoted("src/empty.txt"), start = "1", end = "1")), 1 to ErrorCode.LINES_OUTSIDE_FILE),
+        invalid("no anchor text", story(step(anchor = null)), 1 to ErrorCode.MISSING_FIELD),
+        invalid("null anchor text", story(step(anchor = "null")), 1 to ErrorCode.MISSING_FIELD),
+        invalid("blank anchor text", story(step(anchor = quoted("   "))), 1 to ErrorCode.EMPTY_TEXT),
+        invalid("anchor text is not text", story(step(anchor = "7")), 1 to ErrorCode.WRONG_TYPE),
+        invalid("anchor text of two lines", story(step(anchor = "\"line 2\\nline 3\"")), 1 to ErrorCode.INVALID_VALUE),
+        invalid("anchor text not in the file", story(step(anchor = quoted("fun missing()"))), 1 to ErrorCode.ANCHOR_NOT_FOUND),
+        invalid("anchor text more than 20 lines away", story(step(file = quoted("src/Long.kt"), start = "31", end = "31", anchor = quoted("line 10"))), 1 to ErrorCode.ANCHOR_NOT_FOUND),
+        invalid("anchor text only inside other words", story(step(anchor = quoted("line"))), 1 to ErrorCode.ANCHOR_NOT_FOUND),
+        invalid("anchor text at the same distance above and below", story(step(file = quoted("src/Twice.kt"), start = "4", end = "4", anchor = quoted("return"))), 1 to ErrorCode.ANCHOR_AMBIGUOUS),
+        invalid("anchor nearby, but the range then ends after the file", story(step(start = "5", end = "11", anchor = quoted("line 8"))), 1 to ErrorCode.LINES_OUTSIDE_FILE),
+        invalid("start line after the end, no anchor nearby", story(step(start = "40", end = "41", anchor = quoted("missing"))), 1 to ErrorCode.LINES_OUTSIDE_FILE),
         invalid(
             "every error of every step",
             story(step(), step(file = quoted("src/Missing.kt"), start = "0"), step(start = "7", end = "2"), title = quoted("")),
@@ -170,5 +188,88 @@ class StoryValidatorPathTest {
         val fixture = fixture()
         assumeTrue("symbolic links are not available", fixture.symlinks)
         assertEquals("src/App.kt", savedPath(RootStoryFiles(fixture.root), "inside-link.kt"))
+    }
+}
+
+class StoryValidatorAnchorTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    private val fixture by lazy { FixtureFiles(temp.newFolder("repo").toPath(), temp.root.toPath().resolve("outside")) }
+
+    private fun validate(json: String, files: StoryFiles? = null): ValidationResult =
+        StoryValidator(files ?: RootStoryFiles(fixture.root)).validate(Json.parseToJsonElement(json))
+
+    @Test
+    fun `a nearby anchor moves the range, stores its code and reports a correction`() {
+        val result = validate(story(
+            step(),
+            step(start = "5", end = "7", anchor = quoted("line 2")),
+            step(start = "9", end = "9", anchor = quoted("  line 6")),
+        )) as ValidationResult.Valid
+
+        assertEquals(
+            listOf(
+                Location("src/App.kt", 2, 4, "line 2", "line 2\nline 3\nline 4"),
+                Location("src/App.kt", 2, 4, "line 2", "line 2\nline 3\nline 4"),
+                Location("src/App.kt", 6, 6, "line 6", "line 6"),
+            ),
+            result.story.steps.map { it.location },
+        )
+        assertEquals(listOf(2, 3), result.corrections.map { it.step })
+        assertEquals(setOf(CorrectionCode.LINES_SHIFTED.code), result.corrections.map { it.code }.toSet())
+        assertEquals("Step 2: lines 5–7 changed to 2–4.", result.corrections[0].message)
+        assertEquals("Step 3: line 9 changed to 6.", result.corrections[1].message)
+        assertTrue(result.corrections.all { it.hint.contains("line ") })
+    }
+
+    @Test
+    fun `stored code keeps indentation and has LF line breaks`() {
+        val result = validate(story(
+            step(file = quoted("src/Windows.kt"), start = "1", end = "3", anchor = quoted("one")),
+            step(file = quoted("src/Twice.kt"), start = "1", end = "3", anchor = quoted("fun a() {")),
+        )) as ValidationResult.Valid
+        assertEquals(listOf("one\ntwo\nthree", "fun a() {\n    return\n}"), result.story.steps.map { it.location!!.rangeText })
+        assertEquals(emptyList<ReportItem>(), result.corrections)
+    }
+
+    @Test
+    fun `the anchor check reads the text that the files provider gives`() {
+        val edited = object : StoryFiles {
+            override val rootLabel = "repo"
+            override fun lookup(path: String) = FileLookup.Found(path, "new line\n" + (1..10).joinToString("\n") { "line $it" })
+        }
+        val result = validate(story(step()), edited) as ValidationResult.Valid
+        assertEquals(3 to 5, result.story.steps.single().location!!.let { it.startLine to it.endLine })
+        assertEquals("Step 1: lines 2–4 changed to 3–5.", result.corrections.single().message)
+    }
+
+    @Test
+    fun `a rejected story still reports the corrections of its other steps`() {
+        val result = validate(story(step(start = "5", end = "7", anchor = quoted("line 2")), step(file = quoted("src/Missing.kt")))) as ValidationResult.Invalid
+        assertEquals(listOf(2 to ErrorCode.FILE_NOT_FOUND.code), result.errors.map { it.step to it.code })
+        assertEquals(listOf(1), result.corrections.map { it.step })
+    }
+
+    @Test
+    fun `anchor errors show the line that the anchor was compared with`() {
+        val notFound = (validate(story(step(anchor = quoted("fun missing()")))) as ValidationResult.Invalid).errors.single()
+        assertTrue(notFound.message, notFound.message.contains("line 2 of `src/App.kt` or within 20 lines of it. Line 2 is `line 2`."))
+        val empty = (validate(story(step(file = quoted("src/Twice.kt"), start = "4", end = "4", anchor = quoted("missing")))) as ValidationResult.Invalid).errors.single()
+        assertTrue(empty.message, empty.message.endsWith("Line 4 is empty."))
+        val ambiguous = (validate(story(step(file = quoted("src/Twice.kt"), start = "4", end = "4", anchor = quoted("return")))) as ValidationResult.Invalid).errors.single()
+        assertTrue(ambiguous.message, ambiguous.message.contains("It is at lines 2 and 6, at the same distance."))
+    }
+
+    @Test
+    fun `an agent cannot set the stored code and must send an anchor`() {
+        val withCode = """{"title": "T", "comment": "C.", "location": {"file": "src/App.kt", "startLine": 2, "endLine": 3, "anchorText": "line 2", "rangeText": "old\ncode"}}"""
+        val withoutAnchor = """{"title": "T", "comment": "C.", "location": {"file": "src/App.kt", "startLine": 2, "endLine": 3}}"""
+        val structure = StoryValidator(null).validate(Json.parseToJsonElement(story(withCode))) as ValidationResult.Valid
+        assertEquals(Location("src/App.kt", 2, 3, "line 2", null), structure.story.steps.single().location)
+        val checked = validate(story(withCode)) as ValidationResult.Valid
+        assertEquals("line 2\nline 3", checked.story.steps.single().location!!.rangeText)
+        val rejected = StoryValidator(null).validate(Json.parseToJsonElement(story(withoutAnchor))) as ValidationResult.Invalid
+        assertEquals(listOf(1 to ErrorCode.MISSING_FIELD.code), rejected.errors.map { it.step to it.code })
     }
 }

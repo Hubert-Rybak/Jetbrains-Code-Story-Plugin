@@ -22,7 +22,10 @@ class StoryFormatTest {
         request = "Explain the payment flow",
         author = StoryAuthor("Test Agent", "test-model"),
         steps = listOf(
-            Step("Entry point", "The `PaymentController` takes the request.", Location("src/Payment.kt", 12, 30), "entry"),
+            Step(
+                "Entry point", "The `PaymentController` takes the request.",
+                Location("src/Payment.kt", 12, 14, "class PaymentController(", "class PaymentController(\n    private val billing: Billing,\n) {"), "entry",
+            ),
             Step("What to check", "Line one.\n- item", id = "checks"),
         ),
         createdAt = Instant.parse("2026-10-05T12:34:56.123Z"),
@@ -56,7 +59,9 @@ class StoryFormatTest {
                   "location": {
                     "file": "src/Payment.kt",
                     "startLine": 12,
-                    "endLine": 30
+                    "endLine": 14,
+                    "anchorText": "class PaymentController(",
+                    "rangeText": "class PaymentController(\n    private val billing: Billing,\n) {"
                   }
                 },
                 {
@@ -95,6 +100,17 @@ class StoryFormatTest {
     }
 
     @Test
+    fun `reads story files without anchors`() {
+        val text = StoryFormat.encode(story, "id")
+            .replace(",\n        \"anchorText\": \"class PaymentController(\"", "")
+            .replace(",\n        \"rangeText\": \"class PaymentController(\\n    private val billing: Billing,\\n) {\"", "")
+        assertFalse(text, text.contains("anchorText") || text.contains("rangeText"))
+        val decoded = (StoryFormat.decode(text) as StoryFormat.Decoded.Valid).story
+        assertEquals(Location("src/Payment.kt", 12, 14), decoded.steps.first().location)
+        assertEquals(text, StoryFormat.encode(decoded, "id"))
+    }
+
+    @Test
     fun `rejects unsupported schemas and malformed stored fields`() {
         val text = StoryFormat.encode(story, "id")
         val invalid = listOf(
@@ -106,6 +122,9 @@ class StoryFormatTest {
             text.replace("\"feature/payments\"", "42"),
             text.replace("\"agent\": \"Test Agent\",", ""),
             text.replace("\"exploration\"", "\"tour\""),
+            text.replace("\"anchorText\": \"class PaymentController(\"", "\"anchorText\": \" \""),
+            text.replace("\"anchorText\": \"class PaymentController(\"", "\"anchorText\": \"one\\ntwo\""),
+            text.replace("\"rangeText\": \"class PaymentController(", "\"rangeText\": 7, \"x\": \"("),
             "[1, 2]",
             "{ broken",
         )

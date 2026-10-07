@@ -71,6 +71,10 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
         assertEquals(listOf("title", "comment"), step.getValue("required").jsonArray.map { it.jsonPrimitive.content })
         val location = step.getValue("properties").jsonObject.getValue("location").jsonObject
         assertEquals("integer", location.getValue("properties").jsonObject.getValue("startLine").jsonObject.getValue("type").jsonPrimitive.content)
+        assertEquals(listOf("file", "startLine", "endLine", "anchorText"), location.getValue("properties").jsonObject.keys.toList())
+        assertEquals(listOf("file", "startLine", "endLine", "anchorText"), location.getValue("required").jsonArray.map { it.jsonPrimitive.content })
+        val anchor = location.getValue("properties").jsonObject.getValue("anchorText").jsonObject
+        assertTrue(anchor.toString(), anchor.getValue("description").jsonPrimitive.content.contains("startLine"))
         assertTrue("story" in schema.requiredProperties)
         assertTrue("projectPath" in schema.propertiesSchema)
         val file = location.getValue("properties").jsonObject.getValue("file").jsonObject
@@ -78,7 +82,7 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
     }
 
     fun `test valid story is saved and listed`() {
-        val report = call(story(step(), step(file = quoted("src/Billing.kt"), start = "2", end = "2", title = quoted("Charge"))))
+        val report = call(story(step(), step(file = quoted("src/Billing.kt"), start = "2", end = "2", anchor = quoted("fun charge() {}"), title = quoted("Charge"))))
 
         assertEquals("accepted", report.status)
         assertEmpty(report.errors)
@@ -110,7 +114,7 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
     }
 
     fun `test accepted MCP story auto plays without a loaded tool window`() {
-        val first = call(story(step(), step(file = quoted("src/Billing.kt"), start = "2", end = "2")))
+        val first = call(story(step(), step(file = quoted("src/Billing.kt"), start = "2", end = "2", anchor = quoted("fun charge() {}"))))
         val player = StoryPlayer.getInstance(project)
         PlatformTestUtil.waitWithEventsDispatching("MCP story did not start", { player.currentStory?.id == first.storyId }, 10)
         assertEquals(0, player.stepIndex)

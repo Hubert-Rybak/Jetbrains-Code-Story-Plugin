@@ -49,7 +49,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
     }
 
     fun `test lists stories with their steps`() {
-        val id = show(story(step(start = "40", end = "52"), step(file = quoted("src/Billing.kt"), start = "2", end = "2", title = quoted("Charge"))))
+        val id = show(story(step(start = "40", end = "52"), step(file = quoted("src/Billing.kt"), start = "2", end = "2", anchor = quoted("fun charge() {}"), title = quoted("Charge"))))
 
         val tree = openPanel().tree
 
@@ -70,7 +70,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
     }
 
     fun `test clicking a step opens the file and highlights the range`() {
-        show(story(step(start = "40", end = "52"), step(file = quoted("src/Billing.kt"), start = "2", end = "3", title = quoted("Charge"))))
+        show(story(step(start = "40", end = "52"), step(file = quoted("src/Billing.kt"), start = "2", end = "3", anchor = quoted("fun charge() {}"), title = quoted("Charge"))))
         openPanel()
 
         click(row = 1)

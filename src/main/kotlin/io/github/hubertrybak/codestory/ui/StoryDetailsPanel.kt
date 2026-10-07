@@ -51,7 +51,11 @@ class StoryDetailsPanel : JPanel(BorderLayout()) {
         }.trimEnd())
     }
 
-    fun showStep(item: StepItem) = show("Step ${item.index + 1} of ${item.stored.story.steps.size}: ${item.step.title}\n\n${item.step.comment}")
+    fun showStep(item: StepItem) = show(buildString {
+        append("Step ${item.index + 1} of ${item.stored.story.steps.size}: ${item.step.title}")
+        statusNote(item.stored.status(item.index))?.let { append("\n\n").append(it) }
+        append("\n\n").append(item.step.comment)
+    })
 
     fun clear() = show("Select a story or step to see its details.")
 

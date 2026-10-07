@@ -24,13 +24,13 @@ class CodeStoryToolset : McpToolset {
     fun storyGuide(): String = CodeStoryGuide.markdown()
 
     @McpTool(name = "code_story_list")
-    @McpDescription(description = "Lists all local and shared stories, newest first: ID, title, type, creation date, branch, folder and code-location status (ok or lost, with lostSteps). Call code_story_get with an ID to read a full story. Always pass projectPath.")
+    @McpDescription(description = "Lists all local and shared stories, newest first: ID, title, type, creation date, branch, folder and code status. The status is ok, moved (the IDE found the code at other lines and updated them), code-changed (the code in a range is different from the code that the step explains) or lost (the IDE cannot find the code), with movedSteps, changedSteps and lostSteps. Call code_story_get with an ID to read a full story. Always pass projectPath.")
     suspend fun listStories(): StoryListReport = withService {
         StoryListReport(it.list(), "Call code_story_get with a story ID to read it before a revision.")
     }
 
     @McpTool(name = "code_story_get")
-    @McpDescription(description = "Returns the full saved story, including creation metadata and step IDs. Read it before a revision, keep its step IDs, and call code_story_show with storyId to replace it. Always pass projectPath.")
+    @McpDescription(description = "Returns the full saved story, including creation metadata, step IDs and the current lines of each location. rangeText is the code that the step explains, stored by the IDE. Read it before a revision, keep its step IDs, and call code_story_show with storyId to replace it. Always pass projectPath.")
     suspend fun getStory(
         @McpDescription(description = "An existing story ID returned by code_story_list.")
         storyId: String,
@@ -51,11 +51,13 @@ class CodeStoryToolset : McpToolset {
         |Keep step IDs stable when revising a story; omit them to let the plugin assign IDs.
         |Use 3 to 12 steps (15 at most). Read every file before you call this tool, so that each path and line number is correct.
         |Paths are relative to the Git repository root. Line numbers start at 1, and a range includes its endLine.
+        |Each location needs anchorText: the exact text of line startLine. The IDE compares it with the code that it shows, including unsaved edits.
+        |If the text is a few lines away (20 at most), the IDE moves the range and lists a correction in the report. If it cannot find the text, it rejects the story.
         |If the story has no errors, the IDE saves it in .codestory/local/ and lists it in the Code Story tool window.
         |With an existing storyId, it replaces that story in its current local or shared file and keeps its creation metadata.
         |If that story is playing, it reloads at the same step number, or the last step if the new story is shorter.
         |Writing and long-range warnings never block a story and appear only in this report. Fix them once and resend with the returned storyId.
-        |If the story has errors, the IDE saves nothing and returns status "rejected" with the errors. Each error has the step number, a code, a message and a hint. Fix all errors, then send the whole story again.
+        |If the story has errors, the IDE saves nothing and returns status "rejected" with the errors. Each error, correction and warning has the step number, a code, a message and a hint. Fix all errors, then send the whole story again.
         |Always pass projectPath.
         """,
     )
