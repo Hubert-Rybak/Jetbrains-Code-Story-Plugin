@@ -2,7 +2,6 @@ package io.github.hubertrybak.codestory
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -10,6 +9,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
@@ -134,7 +134,7 @@ class CodeStoryService(private val project: Project) {
      * lines refer to.
      */
     fun ideFiles(root: Path, live: LiveSnapshot? = AnchorTracker.getInstance(project).snapshot()): StoryFiles {
-        val documents = ReadAction.compute<List<Pair<Path, CharSequence>>, RuntimeException> { openDocuments() }
+        val documents = ApplicationManager.getApplication().runReadAction(Computable { openDocuments() })
         return ideFiles(root, documents.associate { (path, text) -> realPath(path) to text } + live?.texts.orEmpty())
     }
 

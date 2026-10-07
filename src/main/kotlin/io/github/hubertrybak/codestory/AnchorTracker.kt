@@ -2,12 +2,12 @@ package io.github.hubertrybak.codestory
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.vfs.LocalFileSystem
 import io.github.hubertrybak.codestory.core.LiveRange
 import io.github.hubertrybak.codestory.core.Location
@@ -61,11 +61,11 @@ class AnchorTracker : Disposable {
     }
 
     /** The lines that the markers followed and the texts of their documents, read together. */
-    fun snapshot(): LiveSnapshot? = ReadAction.compute<LiveSnapshot?, RuntimeException> {
-        val (storyId, markers) = tracked ?: return@compute null
+    fun snapshot(): LiveSnapshot? = ApplicationManager.getApplication().runReadAction(Computable {
+        val (storyId, markers) = tracked ?: return@Computable null
         val valid = markers.filter { it.marker.isValid }
         LiveSnapshot(storyId, ranges(valid), valid.associate { it.path to it.marker.document.immutableCharSequence })
-    }
+    })
 
     /** Removes the markers. Call on the EDT. */
     fun release() {
