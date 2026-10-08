@@ -2,6 +2,7 @@ package io.github.hubertrybak.codestory
 
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.util.Disposer
@@ -10,11 +11,14 @@ import com.intellij.openapi.vcs.VcsDirectoryMapping
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.testFramework.PlatformTestUtil
+import io.github.hubertrybak.codestory.core.DraftComment
 import io.github.hubertrybak.codestory.core.ErrorCode
+import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
+import io.github.hubertrybak.codestory.core.StoryThreads
 import io.github.hubertrybak.codestory.core.StoryValidator
 import io.github.hubertrybak.codestory.core.ValidationResult
 import io.github.hubertrybak.codestory.ui.StoryListPanel
@@ -230,6 +234,40 @@ class StoryFileDropTest : HeavyPlatformTestCase() {
         await { panel.tree.rowCount >= 6 }
         assertEquals(original, Files.readString(file))
         assertNull(player.currentStory)
+        assertEmpty(watcher.problems.values)
+    }
+
+    fun `test comments on a dropped story need no new arrival check and do not replay it`() {
+        start()
+        val file = drop()
+        await { player.currentStory?.id == ID }
+        player.stop()
+        FileEditorManagerEx.getInstanceEx(project).closeAllFiles()
+        // The code of the first step is gone, so the saved anchors no longer pass the arrival check.
+        Files.writeString(root.resolve("src/App.kt"), "other\n")
+        val stored = service.stories().single()
+        assertEquals(StepStatus.LOST, stored.status(0))
+        project.service<StoryReaderState>().saveDraft(StoryDraft(story = stored.key, step = "entry", text = "Is this step still right?"))
+        assertEquals(1, runBlocking { withContext(Dispatchers.IO) { service.submitRound(stored) } })
+        // The watcher reads files in name order, so a problem in this later file shows that it handled the comment.
+        val sentinel = drop(id = "2026-10-08-zz-sentinel", contents = "{ broken")
+        await { watcher.problems.containsKey(sentinel) }
+        assertEquals(setOf(sentinel), watcher.problems.keys)
+        assertNull(player.currentStory)
+        assertEquals(1, service.list().single { it.id == ID }.pendingComments)
+        assertTrue(Files.readString(file).contains("Is this step still right?"))
+    }
+
+    fun `test comments written by another IDE reach the playing story at its step`() {
+        start()
+        val file = drop()
+        await { player.currentStory?.id == ID }
+        player.next()
+        val story = (StoryFormat.decode(Files.readString(file)) as StoryFormat.Decoded.Valid).story
+        val commented = StoryThreads.submit(story, listOf(DraftComment("Asked in the other IDE?", stepId = "entry")), Instant.now())
+        drop(contents = StoryFormat.encode(commented, ID))
+        await { player.currentStory?.story?.steps?.first()?.threads?.singleOrNull()?.messages?.single()?.text == "Asked in the other IDE?" }
+        assertEquals(1, player.stepIndex)
         assertEmpty(watcher.problems.values)
     }
 

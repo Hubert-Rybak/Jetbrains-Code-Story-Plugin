@@ -89,9 +89,10 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     val fileProblems = JTextArea().apply { isEditable = false; lineWrap = true; wrapStyleWord = true }
     private val problemsPane = ScrollPaneFactory.createScrollPane(fileProblems, true).apply { isVisible = false }
     private val player = StoryPlayer.getInstance(project)
-    val details = StoryDetailsPanel(::showDiff)
+    private val comments = StoryComments(project, ::manageStory, ::draftsChanged)
+    val details = StoryDetailsPanel(comments, ::showDiff)
     /** The context menu of stories and steps. */
-    val contextActions = DefaultActionGroup(RestartAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
+    val contextActions = DefaultActionGroup(RestartAction(), CommentAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
     val toolbarActions = DefaultActionGroup().apply {
         add(PlayAction())
         add(ActionManager.getInstance().getAction("CodeStory.PreviousStep"))
@@ -101,6 +102,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         add(ShareAction())
         add(DeleteAction())
         add(CopyMarkdownAction())
+        add(SubmitRoundAction())
         addSeparator()
         add(RefreshAction())
         addSeparator()
@@ -119,7 +121,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     init {
         tree.isRootVisible = false
         tree.showsRootHandles = true
-        tree.cellRenderer = StoryTreeCellRenderer(player)
+        tree.cellRenderer = StoryTreeCellRenderer(player) { comments.drafts(it).size }
         tree.emptyText.text = "No stories yet"
         tree.emptyText.appendSecondaryText("Ask your agent: /code-story \"<request>\"", SimpleTextAttributes.GRAYED_ATTRIBUTES, null)
         installStepOpening()
@@ -348,6 +350,29 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         }
     }
 
+    /** Opens the comment input for the selected story or step in the details pane. */
+    private inner class CommentAction : DumbAwareAction("Comment", "Write a question about the selected story or step", AllIcons.General.Balloon) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
+        override fun actionPerformed(e: AnActionEvent) { details.comments?.startComment() }
+    }
+
+    /** Writes all comment drafts of the selected story into its file as one round for the agent. */
+    private inner class SubmitRoundAction : DumbAwareAction("Submit Round", "Send your comment drafts to your agent through the story", AllIcons.Actions.Commit) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) {
+            val drafts = selectedStory()?.let { comments.drafts(it).size } ?: 0
+            e.presentation.isEnabled = drafts > 0
+            e.presentation.text = if (drafts > 0) "Submit Round ($drafts)" else "Submit Round"
+        }
+        override fun actionPerformed(e: AnActionEvent) { selectedStory()?.let(comments::submit) }
+    }
+
+    private fun draftsChanged() {
+        tree.repaint()
+        showSelectedDetails()
+    }
+
     private fun manageStory(action: () -> Unit) {
         loader.execute {
             try { action() } catch (e: IOException) {
@@ -430,7 +455,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     }
 }
 
-private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTreeCellRenderer() {
+private class StoryTreeCellRenderer(private val player: StoryPlayer, private val drafts: (StoredStory) -> Int) : ColoredTreeCellRenderer() {
     override fun customizeCellRenderer(
         tree: JTree, value: Any?, selected: Boolean, expanded: Boolean, leaf: Boolean, row: Int, hasFocus: Boolean,
     ) {
@@ -460,6 +485,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
                 (git.branch ?: if (git.commit != null) "Detached HEAD" else null)
                     ?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
                 staleSteps(item.stored)?.let { append("  $it", WARNING) }
+                drafts(item.stored).takeIf { it > 0 }?.let { append("  $it ${if (it == 1) "draft" else "drafts"}", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
                 toolTipText = item.stored.id
             }
             is StepItem -> {

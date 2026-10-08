@@ -8,6 +8,12 @@ import java.nio.file.Path
 
 /** Uses real editor tabs: the ordinary headless test editor manager has no preview tabs. */
 class StoryPreviewTabTest : FileEditorManagerTestCase() {
+    override fun tearDown() {
+        // The project folder is this test's temporary folder; the watcher must not create .codestory while it is deleted.
+        try { StoryFileWatcher.getInstance(project).dispose() } catch (e: Throwable) { addSuppressedException(e) }
+        finally { super.tearDown() }
+    }
+
     fun `test step navigation follows the IDE preview tab setting`() {
         val file = createTempFile("story-preview.txt", "first\nsecond\n".toByteArray())
         val root = Path.of(file.path).parent

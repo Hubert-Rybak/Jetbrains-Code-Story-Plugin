@@ -10,7 +10,8 @@ the highlighted code. The **Code Story** tool window lists stories newest first
 and shows their details, including who wrote them and the Git branch and
 commit at creation. It holds the card when the editor has no room for it.
 Text-only steps show their comment in the details pane and leave the editor
-as it is. See
+as it is. Readers ask questions about steps, and the agent answers them inside
+the story. See
 [spec.md](spec.md) for the product specification and
 [issue #1](https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/issues/1)
 for the implementation roadmap.
@@ -150,6 +151,35 @@ Story. Change them in **Settings | Keymap** by searching for the action name.
 Comments support inline code, bold, bullet lists and links to http/https URLs
 or repository files (`src/App.kt#L2-L5`). Links open only when clicked.
 
+### Questions and answers
+
+Ask your agent about a story without leaving the IDE. Select a step or a story in the
+tool window, and click **Comment on step** or **Comment on story** in the details pane
+(or **Comment** in the context menu). **Save Draft** (Ctrl+Enter) keeps the question as a
+draft in your IDE workspace; drafts never go into the story file. You can edit or delete
+a draft, and the story row shows how many drafts it has.
+
+**Submit Round** (in the details pane and the toolbar) writes all drafts of the story into
+the story file as one numbered round. Then tell your agent `/code-story feedback`
+(`$code-story feedback` in Codex); the notification and the details pane have buttons that
+copy the command. Until an agent fetches a comment, it shows "Waiting for agent" and you
+can **Withdraw** it back to your drafts. A fetched comment shows "Agent working".
+
+The agent calls `code_story_feedback` to get the comments that wait, oldest round first,
+and answers each one with `code_story_reply`: `answered`, or `declined` with a reason. It
+never changes code for a question. The answers appear under your comments, a notification
+tells you that they arrived, and a story that is playing keeps its step. **Reply** in a
+thread adds a draft that opens the thread again in the next round. **Resolve** closes a
+thread; resolved threads are hidden until you select **Show resolved**.
+
+Threads are part of the story file, so they travel with a shared story. When an agent
+revises a story, each thread stays on its step (by step ID); threads of removed steps move
+to the story. `code_story_list` reports `pendingComments` for each story, and
+`code_story_get` returns the threads. Agent answers follow the writing rules with larger
+limits (1 to 5 sentences, or a lead sentence and up to 6 list items, 100 words at most);
+the checks give warnings only. A reply to a comment that is already answered gets
+`already-answered`, so two agent sessions never answer the same comment twice.
+
 ## Develop
 
 This single-module Kotlin project is based on the
@@ -187,6 +217,10 @@ in temporary user and project folders; setup tests cover status and first-run gu
 Management tests cover share/unshare, deletion confirmation, shared arrivals without
 playback, repository grouping and separate reader state for duplicate story IDs.
 Core tests also cover Markdown export, including text-only steps and escaped paths.
+Feedback tests submit rounds in the fixture, call `code_story_feedback` and
+`code_story_reply`, and check thread states, withdraw, "already answered", thread
+preservation on revision, drafts in workspace storage and the details pane; core tests
+cover the thread state machine, the thread format and the answer checks.
 
 The story core (package `io.github.hubertrybak.codestory.core`) has no IDE
 dependencies: the story model, the validation rules, the anchor policy, the file

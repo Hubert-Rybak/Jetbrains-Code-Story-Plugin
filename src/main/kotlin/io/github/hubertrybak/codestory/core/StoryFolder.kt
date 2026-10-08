@@ -54,11 +54,19 @@ class StoryFolder(val root: Path) {
         class NotFound(val id: String) : SaveResult
     }
 
+    sealed interface UpdateResult {
+        /** [stored] is the story as its file has it now. */
+        class Updated(val stored: StoredStory) : UpdateResult
+        class Unchanged(val stored: StoredStory) : UpdateResult
+        class TooLarge(val bytes: Int) : UpdateResult
+        data object NotFound : UpdateResult
+    }
+
     /**
      * Saves a new story as `<yyyy-MM-dd>-<slug>.story.json`, with a number suffix when the name
      * exists. The file is written to a temporary file first and then renamed, so a reader never
      * sees a partial story. With [storyId], replaces that story in its current folder while
-     * preserving its ID and creation metadata. An unknown ID saves nothing.
+     * preserving its ID, creation metadata and comment threads. An unknown ID saves nothing.
      */
     fun save(story: Story, createdAt: Instant, git: StoryGit = StoryGit(), storyId: String? = null): SaveResult = synchronized(saveLock) {
         val existing = if (storyId == null) null else get(storyId) ?: return SaveResult.NotFound(storyId)
@@ -68,7 +76,7 @@ class StoryFolder(val root: Path) {
             .map { if (it == 1) baseId else "$baseId-$it" }
             .first { !exists(it) }
         val assignedIds = story.steps.mapNotNull { it.id }.toMutableSet()
-        val saved = story.copy(
+        val revised = story.copy(
             createdAt = existing?.story?.createdAt ?: createdAt,
             git = existing?.story?.git ?: git,
             steps = story.steps.map { step ->
@@ -78,6 +86,8 @@ class StoryFolder(val root: Path) {
                 }
             },
         )
+        // Threads belong to the plugin: a revision keeps them on their steps.
+        val saved = if (existing == null) revised else StoryThreads.carryOver(existing.story, revised)
         val bytes = StoryFormat.encode(saved, id).toByteArray(Charsets.UTF_8)
         if (bytes.size > StoryLimits.MAX_FILE_BYTES) return SaveResult.TooLarge(bytes.size)
 
@@ -87,6 +97,21 @@ class StoryFolder(val root: Path) {
         if (file.parent == localDir) ensureGitIgnore()
         writeAtomically(file, bytes)
         SaveResult.Saved(id, file, saved)
+    }
+
+    /**
+     * Changes the comment threads of a saved story, in its local or shared file. Reads and writes
+     * the file under the save lock, so no other change is lost. Readers change shared stories on
+     * purpose: the threads travel with them.
+     */
+    fun update(id: String, change: (Story) -> Story): UpdateResult = synchronized(saveLock) {
+        val current = get(id) ?: return UpdateResult.NotFound
+        val updated = change(current.story)
+        if (updated == current.story) return UpdateResult.Unchanged(current)
+        val bytes = StoryFormat.encode(updated, id).toByteArray(Charsets.UTF_8)
+        if (bytes.size > StoryLimits.MAX_FILE_BYTES) return UpdateResult.TooLarge(bytes.size)
+        writeAtomically(current.file, bytes)
+        UpdateResult.Updated(StoredStory(id, root, current.file, updated, Files.getLastModifiedTime(current.file)))
     }
 
     /**

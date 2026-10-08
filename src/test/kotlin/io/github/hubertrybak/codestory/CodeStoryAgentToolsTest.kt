@@ -69,12 +69,20 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
     }
 
     fun `test all agent tools expose their typed parameters`() {
-        assertEquals(setOf("code_story_guide", "code_story_list", "code_story_get", "code_story_show"),
+        assertEquals(setOf("code_story_guide", "code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_reply"),
             CodeStoryToolset().asTools().map { it.descriptor.name }.toSet())
         val show = tool("code_story_show").descriptor.inputSchema
         assertTrue("storyId" in show.propertiesSchema)
         assertFalse("storyId" in show.requiredProperties)
         assertTrue("storyId" in tool("code_story_get").descriptor.inputSchema.requiredProperties)
+        val feedback = tool("code_story_feedback").descriptor.inputSchema
+        assertTrue("storyId" in feedback.propertiesSchema)
+        assertFalse("storyId" in feedback.requiredProperties)
+        val reply = tool("code_story_reply").descriptor.inputSchema
+        assertEquals(setOf("storyId", "replies"), reply.requiredProperties.toSet() - "projectPath")
+        val replies = reply.propertiesSchema.getValue("replies").toString()
+        for (field in listOf("threadId", "round", "outcome", "text", "\"answered\"", "\"declined\"")) assertTrue(replies, replies.contains(field))
+        assertFalse(replies, replies.contains("\"done\""))
     }
 
     fun `test guide comes from this plugin version and includes a valid example`() {
@@ -85,7 +93,8 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         val bundled = javaClass.getResourceAsStream("/code-story/guide.md")!!.bufferedReader().use { it.readText() }
         assertEquals("# Code Story writing guide\n\nInstalled plugin version: $version\n\n$bundled", guide)
         for (rule in listOf("ASD-STE100", "20 words", "25 words", "60 words", "30 lines", "code_story_get", "Fix all reported errors and writing warnings once",
-            "anchorText", "within 20 lines", "corrections", "code-changed", "lost", "baseRef", "HEAD", "Show diff")) {
+            "anchorText", "within 20 lines", "corrections", "code-changed", "lost", "baseRef", "HEAD", "Show diff",
+            "code_story_feedback", "code_story_reply", "100 words", "declined", "already-answered", "Never change code for a question")) {
             assertTrue(rule, guide.contains(rule))
         }
         val example = Regex("```json\\n(.*?)\\n```", RegexOption.DOT_MATCHES_ALL).find(guide)!!.groupValues[1]
@@ -279,10 +288,11 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
     }
 
     fun `test project tools require an open project`() {
-        for (name in listOf("code_story_list", "code_story_get", "code_story_show")) {
+        for (name in listOf("code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_reply")) {
             val args = when (name) {
                 "code_story_get" -> mapOf("storyId" to JsonPrimitive("2000-01-01-story"))
                 "code_story_show" -> mapOf("story" to Json.parseToJsonElement(story(step())))
+                "code_story_reply" -> mapOf("storyId" to JsonPrimitive("2000-01-01-story"), "replies" to Json.parseToJsonElement("[]"))
                 else -> emptyMap()
             }
             val error = runCatching { call(name, args, project = null) }.exceptionOrNull()
