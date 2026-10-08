@@ -5,6 +5,8 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vcs.ProjectLevelVcsManager
+import com.intellij.openapi.vcs.VcsDirectoryMapping
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.testFramework.PlatformTestUtil
@@ -18,6 +20,8 @@ import io.github.hubertrybak.codestory.core.ValidationResult
 import io.github.hubertrybak.codestory.ui.StoryListPanel
 import io.github.hubertrybak.codestory.ui.StoryPlayer
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
 import java.nio.file.Path
@@ -58,7 +62,7 @@ class StoryFileDropTest : HeavyPlatformTestCase() {
     fun `test a valid atomic drop is listed and played without MCP or VFS refresh`() {
         start()
         val file = drop()
-        await { player.currentStory?.id == ID && panel.tree.rowCount == 3 }
+        await { player.currentStory?.id == ID && panel.tree.rowCount == 5 }
         assertEquals(0, player.stepIndex)
         assertEquals("App.kt", player.presentation!!.editor.virtualFile!!.name)
         assertEquals(listOf(ID), service.list().map { it.id })
@@ -206,8 +210,58 @@ class StoryFileDropTest : HeavyPlatformTestCase() {
         // A second story makes completion of the directory scan observable, without starting playback.
         val marked = "2026-10-08-marked"
         drop(id = marked, contents = contents(id = marked, marker = true))
-        await { panel.tree.rowCount >= 4 }
+        await { panel.tree.rowCount >= 6 }
         assertNull(player.currentStory)
+    }
+
+    fun `test sharing and unsharing a file drop never deliver it again`() {
+        start()
+        val file = drop()
+        await { player.currentStory?.id == ID }
+        player.stop()
+        val original = Files.readString(file)
+        val local = service.stories().single()
+        runBlocking { withContext(Dispatchers.IO) { service.setShared(local, true) } }
+        val shared = service.stories().single()
+        assertEquals("shared", shared.folder)
+        runBlocking { withContext(Dispatchers.IO) { service.setShared(shared, false) } }
+        val marked = "2026-10-08-marked"
+        drop(id = marked, contents = contents(id = marked, marker = true))
+        await { panel.tree.rowCount >= 6 }
+        assertEquals(original, Files.readString(file))
+        assertNull(player.currentStory)
+        assertEmpty(watcher.problems.values)
+    }
+
+    fun `test drops in separate repositories validate and play at their own roots`() {
+        val repositories = listOf("first", "second").map { name ->
+            root.resolve(name).also { repository ->
+                Files.createDirectories(repository.resolve("src"))
+                Files.copy(root.resolve("src/App.kt"), repository.resolve("src/App.kt"))
+                GitFixture(repository).init()
+            }
+        }
+        ProjectLevelVcsManager.getInstance(project).setDirectoryMappings(repositories.map { VcsDirectoryMapping(it.toString(), "Git") })
+        start()
+        drop(directory = "first/.codestory/local")
+        await { player.currentStory?.root == repositories[0] }
+        player.next()
+        drop(directory = "second/.codestory/local")
+        await { player.currentStory?.root == repositories[1] }
+        assertEquals(0, player.stepIndex)
+        assertEquals(2, service.list().size)
+        // Startup may have watched the plain project before VCS mappings were configured.
+        assertFalse(Files.exists(root.resolve(".codestory/local")))
+        assertFalse(Files.exists(root.resolve(".codestory/shared")))
+
+        val invalid = drop(contents = contents().replace("src/App.kt", "src/Missing.kt"), directory = "second/.codestory/local")
+        await { watcher.problems[invalid]?.firstOrNull()?.code == ErrorCode.FILE_NOT_FOUND.code }
+        val sharedId = "2026-10-08-shared"
+        drop(id = sharedId, contents = contents(id = sharedId), directory = "first/.codestory/shared")
+        await { service.list().size == 2 && panel.fileProblems.text.contains("src/Missing.kt") }
+        assertEquals(repositories[1], player.currentStory!!.root)
+        assertTrue(service.stories().single { it.id == sharedId }.isNew)
+        assertEquals(repositories[0].toString(), service.list().single { it.id == ID }.repositoryPath)
     }
 
     private fun start() = runBlocking { CodeStoryStartup().execute(project) }

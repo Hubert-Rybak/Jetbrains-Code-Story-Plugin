@@ -53,7 +53,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
 
         val tree = openPanel().tree
 
-        assertEquals(3, tree.rowCount)
+        assertEquals(5, tree.rowCount)
         assertEquals("Payment flow  ${id.take(10)}", rowText(0))
         assertEquals("1. Entry point  App.kt:40–52  ✓", rowText(1))
         assertEquals("2. Charge  Billing.kt:2", rowText(2))
@@ -64,7 +64,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         assertEquals(0, tree.rowCount)
 
         show(story(step(), title = quoted("Bug trace")))
-        PlatformTestUtil.waitWithEventsDispatching("the new story is not selected", { tree.rowCount == 2 && tree.minSelectionRow == 1 }, TIMEOUT_SECONDS)
+        PlatformTestUtil.waitWithEventsDispatching("the new story is not selected", { tree.rowCount == 4 && tree.minSelectionRow == 2 }, TIMEOUT_SECONDS)
 
         assertTrue(rowText(0).startsWith("Bug trace"))
     }
@@ -100,7 +100,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         val commit = git.command("rev-parse", "HEAD")
         show(story(step(), type = quoted("review")))
         openPanel()
-        panel!!.tree.setSelectionRow(0)
+        panel!!.tree.setSelectionRow(1)
         val text = panel!!.details.displayedText
         assertTrue(text, text.contains("Payment flow"))
         assertTrue(text, text.contains("Type: review"))
@@ -153,7 +153,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         git.init()
         show(story(step()))
         openPanel()
-        panel!!.tree.setSelectionRow(0)
+        panel!!.tree.setSelectionRow(1)
         git.command("checkout", "-b", "other-branch")
         panel!!.reload()
         PlatformTestUtil.waitWithEventsDispatching(
@@ -195,7 +195,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         val stories = CodeStoryService.getInstance(project).stories()
         PlatformTestUtil.waitWithEventsDispatching(
             "the stories are not listed",
-            { panel.tree.rowCount == stories.sumOf { it.story.steps.size + 1 } || (stories.isEmpty() && loaded(panel)) },
+            { panel.tree.rowCount == 2 + stories.sumOf { it.story.steps.size + 1 } || (stories.isEmpty() && loaded(panel)) },
             TIMEOUT_SECONDS,
         )
         panel.tree.setSize(600, 400)
@@ -210,17 +210,17 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
 
     private fun rowText(row: Int): String {
         val tree = panel!!.tree
-        val path = tree.getPathForRow(row)
+        val path = tree.getPathForRow(row + 1)
         val renderer = tree.cellRenderer.getTreeCellRendererComponent(tree, path.lastPathComponent, false, true, true, row, false)
         return (renderer as SimpleColoredComponent).getCharSequence(false).toString()
     }
 
     private fun click(row: Int) {
         val tree = panel!!.tree
-        val bounds = tree.getRowBounds(row)
+        val bounds = tree.getRowBounds(row + 1)
         val x = bounds.x + 2
         val y = bounds.y + bounds.height / 2
-        tree.setSelectionRow(row)
+        tree.setSelectionRow(row + 1)
         for (id in listOf(MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_RELEASED, MouseEvent.MOUSE_CLICKED)) {
             val event = MouseEvent(tree, id, System.currentTimeMillis(), 0, x, y, 1, false, MouseEvent.BUTTON1)
             // The tree's own press handling needs a display; the click listener does not check this flag on press.

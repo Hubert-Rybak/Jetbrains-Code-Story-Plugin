@@ -34,9 +34,11 @@ class CodeStoryToolset : McpToolset {
     suspend fun getStory(
         @McpDescription(description = "An existing story ID returned by code_story_list.")
         storyId: String,
+        @McpDescription(description = "Absolute repository root from code_story_list. Required when the ID exists in several repositories.")
+        repositoryPath: String? = null,
     ): SavedStoryResult = withService {
         if (!StoryFolder.isValidId(storyId)) throw McpExpectedError("Invalid storyId. Use an ID from code_story_list.")
-        val saved = it.get(storyId) ?: throw McpExpectedError("Story '$storyId' was not found. Call code_story_list for the current IDs.")
+        val saved = it.get(storyId, repositoryPath) ?: throw McpExpectedError("Story '$storyId' was not found. Call code_story_list for the current IDs.")
         SavedStoryResult(saved)
     }
 
@@ -53,6 +55,7 @@ class CodeStoryToolset : McpToolset {
         |Keep step IDs stable when revising a story; omit them to let the plugin assign IDs.
         |Use 3 to 12 steps (15 at most). Read every file before you call this tool, so that each path and line number is correct.
         |Paths are relative to the Git repository root. Line numbers start at 1, and a range includes its endLine.
+        |With several repositories, pass repositoryPath with the absolute repository root. Every step must stay in that repository.
         |Each location needs anchorText: the exact text of line startLine. The IDE compares it with the code that it shows, including unsaved edits.
         |If the text is a few lines away (20 at most), the IDE moves the range and lists a correction in the report. If it cannot find the text, it rejects the story.
         |If the story has no errors, the IDE saves it in .codestory/local/ and lists it in the Code Story tool window.
@@ -68,7 +71,9 @@ class CodeStoryToolset : McpToolset {
         story: StoryArgument,
         @McpDescription(description = "Omit for a new story. To replace a story in place, use its ID from code_story_list or code_story_show.")
         storyId: String? = null,
-    ): ShowReport = withService { it.show(story.json, storyId) }
+        @McpDescription(description = "Absolute repository root within this project. Use it when several repositories have matching paths, for text-only stories, or to disambiguate a storyId.")
+        repositoryPath: String? = null,
+    ): ShowReport = withService { it.show(story.json, storyId, repositoryPath) }
 
     private suspend fun <T> withService(action: suspend (CodeStoryService) -> T): T {
         // The MCP server finds the project from the projectPath that it adds to every tool. The plugin never guesses.

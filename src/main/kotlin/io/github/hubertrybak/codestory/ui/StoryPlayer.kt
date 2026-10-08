@@ -61,13 +61,18 @@ class StoryPlayer(private val project: Project) : Disposable {
     val isPlaying get() = currentStory != null
     val isLastStep get() = currentStory?.let { stepIndex == it.story.steps.lastIndex } == true
 
-    fun wasVisited(storyId: String, index: Int) = index in visited[storyId].orEmpty()
+    fun wasVisited(stored: StoredStory, index: Int) = index in visited[stored.key].orEmpty()
 
     /** Without an explicit index, Play resumes the position saved in this IDE's workspace. */
     fun play(stored: StoredStory, index: Int? = null) {
         ApplicationManager.getApplication().assertIsDispatchThread()
-        if (currentStory?.id != stored.id) syncAnchors()
-        val target = (index ?: project.service<StoryReadingPosition>().state.steps[stored.id] ?: 0)
+        if (currentStory?.key != stored.key) syncAnchors()
+        val positions = project.service<StoryReadingPosition>().state.steps
+        // Before repository grouping, positions belonged only to the project's default root.
+        if (stored.key !in positions && stored.root == CodeStoryService.getInstance(project).storyFolder().root) {
+            positions.remove(stored.id)?.let { positions[stored.key] = it }
+        }
+        val target = (index ?: positions[stored.key] ?: 0)
             .coerceIn(stored.story.steps.indices)
         // The anchor check reads the file as the IDE has it, so refresh it from disk first.
         stored.story.steps[target].location?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(stored.root.resolve(it.file)) }
@@ -87,10 +92,11 @@ class StoryPlayer(private val project: Project) : Disposable {
         } else {
             presentation?.dismissCard()
         }
-        currentStory = resolved
+        CodeStoryService.getInstance(project).opened(resolved)
+        currentStory = resolved.withNewMarker(false)
         stepIndex = target
-        project.service<StoryReadingPosition>().state.steps[stored.id] = target
-        visited.getOrPut(stored.id) { mutableSetOf() }.add(target)
+        positions[stored.key] = target
+        visited.getOrPut(stored.key) { mutableSetOf() }.add(target)
         playbackVersion++
         changed()
         if (editor != null) presentation!!.showCard()
@@ -105,6 +111,14 @@ class StoryPlayer(private val project: Project) : Disposable {
         clearPresentation()
         play(stored, index)
     }
+    /** Sharing changes the file location without restarting playback or moving the editor. */
+    fun relocated(stored: StoredStory) {
+        ApplicationManager.getApplication().assertIsDispatchThread()
+        val current = currentStory?.takeIf { it.key == stored.key } ?: return
+        currentStory = StoredStory(current.id, current.root, stored.file, current.story, stored.modified, current.statuses)
+        changed()
+    }
+
     fun previous() { currentStory?.takeIf { stepIndex > 0 }?.let { play(it, stepIndex - 1) } }
     fun next() { currentStory?.let { if (isLastStep) stop() else play(it, stepIndex + 1) } }
 

@@ -69,6 +69,19 @@ for the agent.
 
 ## Story playback
 
+- [ ] The tree groups Local and Shared stories, under repository names only when
+      several Git repositories are mapped in the project.
+- [ ] Share and Unshare move the same story file between the two folders, preserving
+      its ID and playback position. Shared files can be committed with the branch.
+- [ ] Delete asks for confirmation. Cancel keeps the story; Delete removes its file
+      and stops it if it is playing.
+- [ ] A shared story checked out in a second clone appears as new without starting
+      playback. Playing it clears the marker across IDE restarts, without editing the file.
+- [ ] Copy as Markdown works from the toolbar and context menu, including when a
+      step is selected. The pasted text has title, summary, comments and relative line links.
+- [ ] With two repositories, each story saves in its own repository. A story with
+      steps in both is rejected. Identical story IDs keep separate reading positions.
+
 Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light
 and dark themes, including narrow and split editors.
 

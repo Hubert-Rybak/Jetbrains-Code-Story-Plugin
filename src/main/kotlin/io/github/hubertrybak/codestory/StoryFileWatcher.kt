@@ -7,6 +7,7 @@ import com.intellij.openapi.project.Project
 import io.github.hubertrybak.codestory.core.ErrorCode
 import io.github.hubertrybak.codestory.core.ReportItem
 import io.github.hubertrybak.codestory.core.Story
+import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryLimits
@@ -17,6 +18,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -44,25 +48,41 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
         private set
     private val seen = HashMap<Path, String>()
     private val accepted = HashMap<Path, Story>()
+    private val scanLock = Mutex()
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
         job = scope.launch(Dispatchers.IO) {
-            val folder = CodeStoryService.getInstance(project).storyFolder()
+            val service = CodeStoryService.getInstance(project)
+            val projectRoot = Path.of(checkNotNull(project.basePath))
             try {
-                folder.root.fileSystem.newWatchService().use { watch ->
+                projectRoot.fileSystem.newWatchService().use { watch ->
                     watcher = watch
                     val registrations = HashMap<Path, Registration>()
                     var rescan = true
                     while (isActive) {
                         var retry = false
-                        try {
-                            val registered = registerFolders(folder, watch, registrations)
-                            if (registered || rescan) scan(folder)
-                            setProblems(folder.root.resolve(StoryFolder.CODESTORY_DIR), emptyList())
-                        } catch (e: IOException) {
-                            setProblems(folder.root.resolve(StoryFolder.CODESTORY_DIR), listOf(problem("Cannot watch story files: ${e.message}")))
-                            retry = true
+                        val folders = service.storyFolders()
+                        scanLock.withLock {
+                            val directories = folders.flatMap { listOf(it.root.resolve(StoryFolder.CODESTORY_DIR), it.localDir, it.sharedDir) }.toSet()
+                            for (path in registrations.keys.toList().filter { it !in directories }) {
+                                registrations.remove(path)?.key?.cancel()
+                            }
+                            for (path in (seen.keys + accepted.keys + problems.keys).filter { it !in directories && it.parent !in directories }) {
+                                seen.remove(path)
+                                accepted.remove(path)
+                                setProblems(path, emptyList())
+                            }
+                            for (folder in folders) {
+                                try {
+                                    val registered = registerFolders(folder, watch, registrations)
+                                    if (registered || rescan) scan(folder)
+                                    setProblems(folder.root.resolve(StoryFolder.CODESTORY_DIR), emptyList())
+                                } catch (e: IOException) {
+                                    setProblems(folder.root.resolve(StoryFolder.CODESTORY_DIR), listOf(problem("Cannot watch story files: ${e.message}")))
+                                    retry = true
+                                }
+                            }
                         }
                         val key = runInterruptible { watch.poll(1, TimeUnit.SECONDS) }
                         key?.pollEvents()
@@ -73,8 +93,22 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
             } catch (_: ClosedWatchServiceException) {
                 // Project closed or plugin unloaded.
             } catch (e: IOException) {
-                setProblems(folder.root.resolve(StoryFolder.CODESTORY_DIR), listOf(problem("Cannot watch story files: ${e.message}")))
+                setProblems(projectRoot.resolve(StoryFolder.CODESTORY_DIR), listOf(problem("Cannot watch story files: ${e.message}")))
             }
+        }
+    }
+
+    /** Sharing is a file move, not a delivery. Serialize it with scans so Unshare never auto-plays a drop. */
+    fun setShared(stored: StoredStory, shared: Boolean): StoredStory = runBlocking {
+        scanLock.withLock {
+            val moved = StoryFolder(stored.root).setShared(stored, shared)
+            seen.remove(stored.file)
+            accepted.remove(stored.file)
+            seen[moved.file] = hash(Files.readString(moved.file))
+            accepted[moved.file] = moved.story
+            setProblems(stored.file, emptyList())
+            setProblems(moved.file, emptyList())
+            moved
         }
     }
 
@@ -140,7 +174,8 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
                 }
             }
         }
-        val removed = (seen.keys + problems.keys.filter { it.fileName.toString().endsWith(StoryFormat.FILE_SUFFIX) }) - present
+        val removed = (seen.keys + problems.keys.filter { it.fileName.toString().endsWith(StoryFormat.FILE_SUFFIX) })
+            .filter { it.parent == folder.localDir || it.parent == folder.sharedDir }.toSet() - present
         for (file in removed) {
             seen.remove(file)
             accepted.remove(file)
@@ -166,7 +201,7 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
             return setProblems(file, emptyList())
         }
         val service = CodeStoryService.getInstance(project)
-        val checked = when (val result = service.validateIncomingStory(json)) {
+        val checked = when (val result = service.validateIncomingStory(json, folder)) {
             is ValidationResult.Invalid -> return setProblems(file, result.errors)
             is ValidationResult.Valid -> result.story
         }

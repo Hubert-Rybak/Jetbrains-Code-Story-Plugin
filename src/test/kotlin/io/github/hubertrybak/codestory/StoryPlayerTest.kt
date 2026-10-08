@@ -71,8 +71,8 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
         assertTrue(last.disposed)
         assertFalse(last.range.isValid)
         assertNull(player.presentation)
-        assertTrue(player.wasVisited(stored.id, 0))
-        assertTrue(player.wasVisited(stored.id, 1))
+        assertTrue(player.wasVisited(stored, 0))
+        assertTrue(player.wasVisited(stored, 1))
     }
 
     fun `test only one story plays and stop removes all presentation`() {
@@ -111,7 +111,7 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
             player.next()
 
             assertEquals(1, player.stepIndex)
-            assertTrue(player.wasVisited(stored.id, 1))
+            assertTrue(player.wasVisited(stored, 1))
             assertTrue(panel.details.displayedText.contains("Step 2 of 3: Overview"))
             assertTrue(panel.details.displayedText.contains("Keep the current code in view."))
             assertSame(current.editor, manager.selectedTextEditor)
@@ -123,7 +123,7 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
             assertTrue(current.cardDismissed)
             assertNull(current.card.parent)
 
-            panel.tree.setSelectionRow(0)
+            panel.tree.setSelectionRow(1)
             assertTrue(panel.details.displayedText.contains("Written by Test Agent"))
             player.play(stored, 1)
             assertTrue(panel.details.displayedText.contains("Step 2 of 3: Overview"))
@@ -177,7 +177,17 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
         player.restart(stored)
         assertEquals(0, player.stepIndex)
         assertEquals(before, Files.readString(stored.file))
-        assertTrue(player.wasVisited(stored.id, 1))
+        assertTrue(player.wasVisited(stored, 1))
+    }
+
+    fun `test existing workspace reading position survives repository grouping`() {
+        val stored = story()
+        val positions = project.service<StoryReadingPosition>().state.steps
+        positions[stored.id] = 1
+        player.play(stored)
+        assertEquals(1, player.stepIndex)
+        assertEquals(1, positions[stored.key])
+        assertFalse(positions.containsKey(stored.id))
     }
 
     fun `test closing and reopening card keeps range badges and position`() {

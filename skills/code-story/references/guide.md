@@ -70,6 +70,13 @@ Paths in steps are relative to its Git repository root, or the project folder wi
 Use `/` between folders. Line numbers start at 1 and include `endLine`. Absolute paths,
 `..`, and symbolic links outside the repository are rejected.
 
+With several Git repositories mapped in one project, every story stays inside one
+repository. Pass `repositoryPath` (the absolute repository root) to `code_story_show`
+when paths match several repositories or the story has no code locations. Do not
+prefix step paths with the repository name. `code_story_list` returns `repositoryPath`
+for each story; pass it to `code_story_get` and to replacements when an ID appears
+in several repositories. Split a walkthrough across repositories into separate stories.
+
 Each location has `anchorText`: copy the exact text of line `startLine` from the file.
 Start each range at a line with code, for example a declaration, not at an empty line or
 a lone brace. The plugin compares `anchorText` with the line that the IDE shows, including

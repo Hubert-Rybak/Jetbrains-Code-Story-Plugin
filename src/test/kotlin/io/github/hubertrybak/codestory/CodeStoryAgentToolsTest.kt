@@ -158,7 +158,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         assertEquals(20, player.currentStory!!.story.steps[1].location!!.startLine)
         assertTrue(previous.disposed)
         assertFalse(previous.range.isValid)
-        assertTrue(player.wasVisited(id, 0))
+        assertTrue(player.wasVisited(player.currentStory!!, 0))
         val after = get(id)
         assertEquals(before.getValue("createdAt"), after.getValue("createdAt"))
         assertEquals(before.getValue("git"), after.getValue("git"))

@@ -107,7 +107,7 @@ class StoryChangeInfoTest : HeavyPlatformTestCase() {
 
         openPanel(7)
         assertEquals(EXPECTED_STEPS, (1..6).map { stepRow(it) })
-        panel!!.tree.setSelectionRow(0)
+        panel!!.tree.setSelectionRow(1)
         assertTrue(panel!!.details.displayedText, panel!!.details.displayedText.contains("Diff base: $base"))
 
         git.command("add", "-A")
@@ -179,7 +179,7 @@ class StoryChangeInfoTest : HeavyPlatformTestCase() {
 
         openPanel(7)
         assertEquals(PLAIN_STEPS, (1..6).map { stepRow(it) })
-        panel!!.tree.setSelectionRow(0)
+        panel!!.tree.setSelectionRow(1)
         assertTrue(panel!!.details.displayedText, panel!!.details.displayedText.contains("Diff base: $unknown (Git does not know this commit)"))
         assertNoDiff()
     }
@@ -190,7 +190,7 @@ class StoryChangeInfoTest : HeavyPlatformTestCase() {
         assertFalse(get(report.string("storyId")).containsKey("baseRef"))
         openPanel(7)
         assertEquals(PLAIN_STEPS, (1..6).map { stepRow(it) })
-        panel!!.tree.setSelectionRow(0)
+        panel!!.tree.setSelectionRow(1)
         assertFalse(panel!!.details.displayedText.contains("Diff base"))
         assertNoDiff()
     }
@@ -231,7 +231,7 @@ class StoryChangeInfoTest : HeavyPlatformTestCase() {
     private fun openPanel(rows: Int) {
         val panel = StoryListPanel(project).also { panel = it }
         val loaded = panel.loaded()
-        PlatformTestUtil.waitWithEventsDispatching("the stories are not listed", { loaded.isDone && panel.tree.rowCount == rows }, TIMEOUT_SECONDS)
+        PlatformTestUtil.waitWithEventsDispatching("the stories are not listed", { loaded.isDone && panel.tree.rowCount == rows + 2 }, TIMEOUT_SECONDS)
         // The change information was queued before the load completed.
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
         panel.tree.setSize(800, 400)
@@ -240,12 +240,12 @@ class StoryChangeInfoTest : HeavyPlatformTestCase() {
     /** The step rows; step 1 has the visited mark of the auto-play. */
     private fun stepRow(row: Int): String {
         val tree = panel!!.tree
-        val path = tree.getPathForRow(row)
+        val path = tree.getPathForRow(row + 1)
         val renderer = tree.cellRenderer.getTreeCellRendererComponent(tree, path.lastPathComponent, false, true, true, row, false)
         return (renderer as SimpleColoredComponent).getCharSequence(false).toString().removeSuffix("  ✓")
     }
 
-    private fun select(row: Int) = panel!!.tree.setSelectionRow(row)
+    private fun select(row: Int) = panel!!.tree.setSelectionRow(row + 1)
 
     private fun showDiffAction() = panel!!.contextActions.getChildActionsOrStubs().single { it.templatePresentation.text == "Show Diff" }
 

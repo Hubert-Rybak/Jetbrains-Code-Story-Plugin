@@ -1,6 +1,8 @@
 package io.github.hubertrybak.codestory.ui
 
 import com.intellij.icons.AllIcons
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -12,9 +14,13 @@ import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.vcs.FileStatus
+import com.intellij.openapi.vcs.ProjectLevelVcsManager
+import com.intellij.openapi.vcs.VcsListener
 import com.intellij.ui.ClickListener
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.JBColor
@@ -36,12 +42,16 @@ import io.github.hubertrybak.codestory.core.StepChange
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryGit
+import io.github.hubertrybak.codestory.core.StoryFolder
+import io.github.hubertrybak.codestory.core.StoryMarkdownExport
 import io.github.hubertrybak.codestory.core.StoryType
 import org.jetbrains.annotations.TestOnly
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.awt.BorderLayout
+import java.awt.datatransfer.StringSelection
+import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.Future
 import javax.swing.JPanel
@@ -53,6 +63,11 @@ import javax.swing.tree.TreePath
 
 /** A story row in the tree. [changes] is `null` for a story without a base, or without the Git plugin. */
 class StoryItem(val stored: StoredStory, val changes: StoryChanges? = null)
+
+class RepositoryItem(val root: Path)
+class StoryFolderItem(val root: Path, val shared: Boolean) {
+    val name: String get() = if (shared) "Shared" else "Local"
+}
 
 /** A step row in the tree; [index] is 0-based. */
 class StepItem(val stored: StoredStory, val index: Int, val changes: StoryChanges? = null) {
@@ -76,7 +91,22 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     private val player = StoryPlayer.getInstance(project)
     val details = StoryDetailsPanel(::showDiff)
     /** The context menu of stories and steps. */
-    val contextActions = DefaultActionGroup(RestartAction(), ShowDiffAction())
+    val contextActions = DefaultActionGroup(RestartAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
+    val toolbarActions = DefaultActionGroup().apply {
+        add(PlayAction())
+        add(ActionManager.getInstance().getAction("CodeStory.PreviousStep"))
+        add(ActionManager.getInstance().getAction("CodeStory.NextStep"))
+        add(ActionManager.getInstance().getAction("CodeStory.StopStory"))
+        addSeparator()
+        add(ShareAction())
+        add(DeleteAction())
+        add(CopyMarkdownAction())
+        addSeparator()
+        add(RefreshAction())
+        addSeparator()
+        add(ActionManager.getInstance().getAction("CodeStory.InstallSkill"))
+        add(ActionManager.getInstance().getAction("CodeStory.CheckSetup"))
+    }
     private var currentGit: Map<Path, StoryGit> = emptyMap()
     private var changes: Map<String, StoryChanges> = emptyMap()
     private var playbackVersion = -1
@@ -108,7 +138,8 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         project.messageBus.connect(this).subscribe(StoryPlaybackListener.TOPIC, StoryPlaybackListener { updatePlayback() })
         updatePlayback()
         StoryGitMetadata.EP.extensionList.forEach { it.subscribe(project, this) { reload() } }
-        reload(CodeStoryService.getInstance(project).lastShownStoryId)
+        project.messageBus.connect(this).subscribe(ProjectLevelVcsManager.VCS_CONFIGURATION_CHANGED, VcsListener { reload() })
+        reload(CodeStoryService.getInstance(project).lastShownStoryKey)
     }
 
     /**
@@ -116,6 +147,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
      * information of stories with a base follows, because it runs Git for each of them.
      */
     fun reload(selectStoryId: String? = null) {
+        if (disposed) return
         loader.execute {
             val stories = try {
                 CodeStoryService.getInstance(project).stories()
@@ -124,6 +156,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
                 return@execute
             }
             val git = stories.map { it.root }.distinct().associateWith { CodeStoryService.getInstance(project).currentGit(it) }
+            val roots = CodeStoryService.getInstance(project).storyFolders().map { it.root }
             val problems = StoryFileWatcher.getInstance(project).problems
             onEdt {
                 fileProblems.text = problems.entries.joinToString("\n\n") { (file, errors) ->
@@ -134,10 +167,10 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
                 fileProblems.rows = minOf(8, fileProblems.text.lines().size + 1)
                 problemsPane.isVisible = problems.isNotEmpty()
                 currentGit = git
-                showStories(stories, selectStoryId)
+                showStories(stories, selectStoryId, roots)
                 revalidate()
             }
-            val changes = stories.mapNotNull { stored -> changesOf(stored)?.let { stored.id to it } }.toMap()
+            val changes = stories.mapNotNull { stored -> changesOf(stored)?.let { stored.key to it } }.toMap()
             onEdt { showChanges(changes) }
         }
     }
@@ -176,27 +209,38 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     }
 
     /** The change information that was found for this version of the story's base, if any. */
-    private fun changesFor(stored: StoredStory): StoryChanges? = changes[stored.id]?.takeIf { it.baseRef == stored.story.baseRef }
+    private fun changesFor(stored: StoredStory): StoryChanges? = changes[stored.key]?.takeIf { it.baseRef == stored.story.baseRef }
 
     /** Replaces the tree content. Keeps open stories open and the selection, if the story is still there. */
-    fun showStories(stories: List<StoredStory>, selectStoryId: String? = null) {
+    fun showStories(stories: List<StoredStory>, selectStoryId: String? = null, roots: List<Path> = stories.map { it.root }.distinct()) {
         val initialLoad = !loaded
         val expanded = storyNodes().filter { tree.isExpanded(TreePath(it.path)) }.map { storyId(it) }.toSet()
         val selected = selectedKey()
 
         rootNode.removeAllChildren()
-        for (stored in stories) {
-            val storyChanges = changesFor(stored)
-            val storyNode = DefaultMutableTreeNode(StoryItem(stored, storyChanges))
-            stored.story.steps.indices.forEach { storyNode.add(DefaultMutableTreeNode(StepItem(stored, it, storyChanges), false)) }
-            rootNode.add(storyNode)
+        val repositories = if (stories.isEmpty()) emptyList() else (roots + stories.map { it.root }).distinct()
+        for (root in repositories) {
+            val parent = if (repositories.size > 1) DefaultMutableTreeNode(RepositoryItem(root)).also(rootNode::add) else rootNode
+            for (shared in listOf(false, true)) {
+                val folder = DefaultMutableTreeNode(StoryFolderItem(root, shared))
+                parent.add(folder)
+                for (stored in stories.filter { it.root == root && (it.folder == StoryFolder.SHARED_DIR) == shared }) {
+                    val storyChanges = changesFor(stored)
+                    val storyNode = DefaultMutableTreeNode(StoryItem(stored, storyChanges))
+                    stored.story.steps.indices.forEach { storyNode.add(DefaultMutableTreeNode(StepItem(stored, it, storyChanges), false)) }
+                    folder.add(storyNode)
+                }
+            }
         }
         treeModel.reload()
+        rootNode.preorderEnumeration().toList().filterIsInstance<DefaultMutableTreeNode>()
+            .filter { it.userObject is RepositoryItem || it.userObject is StoryFolderItem }
+            .forEach { tree.expandPath(TreePath(it.path)) }
 
-        val newest = stories.firstOrNull()?.id
+        val newest = stories.firstOrNull()?.key
         for (node in storyNodes()) {
             val id = storyId(node)
-            if (id in expanded || id == selectStoryId || (!loaded && id == newest)) tree.expandPath(TreePath(node.path))
+            if (id in expanded || id == selectStoryId || (node.userObject as StoryItem).stored.id == selectStoryId || (!loaded && id == newest)) tree.expandPath(TreePath(node.path))
         }
         loaded = true
 
@@ -204,7 +248,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
             ?: selected?.let { (id, step) -> findNode(id, step) }
             ?: if (selected == null) newest?.let { findNode(it, null) } else null
         if (toSelect != null) TreeUtil.selectPath(tree, TreePath(toSelect.path))
-        if ((selectStoryId != null && player.currentStory?.id == selectStoryId) || (initialLoad && player.isPlaying)) selectPlayingStep()
+        if ((selectStoryId != null && player.currentStory?.key == selectStoryId) || (initialLoad && player.isPlaying)) selectPlayingStep()
         showSelectedDetails()
         updatePlayback()
     }
@@ -248,17 +292,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     }
 
     private fun createToolbar() = ActionManager.getInstance()
-        .createActionToolbar("CodeStory.ToolWindow", DefaultActionGroup().apply {
-            add(PlayAction())
-            add(ActionManager.getInstance().getAction("CodeStory.PreviousStep"))
-            add(ActionManager.getInstance().getAction("CodeStory.NextStep"))
-            add(ActionManager.getInstance().getAction("CodeStory.StopStory"))
-            addSeparator()
-            add(RefreshAction())
-            addSeparator()
-            add(ActionManager.getInstance().getAction("CodeStory.InstallSkill"))
-            add(ActionManager.getInstance().getAction("CodeStory.CheckSetup"))
-        }, true)
+        .createActionToolbar("CodeStory.ToolWindow", toolbarActions, true)
         .also { it.targetComponent = this }
         .component
 
@@ -280,6 +314,51 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         override fun actionPerformed(e: AnActionEvent) { selectedStory()?.let { player.restart(it) } }
     }
 
+    private inner class ShareAction : DumbAwareAction("Share", "Move the story between Local and Shared", AllIcons.Actions.Upload) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) {
+            val stored = selectedStory()
+            e.presentation.isEnabled = stored != null
+            e.presentation.text = if (stored?.folder == StoryFolder.SHARED_DIR) "Unshare" else "Share"
+        }
+        override fun actionPerformed(e: AnActionEvent) {
+            val stored = selectedStory() ?: return
+            manageStory { CodeStoryService.getInstance(project).setShared(stored, stored.folder != StoryFolder.SHARED_DIR) }
+        }
+    }
+
+    private inner class DeleteAction : DumbAwareAction("Delete", "Delete the selected story file", AllIcons.Actions.GC) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
+        override fun actionPerformed(e: AnActionEvent) {
+            val stored = selectedStory() ?: return
+            if (Messages.showYesNoDialog(project, "Delete the selected story? This removes its story file.",
+                    "Delete Story", "Delete", "Cancel", Messages.getQuestionIcon()) != Messages.YES) return
+            manageStory { CodeStoryService.getInstance(project).delete(stored) }
+        }
+    }
+
+    private inner class CopyMarkdownAction : DumbAwareAction("Copy as Markdown", "Copy the story for a pull request description", AllIcons.Actions.Copy) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
+        override fun actionPerformed(e: AnActionEvent) {
+            val stored = selectedStory() ?: return
+            val current = player.currentStory?.takeIf { it.key == stored.key } ?: stored
+            CopyPasteManager.getInstance().setContents(StringSelection(StoryMarkdownExport.render(current.story)))
+        }
+    }
+
+    private fun manageStory(action: () -> Unit) {
+        loader.execute {
+            try { action() } catch (e: IOException) {
+                onEdt {
+                    NotificationGroupManager.getInstance().getNotificationGroup(NOTIFICATION_GROUP)
+                        .createNotification("Code Story could not change the story file: ${e.message}", NotificationType.ERROR).notify(project)
+                }
+            }
+        }
+    }
+
     /** Only for steps of a story about a change: stories without a base show no "Show diff". */
     private inner class ShowDiffAction : DumbAwareAction("Show Diff", "Compare the step's file at the story's base commit with the current file", AllIcons.Actions.Diff) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -289,7 +368,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
 
     private fun showDiff(item: StepItem) {
         // While the story plays, its live markers have the newest lines of the step.
-        val stored = player.currentStory?.takeIf { it.id == item.stored.id && it.story.steps.getOrNull(item.index)?.id == item.step.id } ?: item.stored
+        val stored = player.currentStory?.takeIf { it.key == item.stored.key && it.story.steps.getOrNull(item.index)?.id == item.step.id } ?: item.stored
         StoryChangeInfo.getInstance(project).showDiff(stored, item.index)
     }
 
@@ -304,7 +383,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     private fun selectPlayingStep() {
         val stored = player.currentStory ?: return
         val item = StepItem(stored, player.stepIndex, changesFor(stored))
-        findNode(stored.id, item.step.id)?.let { TreeUtil.selectPath(tree, TreePath(it.path)) }
+        findNode(stored.key, item.step.id)?.let { TreeUtil.selectPath(tree, TreePath(it.path)) }
         details.showStep(item)
     }
 
@@ -323,21 +402,23 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         tree.repaint()
     }
 
-    private fun storyNodes(): List<DefaultMutableTreeNode> = rootNode.children().toList().map { it as DefaultMutableTreeNode }
+    private fun storyNodes(): List<DefaultMutableTreeNode> = rootNode.depthFirstEnumeration().toList()
+        .filterIsInstance<DefaultMutableTreeNode>().filter { it.userObject is StoryItem }
 
-    private fun storyId(node: DefaultMutableTreeNode): String = (node.userObject as StoryItem).stored.id
+    private fun storyId(node: DefaultMutableTreeNode): String = (node.userObject as StoryItem).stored.key
 
     private fun stepItem(path: TreePath): StepItem? = (path.lastPathComponent as? DefaultMutableTreeNode)?.userObject as? StepItem
 
     /** The selected story ID and, for a step, its stable ID. */
     private fun selectedKey(): Pair<String, String?>? = when (val item = (tree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject) {
-        is StoryItem -> item.stored.id to null
-        is StepItem -> item.stored.id to item.step.id
+        is StoryItem -> item.stored.key to null
+        is StepItem -> item.stored.key to item.step.id
         else -> null
     }
 
     private fun findNode(storyId: String, stepId: String?): DefaultMutableTreeNode? {
-        val storyNode = storyNodes().firstOrNull { storyId(it) == storyId } ?: return null
+        val storyNode = storyNodes().firstOrNull { storyId(it) == storyId }
+            ?: storyNodes().singleOrNull { (it.userObject as StoryItem).stored.id == storyId } ?: return null
         if (stepId == null) return storyNode
         return storyNode.children().toList().map { it as DefaultMutableTreeNode }
             .firstOrNull { (it.userObject as StepItem).step.id == stepId } ?: storyNode
@@ -355,6 +436,16 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
     ) {
         // The text comes from story files, so it is shown as plain text, never as HTML.
         when (val item = (value as? DefaultMutableTreeNode)?.userObject) {
+            is RepositoryItem -> {
+                icon = AllIcons.Nodes.Folder
+                append(item.root.fileName.toString())
+                toolTipText = item.root.toString()
+            }
+            is StoryFolderItem -> {
+                icon = AllIcons.Nodes.Folder
+                append(item.name)
+                toolTipText = item.root.resolve(".codestory").resolve(item.name.lowercase()).toString()
+            }
             is StoryItem -> {
                 icon = when (item.stored.story.type) {
                     StoryType.CHANGE -> AllIcons.Actions.Diff
@@ -363,6 +454,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
                     StoryType.REVIEW -> AllIcons.Actions.Checked
                 }
                 append(item.stored.story.title)
+                if (item.stored.isNew) append("  new", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                 append("  ${item.stored.date}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 val git = item.stored.story.git
                 (git.branch ?: if (git.commit != null) "Detached HEAD" else null)
@@ -372,7 +464,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
             }
             is StepItem -> {
                 val location = item.step.location
-                val attributes = if (player.currentStory?.id == item.stored.id && player.stepIndex == item.index)
+                val attributes = if (player.currentStory?.key == item.stored.key && player.stepIndex == item.index)
                     SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else SimpleTextAttributes.REGULAR_ATTRIBUTES
                 append("${item.index + 1}. ${item.step.title}", attributes)
                 if (location != null) append("  ${location.file.substringAfterLast('/')}:${lines(location)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
@@ -385,7 +477,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
                     StepStatus.LOST -> append("  lost", WARNING)
                     StepStatus.OK, StepStatus.MOVED -> Unit
                 }
-                if (player.wasVisited(item.stored.id, item.index)) append("  ✓", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                if (player.wasVisited(item.stored, item.index)) append("  ✓", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 toolTipText = listOfNotNull(location?.file, item.change?.let { changeTip(it, item.changes) }).joinToString(" · ").ifEmpty { null }
             }
         }

@@ -278,6 +278,6 @@ private class StepBadge(private val stored: StoredStory, private val index: Int,
     override fun getClickAction() = object : DumbAwareAction() {
         override fun actionPerformed(e: AnActionEvent) = player.play(stored, index)
     }
-    override fun equals(other: Any?) = other is StepBadge && other.stored.id == stored.id && other.index == index && other.current == current
-    override fun hashCode() = 31 * stored.id.hashCode() + index + if (current) 1 else 0
+    override fun equals(other: Any?) = other is StepBadge && other.stored.key == stored.key && other.index == index && other.current == current
+    override fun hashCode() = 31 * stored.key.hashCode() + index + if (current) 1 else 0
 }
