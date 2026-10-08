@@ -46,6 +46,8 @@ internal class StoryShape(
     val request: String,
     @property:McpDescription("The agent and model that wrote the story.")
     val author: AuthorShape,
+    @property:McpDescription("Only for a story about a change: the SHA of the commit before the change, or HEAD for uncommitted work. Omit it for other stories.")
+    val baseRef: String? = null,
     @property:McpDescription("3 to 12 steps (15 at most), in reading order. Each step explains one idea.")
     val steps: List<StepShape>,
 )

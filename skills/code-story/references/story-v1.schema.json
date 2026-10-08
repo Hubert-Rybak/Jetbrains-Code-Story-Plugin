@@ -64,6 +64,14 @@
     "git": {
       "$ref": "#/$defs/git"
     },
+    "baseRef": {
+      "description": "Only for a story about a change, supplied by the agent: the commit before the change, or HEAD for uncommitted work. The plugin saves the full SHA of the commit when Git knows it, and shows the lines that each step added or modified since then. Omit it or use null for other stories.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(HEAD|[0-9a-fA-F]{4,64})$"
+    },
     "steps": {
       "description": "Steps in reading order: 3 to 12 are best, 15 at most.",
       "type": "array",

@@ -8,11 +8,13 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.util.Condition
+import com.intellij.openapi.vcs.FileStatus
 import com.intellij.ui.ClickListener
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.JBColor
@@ -24,30 +26,41 @@ import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.tree.TreeUtil
 import io.github.hubertrybak.codestory.CodeStoryService
+import io.github.hubertrybak.codestory.StoryChangeInfo
+import io.github.hubertrybak.codestory.StoryChanges
 import io.github.hubertrybak.codestory.StoryListListener
 import io.github.hubertrybak.codestory.StoryGitMetadata
 import io.github.hubertrybak.codestory.core.Location
+import io.github.hubertrybak.codestory.core.StepChange
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryGit
 import io.github.hubertrybak.codestory.core.StoryType
+import org.jetbrains.annotations.TestOnly
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.awt.BorderLayout
 import java.nio.file.Path
+import java.util.concurrent.Future
 import javax.swing.JPanel
 import javax.swing.JTree
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
 
-/** A story row in the tree. */
-class StoryItem(val stored: StoredStory)
+/** A story row in the tree. [changes] is `null` for a story without a base, or without the Git plugin. */
+class StoryItem(val stored: StoredStory, val changes: StoryChanges? = null)
 
 /** A step row in the tree; [index] is 0-based. */
-class StepItem(val stored: StoredStory, val index: Int) {
+class StepItem(val stored: StoredStory, val index: Int, val changes: StoryChanges? = null) {
     val step get() = stored.story.steps[index]
+
+    /** What the step added or modified since the story's base. */
+    val change: StepChange? get() = changes?.step(step.id)
+
+    /** A step with code can show its diff when Git knows the story's base. */
+    val canShowDiff: Boolean get() = changes?.commit != null && step.location != null
 }
 
 /** The content of the Code Story tool window: the stories and their steps. A click on a step opens its code. */
@@ -57,8 +70,11 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     val tree: Tree = Tree(treeModel)
     val cardContainer = JPanel(BorderLayout())
     private val player = StoryPlayer.getInstance(project)
-    val details = StoryDetailsPanel()
+    val details = StoryDetailsPanel(::showDiff)
+    /** The context menu of stories and steps. */
+    val contextActions = DefaultActionGroup(RestartAction(), ShowDiffAction())
     private var currentGit: Map<Path, StoryGit> = emptyMap()
+    private var changes: Map<String, StoryChanges> = emptyMap()
     private var playbackVersion = -1
     private val loader = AppExecutorUtil.createBoundedApplicationPoolExecutor("Code Story story list", 1)
 
@@ -82,7 +98,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
             add(cardContainer, BorderLayout.SOUTH)
         })
         toolbar = createToolbar()
-        PopupHandler.installPopupMenu(tree, DefaultActionGroup(RestartAction()), "CodeStory.StoryMenu")
+        PopupHandler.installPopupMenu(tree, contextActions, "CodeStory.StoryMenu")
         project.messageBus.connect(this).subscribe(StoryListListener.TOPIC, StoryListListener { reload(it) })
         project.messageBus.connect(this).subscribe(StoryPlaybackListener.TOPIC, StoryPlaybackListener { updatePlayback() })
         updatePlayback()
@@ -90,7 +106,10 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         reload(CodeStoryService.getInstance(project).lastShownStoryId)
     }
 
-    /** Reads the stories in the background, then shows them and selects [selectStoryId]. */
+    /**
+     * Reads the stories in the background, then shows them and selects [selectStoryId]. The change
+     * information of stories with a base follows, because it runs Git for each of them.
+     */
     fun reload(selectStoryId: String? = null) {
         loader.execute {
             val stories = try {
@@ -100,13 +119,47 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
                 return@execute
             }
             val git = stories.map { it.root }.distinct().associateWith { CodeStoryService.getInstance(project).currentGit(it) }
-            ApplicationManager.getApplication().invokeLater(
-                { currentGit = git; showStories(stories, selectStoryId) },
-                ModalityState.any(),
-                Condition<Any?> { disposed || project.isDisposed },
-            )
+            onEdt { currentGit = git; showStories(stories, selectStoryId) }
+            val changes = stories.mapNotNull { stored -> changesOf(stored)?.let { stored.id to it } }.toMap()
+            onEdt { showChanges(changes) }
         }
     }
+
+    /** Completes when the stories that were requested before are shown, with their change information. */
+    @TestOnly
+    internal fun loaded(): Future<*> = loader.submit {}
+
+    private fun onEdt(action: () -> Unit) = ApplicationManager.getApplication().invokeLater(
+        action, ModalityState.any(), Condition<Any?> { disposed || project.isDisposed },
+    )
+
+    /** A Git problem leaves the story without change information, and the list still shows it. */
+    private fun changesOf(stored: StoredStory): StoryChanges? = try {
+        StoryChangeInfo.getInstance(project).changes(stored)
+    } catch (e: Exception) {
+        if (e is ControlFlowException) throw e
+        LOG.warn("Code Story cannot read the changes of ${stored.id}", e)
+        null
+    }
+
+    /** Adds the badges and "Show diff" to the stories in the tree. */
+    private fun showChanges(changes: Map<String, StoryChanges>) {
+        this.changes = changes
+        for (storyNode in storyNodes()) {
+            val stored = (storyNode.userObject as StoryItem).stored
+            val storyChanges = changesFor(stored)
+            storyNode.userObject = StoryItem(stored, storyChanges)
+            treeModel.nodeChanged(storyNode)
+            for (stepNode in storyNode.children().toList().map { it as DefaultMutableTreeNode }) {
+                stepNode.userObject = StepItem(stored, (stepNode.userObject as StepItem).index, storyChanges)
+                treeModel.nodeChanged(stepNode)
+            }
+        }
+        showSelectedDetails()
+    }
+
+    /** The change information that was found for this version of the story's base, if any. */
+    private fun changesFor(stored: StoredStory): StoryChanges? = changes[stored.id]?.takeIf { it.baseRef == stored.story.baseRef }
 
     /** Replaces the tree content. Keeps open stories open and the selection, if the story is still there. */
     fun showStories(stories: List<StoredStory>, selectStoryId: String? = null) {
@@ -116,8 +169,9 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
 
         rootNode.removeAllChildren()
         for (stored in stories) {
-            val storyNode = DefaultMutableTreeNode(StoryItem(stored))
-            stored.story.steps.indices.forEach { storyNode.add(DefaultMutableTreeNode(StepItem(stored, it), false)) }
+            val storyChanges = changesFor(stored)
+            val storyNode = DefaultMutableTreeNode(StoryItem(stored, storyChanges))
+            stored.story.steps.indices.forEach { storyNode.add(DefaultMutableTreeNode(StepItem(stored, it, storyChanges), false)) }
             rootNode.add(storyNode)
         }
         treeModel.reload()
@@ -170,7 +224,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
 
     private fun showSelectedDetails() {
         when (val item = (tree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject) {
-            is StoryItem -> details.showStory(item.stored, currentGit[item.stored.root])
+            is StoryItem -> details.showStory(item.stored, currentGit[item.stored.root], item.changes)
             is StepItem -> details.showStep(item)
             else -> details.clear()
         }
@@ -206,6 +260,21 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         override fun actionPerformed(e: AnActionEvent) { selectedStory()?.let { player.restart(it) } }
     }
 
+    /** Only for steps of a story about a change: stories without a base show no "Show diff". */
+    private inner class ShowDiffAction : DumbAwareAction("Show Diff", "Compare the step's file at the story's base commit with the current file", AllIcons.Actions.Diff) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) { e.presentation.isEnabledAndVisible = selectedStep()?.canShowDiff == true }
+        override fun actionPerformed(e: AnActionEvent) { selectedStep()?.takeIf { it.canShowDiff }?.let(::showDiff) }
+    }
+
+    private fun showDiff(item: StepItem) {
+        // While the story plays, its live markers have the newest lines of the step.
+        val stored = player.currentStory?.takeIf { it.id == item.stored.id && it.story.steps.getOrNull(item.index)?.id == item.step.id } ?: item.stored
+        StoryChangeInfo.getInstance(project).showDiff(stored, item.index)
+    }
+
+    private fun selectedStep(): StepItem? = (tree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject as? StepItem
+
     private fun selectedStory(): StoredStory? = when (val item = (tree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject) {
         is StoryItem -> item.stored
         is StepItem -> item.stored
@@ -214,7 +283,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
 
     private fun selectPlayingStep() {
         val stored = player.currentStory ?: return
-        val item = StepItem(stored, player.stepIndex)
+        val item = StepItem(stored, player.stepIndex, changesFor(stored))
         findNode(stored.id, item.step.id)?.let { TreeUtil.selectPath(tree, TreePath(it.path)) }
         details.showStep(item)
     }
@@ -287,15 +356,24 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer) : ColoredTr
                     SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else SimpleTextAttributes.REGULAR_ATTRIBUTES
                 append("${item.index + 1}. ${item.step.title}", attributes)
                 if (location != null) append("  ${location.file.substringAfterLast('/')}:${lines(location)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                item.change?.let { change ->
+                    val color = if (change == StepChange.ADDED) FileStatus.ADDED.color else FileStatus.MODIFIED.color
+                    append("  ${change.badge}", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, color))
+                }
                 when (item.stored.status(item.index)) {
                     StepStatus.CODE_CHANGED -> append("  code changed", WARNING)
                     StepStatus.LOST -> append("  lost", WARNING)
                     StepStatus.OK, StepStatus.MOVED -> Unit
                 }
                 if (player.wasVisited(item.stored.id, item.index)) append("  ✓", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                toolTipText = location?.file
+                toolTipText = listOfNotNull(location?.file, item.change?.let { changeTip(it, item.changes) }).joinToString(" · ").ifEmpty { null }
             }
         }
+    }
+
+    private fun changeTip(change: StepChange, changes: StoryChanges?): String {
+        val since = changes?.commit?.take(10)?.let { " since $it" }.orEmpty()
+        return if (change == StepChange.ADDED) "Added$since" else "Modified$since"
     }
 
     private fun lines(location: Location): String =

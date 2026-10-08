@@ -43,6 +43,7 @@ object StoryFormat {
                 put("branch", story.git.branch?.let(::JsonPrimitive) ?: JsonNull)
                 put("commit", story.git.commit?.let(::JsonPrimitive) ?: JsonNull)
             }
+            story.baseRef?.let { put("baseRef", it) }
             putJsonArray("steps") {
                 for (step in story.steps) {
                     addJsonObject {

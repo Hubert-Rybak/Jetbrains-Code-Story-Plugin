@@ -85,7 +85,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         val bundled = javaClass.getResourceAsStream("/code-story/guide.md")!!.bufferedReader().use { it.readText() }
         assertEquals("# Code Story writing guide\n\nInstalled plugin version: $version\n\n$bundled", guide)
         for (rule in listOf("ASD-STE100", "20 words", "25 words", "60 words", "30 lines", "code_story_get", "Fix all reported errors and writing warnings once",
-            "anchorText", "within 20 lines", "corrections", "code-changed", "lost")) {
+            "anchorText", "within 20 lines", "corrections", "code-changed", "lost", "baseRef", "HEAD", "Show diff")) {
             assertTrue(rule, guide.contains(rule))
         }
         val example = Regex("```json\\n(.*?)\\n```", RegexOption.DOT_MATCHES_ALL).find(guide)!!.groupValues[1]

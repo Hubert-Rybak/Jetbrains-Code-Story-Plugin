@@ -81,6 +81,8 @@ class TextAndPathTest {
 
     @Test
     fun `every writing warning has a table-driven test`() {
-        assertEquals(WarningCode.entries.toSet(), WritingCases.all.flatMap { it.expected.toList() }.toSet())
+        val covered = WritingCases.all.flatMap { it.expected.toList() }.toSet() +
+            setOf(WarningCode.UNKNOWN_BASE_REF) // Change information tests
+        assertEquals(WarningCode.entries.toSet(), covered)
     }
 }

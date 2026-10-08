@@ -17,6 +17,23 @@ Use the key lines only, usually 30 lines or fewer. Skip renames, formatting,
 generated code, lock files and imports; mention mechanical changes in at most one
 summary sentence. An overview or a final list of checks may be text-only.
 
+## Stories about a change
+
+Set `baseRef` only for a story about a change, usually of type `change` or `review`.
+Do not set it for `exploration` and `bug-trace` stories. `baseRef` is the commit
+before the change:
+
+- For uncommitted work, use `HEAD`.
+- For committed work on a branch, use the SHA of the commit where the branch starts,
+  for example the output of `git merge-base HEAD main`.
+
+The plugin saves the full SHA of the commit, so the base stays the same after the work
+is committed. It compares the base with the current files, including uncommitted edits.
+A step whose lines are all new since the base shows "A". A step with some new or changed
+lines shows "M". "Show diff" opens the IDE diff viewer at the lines of the step. If Git
+does not know the commit, the report has the warning `unknown-base-ref`. The story is
+saved, but it shows no change information.
+
 ## Write clear English
 
 These are our own practical rules, inspired by ASD-STE100 Simplified Technical
@@ -72,8 +89,9 @@ For a new story, call `code_story_show(story)` without `storyId`. For a revision
    `movedSteps`, `changedSteps` and `lostSteps` count the steps. Read the code again and
    revise `code-changed` and `lost` steps.
 2. Call `code_story_get(storyId)` to read the full saved story.
-3. Keep the IDs of steps you retain. Call `code_story_show(story, storyId)` with the
-   revised whole story. It replaces the same file, in the same local or shared folder.
+3. Keep the IDs of steps you retain, and keep `baseRef`. Call
+   `code_story_show(story, storyId)` with the revised whole story. It replaces the
+   same file, in the same local or shared folder.
    Its story ID and creation time, branch and commit stay the same. A playing story
    reloads at the same step number, or at the last step if it is now shorter.
 
@@ -96,6 +114,7 @@ Code Story tool window. Explain any remaining rejection if the story could not b
 
 The `story` parameter is a typed JSON object, not a JSON string. Supply `title`,
 `type`, `summary`, the original `request`, `author` (agent and model), and `steps`.
+Add `baseRef` only for a story about a change.
 Each step has `title`, `comment`, an optional stable `id`, and either one `location`
 object or no location. A location has `file`, `startLine`, `endLine` and `anchorText`.
 The plugin assigns IDs to new steps whose IDs are omitted.

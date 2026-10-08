@@ -23,7 +23,8 @@ select the zip, and restart if prompted. Open **View | Tool Windows | Code Story
 The window starts on the right; use the IDE's normal tool window controls to move it.
 
 The MCP Server plugin is optional, but agents need it to send stories. The
-Git plugin is optional; it supplies branch and commit metadata when available.
+Git plugin is optional; it supplies branch and commit metadata and change
+information when available.
 
 ## Use
 
@@ -64,6 +65,17 @@ step plays at its stored lines, and the card warns "The code changed. This step
 can be wrong."). The story row shows the number of lost and changed steps, and
 `code_story_list` reports the status. Moved lines are saved in local stories
 only; shared story files never change, and their corrections stay in memory.
+
+A story about a change can set `baseRef`: the commit before the change, or
+`HEAD` for uncommitted work. The plugin saves the full SHA of that commit, so the
+base stays the same after the work is committed. Each step then shows **A** in
+the tree when all of its lines are new since the base, or **M** when some of them
+changed; steps without changes show no badge. **Show diff**, in the step details
+and the context menu, opens the IDE diff viewer: the file at the base commit
+against the current file, scrolled to the step's lines. A renamed file is compared
+with its old path. A `baseRef` that Git does not know gives an `unknown-base-ref`
+warning in the report, and the story then shows no change information, like a
+story without a base. Without the Git plugin, change information is off.
 
 `code_story_list` lists local and shared stories with their ID, title, type, date,
 branch, folder and status: `ok`, `moved`, `code-changed` or `lost`, with the number
@@ -128,7 +140,9 @@ They also cover guide/list/get, replacement in local and shared folders, writing
 reports, auto-play, playback controls, resume/restart, card dismissal,
 gutter navigation, presentation cleanup and the absence of code-line inlays.
 Anchoring tests edit fixture documents and check corrections, step statuses, live
-markers during playback and the rewrite of local (never shared) stories.
+markers during playback and the rewrite of local (never shared) stories. Change
+information tests build a fixture Git history and check the A/M badges, the saved
+base commit, **Show diff** and the unknown-base warning.
 
 The story core (package `io.github.hubertrybak.codestory.core`) has no IDE
 dependencies: the story model, the validation rules, the anchor policy, the file
