@@ -160,6 +160,31 @@ Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).
 - [ ] After `git checkout` of another branch, stories find moved code again, and
       steps whose code is gone are lost.
 
+## Questions and answers
+
+Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark
+themes, including a narrow tool window.
+
+- [ ] **Comment on step**, **Comment on story** and the context-menu **Comment** open an
+      input with keyboard focus. Ctrl+Enter and **Save Draft** save a draft; Escape and
+      **Cancel** discard the input. Drafts can be edited and deleted.
+- [ ] The story row shows the draft count, and **Submit Round (N)** in the toolbar and the
+      details pane counts all drafts of the story. Both are disabled without drafts.
+- [ ] Drafts survive an IDE restart and are never written to the story file. An unsaved
+      input stays while the story reloads and returns after looking at another step.
+- [ ] After Submit, the notification and the details pane show
+      "Waiting for your agent: tell it /code-story feedback"; both copy buttons put the
+      right command on the clipboard. **Withdraw** returns the comment to the drafts.
+- [ ] `/code-story feedback` in the agent fetches the comments: they show "Agent working"
+      and can no longer be withdrawn. The agent answers without code changes, and a
+      notification with **Open** shows the story with the answers.
+- [ ] With a story playing, answers arrive without moving the editor, the card or the step.
+- [ ] **Reply** opens the thread again in the next round, and `/code-story feedback`
+      answers only the new comment. **Resolve** hides the thread until **Show resolved**.
+- [ ] Comments on a shared story change that shared file; `git diff` shows only the threads.
+- [ ] Long comments and answers wrap to the width of the tool window, and comment text
+      shows as plain text: HTML in a comment stays visible as text.
+
 ## Change information
 
 Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light

@@ -19,6 +19,7 @@ import io.github.hubertrybak.codestory.AnchorTracker
 import io.github.hubertrybak.codestory.CodeStoryService
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
+import io.github.hubertrybak.codestory.core.StoryThreads
 
 @Service(Service.Level.PROJECT)
 @State(name = "CodeStoryReadingPosition", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -116,6 +117,19 @@ class StoryPlayer(private val project: Project) : Disposable {
         ApplicationManager.getApplication().assertIsDispatchThread()
         val current = currentStory?.takeIf { it.key == stored.key } ?: return
         currentStory = StoredStory(current.id, current.root, stored.file, current.story, stored.modified, current.statuses)
+        changed()
+    }
+
+    /**
+     * The comment threads of the playing story changed in its file. The story reloads its threads
+     * and stays at the same step, with its lines, card and highlight.
+     */
+    fun threadsChanged(stored: StoredStory) {
+        ApplicationManager.getApplication().assertIsDispatchThread()
+        val current = currentStory?.takeIf { it.key == stored.key } ?: return
+        // The playing story keeps the lines that its live markers followed.
+        val story = StoryThreads.carryOver(stored.story, current.story)
+        currentStory = StoredStory(current.id, current.root, stored.file, story, stored.modified, current.statuses)
         changed()
     }
 

@@ -1,5 +1,8 @@
 package io.github.hubertrybak.codestory
 
+import com.intellij.notification.NotificationAction
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
@@ -9,34 +12,48 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.messages.Topic
+import io.github.hubertrybak.codestory.core.DraftComment
 import io.github.hubertrybak.codestory.core.ReportItem
 import io.github.hubertrybak.codestory.core.ErrorCode
+import io.github.hubertrybak.codestory.core.FeedbackReport
+import io.github.hubertrybak.codestory.core.ReplyInput
+import io.github.hubertrybak.codestory.core.ReplyIssue
+import io.github.hubertrybak.codestory.core.ReplyReport
 import io.github.hubertrybak.codestory.core.RootStoryFiles
 import io.github.hubertrybak.codestory.core.ShowReport
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryAnchors
+import io.github.hubertrybak.codestory.core.StoryFeedback
 import io.github.hubertrybak.codestory.core.StoryFiles
 import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryFormat
+import io.github.hubertrybak.codestory.core.StoryLimits
 import io.github.hubertrybak.codestory.core.StoryListEntry
+import io.github.hubertrybak.codestory.core.StoryThreads
 import io.github.hubertrybak.codestory.core.StoryWritingChecks
 import io.github.hubertrybak.codestory.core.StoryGit
 import io.github.hubertrybak.codestory.core.StoryValidator
 import io.github.hubertrybak.codestory.core.TextFiles
 import io.github.hubertrybak.codestory.core.ValidationResult
+import io.github.hubertrybak.codestory.ui.CODEX_FEEDBACK_COMMAND
+import io.github.hubertrybak.codestory.ui.FEEDBACK_COMMAND
+import io.github.hubertrybak.codestory.ui.StoryListPanel
 import io.github.hubertrybak.codestory.ui.StoryPlayer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import java.awt.datatransfer.StringSelection
 import java.io.IOException
 import java.nio.file.Path
 import java.nio.file.Files
@@ -65,6 +82,7 @@ class CodeStoryService(private val project: Project) : Disposable {
     var lastShownStoryId: String? = null
         private set
 
+    /** The repository and story that the tool window selects when it opens: shown by an agent, or opened from a notification. */
     @Volatile
     var lastShownStoryKey: String? = null
         private set
@@ -175,6 +193,7 @@ class CodeStoryService(private val project: Project) : Disposable {
 
     fun delete(stored: StoredStory) {
         if (!StoryFolder(stored.root).delete(stored)) throw IOException("The story has moved or was already deleted. Refresh the list.")
+        project.service<StoryReaderState>().deleteStoryDrafts(stored.key)
         ApplicationManager.getApplication().invokeLater({
             val player = StoryPlayer.getInstance(project)
             if (player.currentStory?.key == stored.key) player.stop()
@@ -186,6 +205,157 @@ class CodeStoryService(private val project: Project) : Disposable {
         if (project.service<StoryReaderState>().opened(stored) && stored.isNew) {
             project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(null)
         }
+    }
+
+    /**
+     * Writes the reader's drafts of [stored] into its local or shared file as one numbered round.
+     * Returns the number of submitted comments. Reads and writes files, so call it in the background.
+     */
+    fun submitRound(stored: StoredStory): Int {
+        val reader = project.service<StoryReaderState>()
+        val drafts = reader.drafts(stored.key)
+        if (drafts.isEmpty()) return 0
+        val result = StoryFolder(stored.root).update(stored.id) { StoryThreads.submit(it, drafts.map(StoryDraft::comment), Instant.now()) }
+        val updated = changedStory(result, "The comments make the story file larger than ${StoryLimits.MAX_FILE_BYTES / 1024} KB. Shorten them.")
+            ?: return 0
+        reader.deleteDrafts(drafts.map { it.id })
+        threadsChanged(listOf(updated))
+        roundSubmitted(drafts.size)
+        return drafts.size
+    }
+
+    /**
+     * Takes back a comment that no agent fetched. It becomes a draft again. Returns `false` when an
+     * agent already fetched it. Call in the background.
+     */
+    fun withdraw(stored: StoredStory, threadId: String): Boolean {
+        var draft: DraftComment? = null
+        val result = StoryFolder(stored.root).update(stored.id) { story ->
+            StoryThreads.withdraw(story, threadId)?.let { (updated, comment) -> draft = comment; updated } ?: story
+        }
+        val updated = changedStory(result, null) ?: return false
+        draft?.let { project.service<StoryReaderState>().saveDraft(StoryDraft(story = stored.key, step = it.stepId, thread = it.threadId, kind = it.kind, text = it.text)) }
+        threadsChanged(listOf(updated))
+        return true
+    }
+
+    /** Closes a thread that an agent replied to. Returns `false` when the thread waits for an agent. Call in the background. */
+    fun resolve(stored: StoredStory, threadId: String): Boolean {
+        val result = StoryFolder(stored.root).update(stored.id) { StoryThreads.resolve(it, threadId) ?: it }
+        threadsChanged(listOf(changedStory(result, null) ?: return false))
+        return true
+    }
+
+    /**
+     * Handles `code_story_feedback`: the reader comments that wait for an agent, in one story or in
+     * all of them. Fetched comments become "received" and stay available until an agent replies.
+     * `null` when [storyId] is not found. Reads and writes files, so call it in the background.
+     */
+    fun feedback(storyId: String?, repositoryPath: String?): FeedbackReport? {
+        val rejected = StoryFileWatcher.getInstance(project).problems.keys
+        val folders = storyFolders().filter { repositoryPath == null || it.root.toString() == repositoryPath }
+        val found = if (storyId == null) folders.flatMap { folder -> folder.list().filter { it.file !in rejected } }
+            else folders.mapNotNull { it.get(storyId) }.also {
+                if (it.size > 1) throw IOException("That story ID exists in several repositories. Pass repositoryPath from code_story_list.")
+            }.ifEmpty { return null }
+        // The agent gets what this update marked, so a comment that arrives meanwhile waits for the next call.
+        val marked = mutableListOf<StoredStory>()
+        val fetched = found.mapNotNull { stored ->
+            when (val result = StoryFolder(stored.root).update(stored.id, StoryThreads::markReceived)) {
+                is StoryFolder.UpdateResult.Updated -> result.stored.also(marked::add)
+                is StoryFolder.UpdateResult.Unchanged -> result.stored
+                StoryFolder.UpdateResult.NotFound, is StoryFolder.UpdateResult.TooLarge -> null
+            }
+        }
+        threadsChanged(marked)
+        val live = AnchorTracker.getInstance(project).snapshot()
+        val resolved = fetched.map { resolve(StoryFolder(it.root), it, ideFiles(it.root, live), live) }
+        return StoryFeedback.report(resolved, requested = storyId != null)
+    }
+
+    /**
+     * Handles `code_story_reply`: saves each reply that fits its fetched comment, in one file write,
+     * and tells the reader that answers arrived. Reads and writes files, so call it in the background.
+     */
+    fun reply(storyId: String, replies: List<JsonElement>, repositoryPath: String? = null): ReplyReport {
+        fun failed(code: ErrorCode, message: String, hint: String) = ReplyReport.failed(ReplyIssue(null, null, code.code, message, hint))
+        if (!StoryFolder.isValidId(storyId)) return failed(ErrorCode.INVALID_STORY_ID, "The story ID is not valid.", "Use a storyId from code_story_feedback.")
+        if (replies.isEmpty()) return failed(ErrorCode.MISSING_FIELD, "The call has no replies.", "Send one reply for each comment from code_story_feedback.")
+        val matches = storyFolders().filter { repositoryPath == null || it.root.toString() == repositoryPath }.mapNotNull { it.get(storyId) }
+        if (matches.size > 1) return failed(ErrorCode.REPOSITORY_REQUIRED, "That story ID exists in several repositories.", "Pass repositoryPath from code_story_feedback.")
+        val stored = matches.singleOrNull()
+            ?: return failed(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.", "Call code_story_feedback for the current comments and story IDs.")
+        val (parsed, inputErrors) = ReplyInput.parse(replies)
+        var replied: StoryThreads.ReplyResult? = null
+        val result = StoryFolder(stored.root).update(storyId) { story -> StoryThreads.reply(story, parsed, Instant.now()).also { replied = it }.story }
+        if (result is StoryFolder.UpdateResult.TooLarge) return ReplyReport.of(storyId, emptyList(), (inputErrors + parsed.map { (index, reply) ->
+            ReplyIssue(index + 1, reply.threadId, ErrorCode.STORY_TOO_LARGE.code, ReportItem.storyTooLarge(result.bytes).message, "Shorten the replies.")
+        }).sortedBy { it.reply }, emptyList())
+        if (result == StoryFolder.UpdateResult.NotFound) return failed(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.", "Call code_story_feedback for the current comments and story IDs.")
+        val outcome = checkNotNull(replied)
+        val checks = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints)
+        // The first reply to a thread is the saved one.
+        val warnings = parsed.filter { it.value.threadId in outcome.saved }.distinctBy { it.value.threadId }.flatMap { (index, reply) ->
+            checks.reply(reply.text, reply.outcome).map { ReplyIssue(index + 1, reply.threadId, it.code, it.message, it.hint) }
+        }
+        if (result is StoryFolder.UpdateResult.Updated) {
+            threadsChanged(listOf(result.stored))
+            answersArrived(result.stored, outcome.saved.size)
+        }
+        return ReplyReport.of(storyId, outcome.saved, (inputErrors + outcome.errors).sortedBy { it.reply }, warnings)
+    }
+
+    /** Opens the tool window at [stored]. */
+    fun showInToolWindow(stored: StoredStory) {
+        lastShownStoryKey = stored.key
+        ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.show()
+        project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(stored.key)
+    }
+
+    /** The story after [result], or `null` when nothing changed. A missing or too large file is an error for the reader. */
+    private fun changedStory(result: StoryFolder.UpdateResult, tooLarge: String?): StoredStory? = when (result) {
+        is StoryFolder.UpdateResult.Updated -> result.stored
+        is StoryFolder.UpdateResult.Unchanged -> null
+        is StoryFolder.UpdateResult.TooLarge -> throw IOException(tooLarge ?: "The story file is larger than ${StoryLimits.MAX_FILE_BYTES / 1024} KB.")
+        StoryFolder.UpdateResult.NotFound -> throw IOException("The story has moved or was deleted. Refresh the list.")
+    }
+
+    /** The tool window and the playing story show the new threads; the player stays at its step. */
+    private fun threadsChanged(stories: List<StoredStory>) {
+        if (stories.isEmpty()) return
+        project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(null)
+        ApplicationManager.getApplication().invokeLater({
+            stories.forEach { StoryPlayer.getInstance(project).threadsChanged(it) }
+        }, ModalityState.nonModal(), project.disposed)
+    }
+
+    /** No agent wakes up on its own: the reader hands the round over in the agent's chat. */
+    private fun roundSubmitted(count: Int) = ApplicationManager.getApplication().invokeLater({
+        fun copy(command: String) = CopyPasteManager.getInstance().setContents(StringSelection(command))
+        NotificationGroupManager.getInstance().getNotificationGroup(StoryListPanel.NOTIFICATION_GROUP)
+            .createNotification(
+                "Waiting for your agent",
+                "${if (count == 1) "Your comment is" else "Your $count comments are"} in the story. Tell your agent: $FEEDBACK_COMMAND " +
+                    "($CODEX_FEEDBACK_COMMAND in Codex).",
+                NotificationType.INFORMATION,
+            )
+            .addAction(NotificationAction.createSimple("Copy $FEEDBACK_COMMAND") { copy(FEEDBACK_COMMAND) })
+            .addAction(NotificationAction.createSimple("Copy for Codex") { copy(CODEX_FEEDBACK_COMMAND) })
+            .notify(project)
+    }, ModalityState.nonModal(), project.disposed)
+
+    private fun answersArrived(stored: StoredStory, count: Int) {
+        if (count == 0) return
+        ApplicationManager.getApplication().invokeLater({
+            NotificationGroupManager.getInstance().getNotificationGroup(StoryListPanel.NOTIFICATION_GROUP)
+                .createNotification(
+                    if (count == 1) "An answer arrived" else "$count answers arrived",
+                    StringUtil.escapeXmlEntities("Your agent replied to your comments on “${stored.story.title}”."),
+                    NotificationType.INFORMATION,
+                )
+                .addAction(NotificationAction.createSimpleExpiring("Open") { showInToolWindow(stored) })
+                .notify(project)
+        }, ModalityState.nonModal(), project.disposed)
     }
 
     /** The current repository state; unavailable Git fields stay null. Call in the background. */

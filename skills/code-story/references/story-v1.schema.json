@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/main/schema/story-v1.schema.json",
   "title": "Code Story story file",
-  "description": "Schema version 1. Stories are UTF-8, pretty-printed in this field order, at most 256 KB, and saved as .codestory/local/<yyyy-MM-dd>-<slug>.story.json at the repository root. The plugin assigns creation metadata, missing step IDs and the stored code of each range.",
+  "description": "Schema version 1. Stories are UTF-8, pretty-printed in this field order, at most 256 KB, and saved as .codestory/local/<yyyy-MM-dd>-<slug>.story.json at the repository root. The plugin assigns creation metadata, missing step IDs and the stored code of each range, and it writes the comment threads.",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -83,6 +83,13 @@
       "maxItems": 15,
       "items": {
         "$ref": "#/$defs/step"
+      }
+    },
+    "threads": {
+      "description": "Comment threads about the whole story, written by the plugin. Agents never set them, and a revision keeps them. Omitted when there are none.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/thread"
       }
     }
   },
@@ -180,6 +187,13 @@
           "description": "Reserved for later modes; ignored in v1.",
           "type": "array",
           "items": {}
+        },
+        "threads": {
+          "description": "Comment threads about this step, written by the plugin. A revision keeps them by step ID. Omitted when there are none.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/thread"
+          }
         }
       }
     },
@@ -218,6 +232,98 @@
         "rangeText": {
           "description": "The code of the range that the step explains, with \\n between lines. The plugin sets it when the step arrives and compares it with the current code to mark steps whose code changed. Agents do not set it.",
           "type": "string"
+        }
+      }
+    },
+    "thread": {
+      "description": "A reader comment and the replies to it. Rounds are numbered per story.",
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "state",
+        "messages"
+      ],
+      "properties": {
+        "id": {
+          "description": "Unique within the story, assigned by the plugin.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "kind": {
+          "description": "question, change (a request to change the code) or refresh (a request to update steps whose code changed).",
+          "enum": [
+            "question",
+            "change",
+            "refresh"
+          ]
+        },
+        "state": {
+          "description": "submitted (waits for an agent; the reader can withdraw it), received (an agent fetched it), answered, done, declined, or resolved (closed by the reader). A new reader comment sets it to submitted again.",
+          "enum": [
+            "submitted",
+            "received",
+            "answered",
+            "done",
+            "declined",
+            "resolved"
+          ]
+        },
+        "removedStep": {
+          "description": "The title of the step that the thread was about, when a revision removed that step. The thread is then on the story.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "messages": {
+          "description": "Reader comments and agent replies, oldest first.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/message"
+          }
+        }
+      }
+    },
+    "message": {
+      "type": "object",
+      "required": [
+        "author",
+        "round",
+        "time",
+        "text"
+      ],
+      "properties": {
+        "author": {
+          "enum": [
+            "reader",
+            "agent"
+          ]
+        },
+        "round": {
+          "description": "The round of the reader comment that the message belongs to.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "time": {
+          "description": "ISO 8601 time.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "outcome": {
+          "description": "Agent replies only: answered for a question, done for a change or refresh request, or declined with a reason.",
+          "enum": [
+            "answered",
+            "done",
+            "declined"
+          ]
+        },
+        "text": {
+          "description": "Markdown subset. Reader comments are not checked; agent replies follow the writing rules.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
         }
       }
     }

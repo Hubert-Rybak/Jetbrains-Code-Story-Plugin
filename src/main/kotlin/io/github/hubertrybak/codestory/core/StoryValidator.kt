@@ -58,9 +58,67 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
                 error(owner, ErrorCode.INVALID_VALUE, "The story has an unknown delivery marker.", "Omit delivery for file-drop stories, or use mcp.")
             }
             val steps = steps(owner, input)
-            return if (title != null && type != null && summary != null && request != null && author != null && steps != null) {
-                Story(title, type, summary, request, author, steps, createdAt, git, baseRef, delivery)
+            // Threads belong to the plugin, so a story from an agent never sets them.
+            val threads = if (readMetadata) threads(input, owner) else emptyList()
+            val ids = (threads.orEmpty() + steps.orEmpty().flatMap { it.threads }).map { it.id }
+            ids.groupingBy { it }.eachCount().filterValues { it > 1 }.keys.forEach { id ->
+                error(owner, ErrorCode.DUPLICATE_THREAD_ID, "The story has more than one thread with the ID `${quote(id)}`.", THREAD_HINT)
+            }
+            return if (title != null && type != null && summary != null && request != null && author != null && steps != null && threads != null) {
+                Story(title, type, summary, request, author, steps, createdAt, git, baseRef, delivery, threads)
             } else null
+        }
+
+        private fun threads(parent: JsonObject, owner: Owner): List<StoryThread>? {
+            val array = when (val element = parent["threads"]) {
+                null, JsonNull -> return emptyList()
+                is JsonArray -> element
+                else -> return error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `threads` must be a list.", THREAD_HINT)
+            }
+            val threads = array.mapIndexed { index, element -> thread(owner, "threads[${index + 1}]", element) }
+            return if (threads.all { it != null }) threads.filterNotNull() else null
+        }
+
+        private fun thread(owner: Owner, label: String, element: JsonElement): StoryThread? {
+            if (element !is JsonObject) return error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `$label` must be a JSON object.", THREAD_HINT)
+            val id = text(element, "id", owner, THREAD_HINT, "$label.id")
+            val kind = choice(element, "kind", "$label.kind", owner, ThreadKind.entries.associateBy { it.value })
+            val state = choice(element, "state", "$label.state", owner, ThreadState.entries.associateBy { it.value })
+            val removedStep = nullableText(element, "removedStep", owner, THREAD_HINT, "$label.removedStep")
+            val messages = when (val list = element["messages"]) {
+                is JsonArray -> list.mapIndexed { index, message -> message(owner, "$label.messages[${index + 1}]", message) }
+                    .also { if (it.isEmpty()) error(owner, ErrorCode.MISSING_FIELD, "${owner.subject} has no messages in `$label`.", THREAD_HINT) }
+                null, JsonNull -> error(owner, ErrorCode.MISSING_FIELD, "${owner.subject} has no `$label.messages`.", THREAD_HINT)
+                else -> error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `$label.messages` must be a list.", THREAD_HINT)
+            }
+            return if (id != null && kind != null && state != null && messages != null && messages.isNotEmpty() && messages.all { it != null }) {
+                StoryThread(id, kind, state, messages.filterNotNull(), removedStep)
+            } else null
+        }
+
+        private fun message(owner: Owner, label: String, element: JsonElement): ThreadMessage? {
+            if (element !is JsonObject) return error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `$label` must be a JSON object.", THREAD_HINT)
+            val author = choice(element, "author", "$label.author", owner, MessageAuthor.entries.associateBy { it.value })
+            val round = (element["round"] as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull?.takeIf { it >= 1 }
+                ?: error(owner, ErrorCode.INVALID_VALUE, "${owner.where}, `$label.round` must be a whole number from 1.", THREAD_HINT)
+            val time = text(element, "time", owner, THREAD_HINT, "$label.time")?.let { value ->
+                try {
+                    Instant.parse(value)
+                } catch (_: DateTimeParseException) {
+                    error(owner, ErrorCode.INVALID_VALUE, "${owner.where}, `$label.time` is not an ISO 8601 time.", THREAD_HINT)
+                }
+            }
+            // Only agent replies have an outcome.
+            val outcome = if (author == MessageAuthor.AGENT) choice(element, "outcome", "$label.outcome", owner, ReplyOutcome.entries.associateBy { it.value }) else null
+            val text = text(element, "text", owner, THREAD_HINT, "$label.text")
+            return if (author != null && round != null && time != null && text != null && (author == MessageAuthor.READER || outcome != null)) {
+                ThreadMessage(author, round, time, text, outcome)
+            } else null
+        }
+
+        private fun <T> choice(obj: JsonObject, name: String, label: String, owner: Owner, values: Map<String, T>): T? {
+            val value = text(obj, name, owner, THREAD_HINT, label) ?: return null
+            return values[value] ?: error(owner, ErrorCode.INVALID_VALUE, "${owner.where}, `$label` has an unknown value: `${quote(value)}`.", THREAD_HINT)
         }
 
         /** Git gets the base as an argument, so a story file can name a commit only, never an option or a path. */
@@ -135,8 +193,9 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             val comment = text(element, "comment", owner, COMMENT_HINT)
             val id = if (readMetadata) text(element, "id", owner, ID_HINT) else nullableText(element, "id", owner, ID_HINT)
             val location = if (element["location"] == null || element["location"] == JsonNull) null else location(owner, element)
+            val threads = if (readMetadata) threads(element, owner) else emptyList()
             // `children` and `links` are reserved for later modes and ignored in v1.
-            return if (title != null && comment != null) Step(title, comment, location, id) else null
+            return if (title != null && comment != null && threads != null) Step(title, comment, location, id, threads) else null
         }
 
         private fun obj(parent: JsonObject, name: String, owner: Owner, hint: String): JsonObject? = when (val element = parent[name]) {
@@ -324,6 +383,7 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
         private const val START_LINE_HINT = "Set `location.startLine` to the first line of the range. The first line of a file is line 1."
         private const val END_LINE_HINT = "Set `location.endLine` to the last line of the range. The range includes this line."
         private const val RELATIVE_PATH_HINT = "Use a path relative to the repository root, with `/` between folders, for example `src/App.kt`."
+        private const val THREAD_HINT = "Comment threads are written by the plugin. Restore the file from Git, or remove the broken thread."
 
         private fun quote(text: String): String = if (text.length <= MAX_QUOTE) text else text.take(MAX_QUOTE) + "…"
 

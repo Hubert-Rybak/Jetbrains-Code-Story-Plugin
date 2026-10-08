@@ -30,6 +30,12 @@ enum class ErrorCode(val code: String) {
     LINES_OUTSIDE_FILE("lines-outside-file"),
     ANCHOR_NOT_FOUND("anchor-not-found"),
     ANCHOR_AMBIGUOUS("anchor-ambiguous"),
+    DUPLICATE_THREAD_ID("duplicate-thread-id"),
+    THREAD_NOT_FOUND("thread-not-found"),
+    DUPLICATE_REPLY("duplicate-reply"),
+    ALREADY_ANSWERED("already-answered"),
+    NOT_FETCHED("not-fetched"),
+    OUTCOME_MISMATCH("outcome-mismatch"),
 }
 
 /** Machine-readable codes of changes that the plugin made to keep a story. */
