@@ -4,7 +4,8 @@
     <vendor url="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin">Hubert Rybak</vendor>
     <description><![CDATA[
         <p>Guided code stories for JetBrains IDEs. An AI agent sends a story through the IDE's MCP server
-        (the <code>code_story_show</code> tool). The Code Story tool window lists the stories and their steps;
+        (the <code>code_story_show</code> tool), or writes a story file when MCP is unavailable.
+        The plugin installs the agent skill and checks setup. The Code Story tool window lists stories and their steps;
         a click on a step opens its file and highlights the lines that the step explains.</p>
     ]]></description>
 
@@ -14,9 +15,11 @@
 
     <extensionPoints>
         <extensionPoint name="gitMetadata" interface="io.github.hubertrybak.codestory.StoryGitMetadata" dynamic="true"/>
+        <extensionPoint name="mcpSupport" interface="io.github.hubertrybak.codestory.StoryMcpSupport" dynamic="true"/>
     </extensionPoints>
 
     <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="io.github.hubertrybak.codestory.CodeStoryStartup"/>
         <toolWindow id="Code Story" anchor="right" icon="AllIcons.Toolwindows.Documentation"
                     factoryClass="io.github.hubertrybak.codestory.CodeStoryToolWindowFactory"/>
         <notificationGroup id="Code Story" displayType="BALLOON"/>
@@ -25,6 +28,13 @@
     </extensions>
 
     <actions>
+        <group id="CodeStory.Setup" text="Code Story" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="CodeStory.InstallSkill" class="io.github.hubertrybak.codestory.InstallCodeStorySkillAction"
+                    text="Install Code Story skill" description="Install or update the skill for your agents" icon="AllIcons.Actions.Download"/>
+            <action id="CodeStory.CheckSetup" class="io.github.hubertrybak.codestory.CheckCodeStorySetupAction"
+                    text="Check setup" description="Check the MCP server, registered tools and installed skills" icon="AllIcons.Actions.Checked"/>
+        </group>
         <action id="CodeStory.NextStep" class="io.github.hubertrybak.codestory.ui.NextStepAction"
                 text="Next Step" description="Play the next step, or finish the story" icon="AllIcons.Actions.Forward">
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift Z" second-keystroke="RIGHT"/>

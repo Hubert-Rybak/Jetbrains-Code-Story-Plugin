@@ -4,7 +4,7 @@ A JetBrains plugin for guided code walkthroughs, with Rider as the primary
 target. Requires Rider or IntelliJ IDEA 2025.3 or newer.
 
 An AI agent builds a story with a type, summary, original request, author and
-ordered steps, and sends it to the running IDE through the IDE's MCP server.
+ordered steps, and sends it through the IDE's MCP server or drops a story file into the project.
 The story starts in the receiving IDE, with a floating comment card beside
 the highlighted code. The **Code Story** tool window lists stories newest first
 and shows their details, including who wrote them and the Git branch and
@@ -22,20 +22,27 @@ In the IDE, open **Settings | Plugins | gear icon | Install Plugin from Disk**,
 select the zip, and restart if prompted. Open **View | Tool Windows | Code Story**.
 The window starts on the right; use the IDE's normal tool window controls to move it.
 
-The MCP Server plugin is optional, but agents need it to send stories. The
+The MCP Server plugin is optional: without it, agents deliver stories as files. The
 Git plugin is optional; it supplies branch and commit metadata and change
 information when available.
 
 ## Use
 
-1. In the IDE, open **Settings | Tools | MCP Server**, switch on the MCP
-   server, and use **Auto-Configure** for your agent.
-2. Install the `code-story` skill by hand: copy the
-   [`skills/code-story`](skills/code-story) folder into the skills folder
-   that your agent reads, for example `~/.agents/skills/` for Codex CLI and
-   other agents that read `.agents/skills/`.
+1. Choose **Tools | Code Story | Install Code Story skill** (also in the tool-window
+   toolbar). This installs the bundled skill into both `~/.agents/skills/code-story/`
+   and `~/.claude/skills/code-story/`. To install into the project instead, enable
+   that option in **Settings | Tools | Code Story**, then run the action.
+2. For direct delivery and validation reports, open **Settings | Tools | MCP Server**,
+   switch on the MCP server, and use **Auto-Configure** for your agent.
 3. Open the project in the IDE, and ask your agent:
    `/code-story "Explain the main change for this ticket"` (`$code-story` in Codex).
+
+The first run shows one notification with these setup steps. Code Story opens the
+MCP settings when you choose its notification action; it never enables the server
+itself. **Tools | Code Story | Check setup** reports the server state, registered
+Code Story tools, and installed skill paths and versions. After a plugin update,
+the plugin offers to update older installed skills. You can also install manually
+by copying [`skills/code-story`](skills/code-story) to either agent skills folder.
 
 The agent first calls `code_story_guide` for the writing rules, format and example
 bundled with the installed plugin version. It calls `code_story_show` with the story and the
@@ -47,6 +54,15 @@ or change the range highlight color in **Settings | Tools | Code Story**.
 `.codestory/local/` has its own `.gitignore`, so local stories stay out of Git.
 A story with errors is not saved: the tool returns each error with the step
 number, a code, a message and a fix hint, so the agent can correct the story.
+
+When the tools are missing or the target project is not open, the skill writes a
+complete story to `.codestory/local/`, using a temporary file and then a rename.
+The plugin watches `.codestory/` only, including files dropped before the project
+opens. It checks new and changed local stories against the same location rules and
+unsaved editor text as MCP. Errors appear in the tool window and clear when the
+file is fixed or removed. Valid drops play in every IDE that has the project open.
+MCP-delivered stories carry `"delivery": "mcp"`, so other IDEs list them without
+auto-playing them. Shared stories refresh the list without auto-play.
 
 Each step location also carries `anchorText`, the exact text of its first line.
 The IDE compares it with the line that it shows, including unsaved edits;
@@ -128,6 +144,8 @@ if it is missing. Import the repository as a Gradle project, or run:
 
 ```sh
 ./gradlew check buildPlugin verifyPluginStructure
+# File-drop and setup smoke checks with the MCP Server plugin disabled.
+./gradlew testWithoutMcp
 # Use your installed Rider in a separate development sandbox.
 ./gradlew runLocalIde -PlocalIdePath="/path/to/Rider.app"
 ```
@@ -143,6 +161,10 @@ Anchoring tests edit fixture documents and check corrections, step statuses, liv
 markers during playback and the rewrite of local (never shared) stories. Change
 information tests build a fixture Git history and check the A/M badges, the saved
 base commit, **Show diff** and the unknown-base warning.
+File-drop tests create and replace real files and check playback, visible problems,
+corrections and delivery markers. `check` also runs these tests in a separate IDE
+sandbox with MCP Server disabled. Skill tests install and update both agent copies
+in temporary user and project folders; setup tests cover status and first-run guidance.
 
 The story core (package `io.github.hubertrybak.codestory.core`) has no IDE
 dependencies: the story model, the validation rules, the anchor policy, the file

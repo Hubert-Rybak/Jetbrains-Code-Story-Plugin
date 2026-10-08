@@ -69,14 +69,27 @@ intellijPlatformTesting.runIde.register("runLocalIde") {
     localPath.fileProvider(localIdePath.map { file(it) })
 }
 
+val testWithoutMcp = intellijPlatformTesting.testIde.register("testWithoutMcp") {
+    testFramework(TestFrameworkType.Platform)
+    plugins { disablePlugin("com.intellij.mcpServer") }
+    task {
+        filter { includeTestsMatching("*StoryFileDropTest") }
+        systemProperty("codeStory.testWithoutMcp", "true")
+    }
+}
+
+tasks.check { dependsOn(testWithoutMcp) }
+
 tasks.jar {
     from(files("LICENSE", "THIRD_PARTY_NOTICES.md")) { into("META-INF") }
 }
 
 tasks.processResources {
     from("skills/code-story/references/guide.md") { into("code-story") }
+    from("skills/code-story") { into("code-story/skill") }
     // The guide names the installed version; the IDE's plugin lookups are internal API from 2026.2.
     val pluginVersion = project.version.toString()
     inputs.property("pluginVersion", pluginVersion)
     filesMatching("code-story/version.txt") { expand("version" to pluginVersion) }
+    filesMatching("code-story/skill/version.txt") { filter { pluginVersion } }
 }

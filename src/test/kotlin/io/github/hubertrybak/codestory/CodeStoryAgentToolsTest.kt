@@ -222,7 +222,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
             assertEquals(code.code, report.getValue("errors").jsonArray.single().jsonObject.string("code"))
             assertInstanceOf(runCatching { get(id) }.exceptionOrNull(), McpExpectedError::class.java)
         }
-        assertFalse(root.resolve(".codestory").exists())
+        assertFalse(root.resolve(".codestory/local").exists())
         assertEquals(80, Files.readAllLines(root.resolve("src/App.kt")).size)
     }
 

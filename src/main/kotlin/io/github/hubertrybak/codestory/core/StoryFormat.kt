@@ -18,6 +18,7 @@ import kotlinx.serialization.json.putJsonObject
 object StoryFormat {
     const val SCHEMA_VERSION = 1
     const val FILE_SUFFIX = ".story.json"
+    const val MCP_DELIVERY = "mcp"
 
     @OptIn(ExperimentalSerializationApi::class)
     private val json = Json {
@@ -44,6 +45,7 @@ object StoryFormat {
                 put("commit", story.git.commit?.let(::JsonPrimitive) ?: JsonNull)
             }
             story.baseRef?.let { put("baseRef", it) }
+            story.delivery?.let { put("delivery", it) }
             putJsonArray("steps") {
                 for (step in story.steps) {
                     addJsonObject {
