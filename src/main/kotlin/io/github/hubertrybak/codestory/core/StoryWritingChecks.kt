@@ -14,6 +14,7 @@ enum class WarningCode(val code: String) {
     PASSIVE_VOICE("passive-voice"),
     ING_WORD("ing-word"),
     RANGE_TOO_LONG("range-too-long"),
+    UNKNOWN_BASE_REF("unknown-base-ref"),
 }
 
 /** Mechanical writing advice, in our own words. No dictionary or IDE dependencies. */

@@ -20,6 +20,11 @@ data class Story(
     /** Assigned by the plugin when the story is created. */
     val createdAt: Instant? = null,
     val git: StoryGit = StoryGit(),
+    /**
+     * Only for a story about a change: the commit before the change. The plugin saves the full
+     * commit SHA when Git knows it. `HEAD` means the current commit, for uncommitted work.
+     */
+    val baseRef: String? = null,
 )
 
 @Serializable

@@ -63,7 +63,8 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
         val story = schema.propertiesSchema.getValue("story").jsonObject
 
         assertEquals("object", story.getValue("type").jsonPrimitive.content)
-        assertEquals(listOf("title", "type", "summary", "request", "author", "steps"), story.getValue("properties").jsonObject.keys.toList())
+        assertEquals(listOf("title", "type", "summary", "request", "author", "baseRef", "steps"), story.getValue("properties").jsonObject.keys.toList())
+        assertEquals(listOf("title", "type", "summary", "request", "author", "steps"), story.getValue("required").jsonArray.map { it.jsonPrimitive.content })
         val author = story.getValue("properties").jsonObject.getValue("author").jsonObject
         assertEquals(listOf("agent", "model"), author.getValue("properties").jsonObject.keys.toList())
         val step = story.getValue("properties").jsonObject.getValue("steps").jsonObject.getValue("items").jsonObject

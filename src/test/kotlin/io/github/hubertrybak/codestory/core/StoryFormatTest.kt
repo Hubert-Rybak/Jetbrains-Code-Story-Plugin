@@ -30,6 +30,7 @@ class StoryFormatTest {
         ),
         createdAt = Instant.parse("2026-10-05T12:34:56.123Z"),
         git = StoryGit("feature/payments", "0123456789abcdef"),
+        baseRef = "89abcdef0123456789abcdef0123456789abcdef",
     )
 
     @Test
@@ -51,6 +52,7 @@ class StoryFormatTest {
                 "branch": "feature/payments",
                 "commit": "0123456789abcdef"
               },
+              "baseRef": "89abcdef0123456789abcdef0123456789abcdef",
               "steps": [
                 {
                   "id": "entry",
@@ -80,10 +82,18 @@ class StoryFormatTest {
     fun `round trips every story type, metadata, stable IDs and optional locations`() {
         for (type in StoryType.entries) {
             for (git in listOf(story.git, StoryGit(), StoryGit("unborn", null), StoryGit(null, "detached-commit"))) {
-                val original = story.copy(type = type, git = git)
-                assertEquals(original, (StoryFormat.decode(StoryFormat.encode(original, "id")) as StoryFormat.Decoded.Valid).story)
+                for (baseRef in listOf(story.baseRef, null, "HEAD")) {
+                    val original = story.copy(type = type, git = git, baseRef = baseRef)
+                    assertEquals(original, (StoryFormat.decode(StoryFormat.encode(original, "id")) as StoryFormat.Decoded.Valid).story)
+                }
             }
         }
+    }
+
+    @Test
+    fun `a story without a base has no baseRef field`() {
+        val text = StoryFormat.encode(story.copy(baseRef = null), "id")
+        assertFalse(text, text.contains("baseRef"))
     }
 
     @Test
@@ -125,6 +135,8 @@ class StoryFormatTest {
             text.replace("\"anchorText\": \"class PaymentController(\"", "\"anchorText\": \" \""),
             text.replace("\"anchorText\": \"class PaymentController(\"", "\"anchorText\": \"one\\ntwo\""),
             text.replace("\"rangeText\": \"class PaymentController(", "\"rangeText\": 7, \"x\": \"("),
+            text.replace("\"89abcdef0123456789abcdef0123456789abcdef\"", "\"--output=/tmp/story\""),
+            text.replace("\"89abcdef0123456789abcdef0123456789abcdef\"", "42"),
             "[1, 2]",
             "{ broken",
         )

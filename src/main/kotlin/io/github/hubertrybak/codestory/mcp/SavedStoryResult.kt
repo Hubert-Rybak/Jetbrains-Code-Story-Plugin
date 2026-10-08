@@ -41,6 +41,8 @@ internal class SavedStoryShape(
     val author: AuthorShape,
     val createdAt: String,
     val git: GitShape,
+    /** The full SHA of the base commit for a story about a change. */
+    val baseRef: String? = null,
     val steps: List<SavedStepShape>,
 )
 

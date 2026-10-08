@@ -30,7 +30,7 @@ class CodeStoryToolset : McpToolset {
     }
 
     @McpTool(name = "code_story_get")
-    @McpDescription(description = "Returns the full saved story, including creation metadata, step IDs and the current lines of each location. rangeText is the code that the step explains, stored by the IDE. Read it before a revision, keep its step IDs, and call code_story_show with storyId to replace it. Always pass projectPath.")
+    @McpDescription(description = "Returns the full saved story, including creation metadata, baseRef, step IDs and the current lines of each location. rangeText is the code that the step explains, stored by the IDE. Read it before a revision, keep its step IDs and baseRef, and call code_story_show with storyId to replace it. Always pass projectPath.")
     suspend fun getStory(
         @McpDescription(description = "An existing story ID returned by code_story_list.")
         storyId: String,
@@ -47,6 +47,8 @@ class CodeStoryToolset : McpToolset {
         |Call code_story_guide first for this installed version's writing rules and format.
         |Include the type (change, exploration, bug-trace or review), summary, original request, and author (agent and model).
         |The plugin adds the creation time and Git branch and commit. Each step explains one idea in 1 to 3 short sentences.
+        |Only for a story about a change, set baseRef to the SHA of the commit before the change, or HEAD for uncommitted work. The IDE saves the full commit SHA,
+        |marks each step "A" (all lines added) or "M" (some lines changed), and shows the diff of a step. A baseRef that Git does not know gives a warning.
         |A step has one small code range, or no location for text-only overview and what-to-check steps.
         |Keep step IDs stable when revising a story; omit them to let the plugin assign IDs.
         |Use 3 to 12 steps (15 at most). Read every file before you call this tool, so that each path and line number is correct.

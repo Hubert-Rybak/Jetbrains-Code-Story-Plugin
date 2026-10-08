@@ -85,9 +85,11 @@ class CodeStoryService(private val project: Project) {
             is ValidationResult.Invalid -> return ShowReport.rejected(result.errors, corrections = result.corrections)
             is ValidationResult.Valid -> result
         }
-        val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(checked.story)
+        // A story saves its base as a commit SHA, so that `HEAD` still names the base after a commit.
+        val (story, baseWarnings) = StoryChangeInfo.getInstance(project).resolveBase(folder.root, checked.story)
+        val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(story) + baseWarnings
         val git = currentGit(folder.root)
-        return when (val saved = folder.save(checked.story, Instant.now(), git, storyId)) {
+        return when (val saved = folder.save(story, Instant.now(), git, storyId)) {
             is StoryFolder.SaveResult.TooLarge -> ShowReport.rejected(listOf(ReportItem.storyTooLarge(saved.bytes)), warnings, checked.corrections)
             is StoryFolder.SaveResult.NotFound -> ShowReport.rejected(listOf(
                 ReportItem(null, ErrorCode.STORY_NOT_FOUND, "The story `${saved.id}` was not found.", "Call code_story_list to find the current story ID."),

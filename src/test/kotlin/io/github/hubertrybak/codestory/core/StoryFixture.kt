@@ -16,7 +16,8 @@ object StoryJson {
         summary: String = "\"The controller charges the card.\"",
         request: String = "\"Explain the payment flow\"",
         author: String = """{"agent": "Test Agent", "model": "test-model"}""",
-    ): String = """{"title": $title, "type": $type, "summary": $summary, "request": $request, "author": $author, "steps": [${steps.joinToString(", ")}]}"""
+        baseRef: String? = null,
+    ): String = """{"title": $title, "type": $type, "summary": $summary, "request": $request, "author": $author${if (baseRef == null) "" else ", \"baseRef\": $baseRef"}, "steps": [${steps.joinToString(", ")}]}"""
 
     /** The default anchor is the text of the start line in the fixture files, where line N is `line N`. */
     fun step(
