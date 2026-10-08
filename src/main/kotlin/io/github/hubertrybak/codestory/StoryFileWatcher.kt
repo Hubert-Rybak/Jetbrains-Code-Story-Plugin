@@ -1,6 +1,8 @@
 package io.github.hubertrybak.codestory
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -11,7 +13,9 @@ import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryLimits
+import io.github.hubertrybak.codestory.core.StoryThreads
 import io.github.hubertrybak.codestory.core.ValidationResult
+import io.github.hubertrybak.codestory.ui.StoryPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -163,10 +167,13 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
                     val hash = hash(text)
                     if (seen.put(file, hash) == hash) continue
                     if (directory == folder.localDir) receive(folder, file, text)
-                    else setProblems(file, when (val result = StoryFormat.decode(text)) {
-                        is StoryFormat.Decoded.Invalid -> listOf(problem(result.reason))
-                        is StoryFormat.Decoded.Valid -> emptyList()
-                    })
+                    else when (val result = StoryFormat.decode(text)) {
+                        is StoryFormat.Decoded.Invalid -> setProblems(file, listOf(problem(result.reason)))
+                        is StoryFormat.Decoded.Valid -> {
+                            accepted.put(file, result.story)?.let { threadsChanged(folder, file, it, result.story) }
+                            setProblems(file, emptyList())
+                        }
+                    }
                     changed()
                 } catch (e: IOException) {
                     seen.remove(file)
@@ -195,10 +202,17 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
             is StoryFormat.Decoded.Invalid -> return setProblems(file, listOf(problem(result.reason)))
             is StoryFormat.Decoded.Valid -> result.story
         }
+        val previous = accepted[file]
         // MCP plays in its receiving IDE only.
         if (decoded.delivery == StoryFormat.MCP_DELIVERY) {
             accepted[file] = decoded
+            previous?.let { threadsChanged(folder, file, it, decoded) }
             return setProblems(file, emptyList())
+        }
+        // Comment threads change in an accepted story without a new delivery, even after its code moved on.
+        if (file !in problems && previous != null && StoryThreads.strip(previous) == StoryThreads.strip(decoded)) {
+            accepted[file] = decoded
+            return threadsChanged(folder, file, previous, decoded)
         }
         val service = CodeStoryService.getInstance(project)
         val checked = when (val result = service.validateIncomingStory(json, folder)) {
@@ -211,7 +225,7 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
             return
         }
         val (resolved, _) = StoryChangeInfo.getInstance(project).resolveBase(folder.root, checked)
-        val normalized = resolved.copy(createdAt = decoded.createdAt, git = decoded.git)
+        val normalized = StoryThreads.carryOver(decoded, resolved.copy(createdAt = decoded.createdAt, git = decoded.git))
         val encoded = StoryFormat.encode(normalized, id)
         val size = encoded.toByteArray(Charsets.UTF_8).size
         if (size > StoryLimits.MAX_FILE_BYTES) return setProblems(file, listOf(ReportItem.storyTooLarge(size)))
@@ -222,13 +236,25 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
         service.storyDelivered(stored, replacing)
     }
 
-    /** Plugin-owned anchors and snapshots can differ between IDEs with different unsaved edits. */
+    /** Comments changed in the file, in this IDE or in another one: a playing story shows them and stays at its step. */
+    private fun threadsChanged(folder: StoryFolder, file: Path, previous: Story, current: Story) {
+        if (StoryThreads.all(previous) == StoryThreads.all(current)) return
+        val stored = StoredStory(file.fileName.toString().removeSuffix(StoryFormat.FILE_SUFFIX), folder.root, file, current, Files.getLastModifiedTime(file))
+        ApplicationManager.getApplication().invokeLater({ StoryPlayer.getInstance(project).threadsChanged(stored) }, ModalityState.nonModal(), project.disposed)
+    }
+
+    /**
+     * Plugin-owned anchors and snapshots can differ between IDEs with different unsaved edits.
+     * Comment threads change without a new delivery.
+     */
     private fun sameDelivery(first: Story, second: Story): Boolean {
-        fun content(story: Story) = story.copy(steps = story.steps.map { step ->
-            step.copy(location = step.location?.let { location ->
-                if (location.rangeText == null) location else location.copy(startLine = 1, endLine = 1, anchorText = null, rangeText = "")
+        fun content(story: Story) = StoryThreads.strip(story).let { stripped ->
+            stripped.copy(steps = stripped.steps.map { step ->
+                step.copy(location = step.location?.let { location ->
+                    if (location.rangeText == null) location else location.copy(startLine = 1, endLine = 1, anchorText = null, rangeText = "")
+                })
             })
-        })
+        }
         return content(first) == content(second)
     }
 

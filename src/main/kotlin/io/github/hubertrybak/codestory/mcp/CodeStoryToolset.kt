@@ -8,6 +8,8 @@ import com.intellij.mcpserver.mcpCallInfoOrNull
 import com.intellij.mcpserver.noSuitableProjectError
 import io.github.hubertrybak.codestory.CodeStoryService
 import io.github.hubertrybak.codestory.CodeStoryGuide
+import io.github.hubertrybak.codestory.core.FeedbackReport
+import io.github.hubertrybak.codestory.core.ReplyReport
 import io.github.hubertrybak.codestory.core.ShowReport
 import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryListReport
@@ -24,13 +26,13 @@ class CodeStoryToolset : McpToolset {
     fun storyGuide(): String = CodeStoryGuide.markdown()
 
     @McpTool(name = "code_story_list")
-    @McpDescription(description = "Lists all local and shared stories, newest first: ID, title, type, creation date, branch, folder and code status. The status is ok, moved (the IDE found the code at other lines and updated them), code-changed (the code in a range is different from the code that the step explains) or lost (the IDE cannot find the code), with movedSteps, changedSteps and lostSteps. Call code_story_get with an ID to read a full story. Always pass projectPath.")
+    @McpDescription(description = "Lists all local and shared stories, newest first: ID, title, type, creation date, branch, folder and code status. The status is ok, moved (the IDE found the code at other lines and updated them), code-changed (the code in a range is different from the code that the step explains) or lost (the IDE cannot find the code), with movedSteps, changedSteps and lostSteps. pendingComments counts reader comments that wait for code_story_feedback. Call code_story_get with an ID to read a full story. Always pass projectPath.")
     suspend fun listStories(): StoryListReport = withService {
         StoryListReport(it.list(), "Call code_story_get with a story ID to read it before a revision.")
     }
 
     @McpTool(name = "code_story_get")
-    @McpDescription(description = "Returns the full saved story, including creation metadata, baseRef, step IDs and the current lines of each location. rangeText is the code that the step explains, stored by the IDE. Read it before a revision, keep its step IDs and baseRef, and call code_story_show with storyId to replace it. Always pass projectPath.")
+    @McpDescription(description = "Returns the full saved story, including creation metadata, baseRef, step IDs, the current lines of each location and the reader's comment threads. rangeText is the code that the step explains, stored by the IDE. Read it before a revision, keep its step IDs and baseRef, and call code_story_show with storyId to replace it. The threads belong to the IDE: do not send them back; they stay with their steps by step ID. Always pass projectPath.")
     suspend fun getStory(
         @McpDescription(description = "An existing story ID returned by code_story_list.")
         storyId: String,
@@ -59,7 +61,7 @@ class CodeStoryToolset : McpToolset {
         |Each location needs anchorText: the exact text of line startLine. The IDE compares it with the code that it shows, including unsaved edits.
         |If the text is a few lines away (20 at most), the IDE moves the range and lists a correction in the report. If it cannot find the text, it rejects the story.
         |If the story has no errors, the IDE saves it in .codestory/local/ and lists it in the Code Story tool window.
-        |With an existing storyId, it replaces that story in its current local or shared file and keeps its creation metadata.
+        |With an existing storyId, it replaces that story in its current local or shared file and keeps its creation metadata and comment threads.
         |If that story is playing, it reloads at the same step number, or the last step if the new story is shorter.
         |Writing and long-range warnings never block a story and appear only in this report. Fix them once and resend with the returned storyId.
         |If the story has errors, the IDE saves nothing and returns status "rejected" with the errors. Each error, correction and warning has the step number, a code, a message and a hint. Fix all errors, then send the whole story again.
@@ -74,6 +76,47 @@ class CodeStoryToolset : McpToolset {
         @McpDescription(description = "Absolute repository root within this project. Use it when several repositories have matching paths, for text-only stories, or to disambiguate a storyId.")
         repositoryPath: String? = null,
     ): ShowReport = withService { it.show(story.json, storyId, repositoryPath) }
+
+    @McpTool(name = "code_story_feedback")
+    @McpDescription(
+        description = """
+        |Returns the reader's comments that wait for an agent, oldest round first. Use it for /code-story feedback.
+        |The reader writes comments on steps or on the whole story in the IDE and submits them as a numbered round.
+        |Each comment has storyId, round, threadId, kind, target (story or step), the step (ID, number, title, comment, current lines and status),
+        |the comment text and the earlier messages of its thread. staleSteps lists steps whose code changed or is lost.
+        |Fetched comments become "received" (the reader sees that an agent works on them) and stay available until an agent replies.
+        |Answer every comment with code_story_reply. Never change code for a question. Always pass projectPath.
+        """,
+    )
+    suspend fun storyFeedback(
+        @McpDescription(description = "Optional. A story ID from code_story_list or from the developer. Omit it to get the comments of all stories.")
+        storyId: String? = null,
+        @McpDescription(description = "Absolute repository root from code_story_list. Required when the ID exists in several repositories.")
+        repositoryPath: String? = null,
+    ): FeedbackReport = withService {
+        if (storyId != null && !StoryFolder.isValidId(storyId)) throw McpExpectedError("Invalid storyId. Use an ID from code_story_list.")
+        it.feedback(storyId, repositoryPath) ?: throw McpExpectedError("Story '$storyId' was not found. Call code_story_list for the current IDs.")
+    }
+
+    @McpTool(name = "code_story_reply")
+    @McpDescription(
+        description = """
+        |Saves your replies to the reader's comments from code_story_feedback. Send one reply per comment, with its threadId and round.
+        |Use outcome "answered" for a question, or "declined" with the reason when you cannot or should not answer.
+        |Answer from the story, the thread and the code, in 1 to 5 short sentences, or one lead sentence and up to 6 bullet items; 100 words at most.
+        |A reason to decline has 1 to 3 sentences. Use the Markdown subset of story comments; links to repository files with lines are allowed.
+        |Each reply is saved or rejected on its own. The first reply to a comment wins: a reply to a comment that is already answered gets the error already-answered.
+        |Writing warnings never block a reply. The reader gets a notification, and the answers appear in the story's threads. Always pass projectPath.
+        """,
+    )
+    suspend fun replyToFeedback(
+        @McpDescription(description = "The story ID of the comments, from code_story_feedback.")
+        storyId: String,
+        @McpDescription(description = "One reply for each comment of the story that you answer.")
+        replies: List<ReplyArgument>,
+        @McpDescription(description = "Absolute repository root from code_story_feedback. Required when the ID exists in several repositories.")
+        repositoryPath: String? = null,
+    ): ReplyReport = withService { it.reply(storyId, replies.map(ReplyArgument::json), repositoryPath) }
 
     private suspend fun <T> withService(action: suspend (CodeStoryService) -> T): T {
         // The MCP server finds the project from the projectPath that it adds to every tool. The plugin never guesses.

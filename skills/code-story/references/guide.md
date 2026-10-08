@@ -117,6 +117,43 @@ Read files again before changing locations. After this one fix round, do not loo
 style hints. Tell the developer the story's title, step count and that it is in the
 Code Story tool window. Explain any remaining rejection if the story could not be saved.
 
+## Answer reader feedback
+
+Readers write comments on a step or on the whole story in the IDE, and submit them as
+a numbered round. Each comment starts a thread. Then the developer tells you
+`/code-story feedback` (`$code-story feedback` in Codex).
+
+Call `code_story_feedback()` for the comments of all stories, or
+`code_story_feedback(storyId)` for one story. It returns the comments that wait for an
+agent, oldest round first. Each comment has `storyId`, `round`, `threadId`, `kind`,
+`target` (`story` or `step`), the `step` (ID, number, title, comment, current lines and
+status), the comment `text` and the `earlierMessages` of its thread. `staleSteps` lists
+the steps whose code changed or is lost. Fetched comments become "received": the reader
+sees that an agent works on them. They stay available until an agent replies.
+
+Answer every comment with `code_story_reply(storyId, replies)`. Each reply has the
+`threadId` and `round` of the comment, an `outcome` and a `text`:
+
+- `answered`: the answer to a question. Answer from the story, the thread and the code.
+  Never change code for a question. If the code needs a change, say so and suggest that
+  the developer asks for a change request.
+- `declined`: you cannot or should not answer. Give the reason in 1 to 3 sentences.
+
+Answers follow the writing rules above, with larger limits: 1 to 5 sentences, or one
+lead sentence and up to 6 bullet items; 100 words at most. Answers may link to
+repository files with lines, for example `src/App.kt#L2-L5`. Writing checks give
+warnings only; use them in your next replies.
+
+Each reply is saved or rejected on its own. The first reply to a comment wins: another
+reply to it gets `already-answered`. A reply to a comment that you did not fetch gets
+`not-fetched`. When the reader adds a comment to an answered thread, the thread opens
+again in a new round; fetch it again before you reply. Fix rejected replies and send
+only those again. The reader gets a notification, and the answers appear in the story.
+
+Comment threads belong to the plugin. `code_story_get` returns them, but do not send them
+to `code_story_show`. A revision keeps each thread on its step by step ID, so keep step
+IDs stable. Threads of removed steps move to the story, with the title of the step.
+
 ## Format and example
 
 The `story` parameter is a typed JSON object, not a JSON string. Supply `title`,
@@ -129,7 +166,8 @@ The plugin assigns IDs to new steps whose IDs are omitted.
 
 The plugin adds `schemaVersion: 1`, the story `id`, `createdAt` in ISO 8601, `git`
 (branch and commit, or null when unavailable) and `rangeText`, the stored code of each
-range. Do not supply creation metadata or `rangeText`.
+range. It also writes the reader's comment `threads`. Do not supply creation metadata,
+`rangeText` or `threads`.
 Files are UTF-8 JSON, at most 256 KB. A new file is saved as
 `.codestory/local/<yyyy-MM-dd>-<slug>.story.json`, with a number suffix for collisions.
 The saved format is also described by `references/story-v1.schema.json` in the skill.

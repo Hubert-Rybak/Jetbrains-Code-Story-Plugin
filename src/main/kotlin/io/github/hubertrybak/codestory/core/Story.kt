@@ -27,6 +27,8 @@ data class Story(
     val baseRef: String? = null,
     /** MCP stories play only in the receiving IDE. File-drop stories have no marker. */
     val delivery: String? = null,
+    /** Comment threads about the whole story. They belong to the plugin; an agent cannot set them. */
+    val threads: List<StoryThread> = emptyList(),
 )
 
 @Serializable
@@ -42,7 +44,14 @@ data class StoryAuthor(val agent: String, val model: String)
 /** Null fields mean Git is unavailable, the repository has no commits, or HEAD is detached. */
 data class StoryGit(val branch: String? = null, val commit: String? = null)
 
-data class Step(val title: String, val comment: String, val location: Location? = null, val id: String? = null)
+/** [threads] are the comment threads about this step. They belong to the plugin, like the story's threads. */
+data class Step(
+    val title: String,
+    val comment: String,
+    val location: Location? = null,
+    val id: String? = null,
+    val threads: List<StoryThread> = emptyList(),
+)
 
 /**
  * One range of lines. [anchorText] is the first line of the range without indentation; the plugin

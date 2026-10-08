@@ -1,6 +1,10 @@
 package io.github.hubertrybak.codestory.mcp
 
+import io.github.hubertrybak.codestory.core.MessageAuthor
+import io.github.hubertrybak.codestory.core.ReplyOutcome
 import io.github.hubertrybak.codestory.core.StoryType
+import io.github.hubertrybak.codestory.core.ThreadKind
+import io.github.hubertrybak.codestory.core.ThreadState
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -44,13 +48,33 @@ internal class SavedStoryShape(
     /** The full SHA of the base commit for a story about a change. */
     val baseRef: String? = null,
     val steps: List<SavedStepShape>,
+    /** Reader comments and agent replies about the whole story. They belong to the plugin. */
+    val threads: List<ThreadShape> = emptyList(),
 )
 
 @Serializable
 internal class GitShape(val branch: String?, val commit: String?)
 
 @Serializable
-internal class SavedStepShape(val id: String, val title: String, val comment: String, val location: SavedLocationShape? = null)
+internal class SavedStepShape(
+    val id: String,
+    val title: String,
+    val comment: String,
+    val location: SavedLocationShape? = null,
+    val threads: List<ThreadShape> = emptyList(),
+)
+
+@Serializable
+internal class ThreadShape(
+    val id: String,
+    val kind: ThreadKind,
+    val state: ThreadState,
+    val removedStep: String? = null,
+    val messages: List<MessageShape>,
+)
+
+@Serializable
+internal class MessageShape(val author: MessageAuthor, val round: Int, val time: String, val outcome: ReplyOutcome? = null, val text: String)
 
 /** [anchorText] follows the code; [rangeText] is the code that the step explains, stored by the plugin. */
 @Serializable

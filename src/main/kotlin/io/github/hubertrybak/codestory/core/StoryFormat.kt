@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -61,11 +62,39 @@ object StoryFormat {
                                 location.rangeText?.let { put("rangeText", it) }
                             }
                         }
+                        threads(step.threads)
+                    }
+                }
+            }
+            threads(story.threads)
+        }
+        return json.encodeToString(JsonElement.serializer(), file) + "\n"
+    }
+
+    /** Stories without comments have no `threads` fields. */
+    private fun JsonObjectBuilder.threads(threads: List<StoryThread>) {
+        if (threads.isEmpty()) return
+        putJsonArray("threads") {
+            for (thread in threads) {
+                addJsonObject {
+                    put("id", thread.id)
+                    put("kind", thread.kind.value)
+                    put("state", thread.state.value)
+                    thread.removedStep?.let { put("removedStep", it) }
+                    putJsonArray("messages") {
+                        for (message in thread.messages) {
+                            addJsonObject {
+                                put("author", message.author.value)
+                                put("round", message.round)
+                                put("time", message.time.toString())
+                                message.outcome?.let { put("outcome", it.value) }
+                                put("text", message.text)
+                            }
+                        }
                     }
                 }
             }
         }
-        return json.encodeToString(JsonElement.serializer(), file) + "\n"
     }
 
     sealed interface Decoded {

@@ -55,8 +55,10 @@ class StoryMarkdownExportTest {
     }
 
     @Test fun `comment threads in a saved file are never exported`() {
-        val encoded = StoryFormat.encode(story(Step("Overview", "The caller owns the retry.", id = "overview")), "2026-10-05-payment-flow")
-        val withThreads = encoded.trimEnd().dropLast(1) + ",\"threads\":[{\"comment\":\"Private reviewer thread\"}]}"
+        val time = Instant.parse("2026-10-05T12:00:00Z")
+        val thread = StoryThread("private", ThreadKind.QUESTION, ThreadState.SUBMITTED, listOf(ThreadMessage(MessageAuthor.READER, 1, time, "Private reviewer thread")))
+        val step = Step("Overview", "The caller owns the retry.", id = "overview", threads = listOf(thread.copy(id = "on-step")))
+        val withThreads = StoryFormat.encode(story(step).copy(threads = listOf(thread)), "2026-10-05-payment-flow")
         val decoded = StoryFormat.decode(withThreads) as StoryFormat.Decoded.Valid
         val result = StoryMarkdownExport.render(decoded.story)
         assertTrue(result.contains("The caller owns the retry."))
