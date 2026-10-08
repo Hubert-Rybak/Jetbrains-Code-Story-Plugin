@@ -94,11 +94,30 @@ warning in the report, and the story then shows no change information, like a
 story without a base. Without the Git plugin, change information is off.
 
 `code_story_list` lists local and shared stories with their ID, title, type, date,
-branch, folder and status: `ok`, `moved`, `code-changed` or `lost`, with the number
+branch, repository path, folder and status: `ok`, `moved`, `code-changed` or `lost`, with the number
 of moved, changed and lost steps. `code_story_get(storyId)` returns the full saved
 story. To revise it, the agent calls `code_story_show(story, storyId)`;
 the same file and creation metadata are kept. A playing story reloads at the same
 step number, or the last step if the revision is shorter.
+
+The tree groups stories under **Local** and **Shared**. **Share** moves a story
+to `.codestory/shared/` so you can commit it with the branch; **Unshare** moves it
+back. Its ID and creation metadata stay the same. **Delete** asks for confirmation
+before removing the file. These actions are in the toolbar and context menu.
+**Copy as Markdown**, in both menus, copies the title, summary, and steps with
+repository-relative line links and comments for a pull request description.
+Reader threads are not included.
+
+Shared stories that arrive through checkout or pull appear automatically with a
+**new** marker. They do not start playback. Playing one clears the marker in your
+IDE workspace, without changing the shared file.
+
+With several Git repositories mapped in one project, the tree groups by repository
+and each repository has its own `.codestory/`. A story must stay inside one
+repository. Pass `repositoryPath` (the absolute repository root) to
+`code_story_show` when paths match several repositories or the story is text-only.
+The same parameter selects the repository for `code_story_get` and replacements
+when an ID appears in several repositories; `code_story_list` returns it for each story.
 
 The report also includes writing warnings and warnings for ranges longer than
 30 lines. They never block a story and appear only in the agent report. The guide
@@ -165,6 +184,9 @@ File-drop tests create and replace real files and check playback, visible proble
 corrections and delivery markers. `check` also runs these tests in a separate IDE
 sandbox with MCP Server disabled. Skill tests install and update both agent copies
 in temporary user and project folders; setup tests cover status and first-run guidance.
+Management tests cover share/unshare, deletion confirmation, shared arrivals without
+playback, repository grouping and separate reader state for duplicate story IDs.
+Core tests also cover Markdown export, including text-only steps and escaped paths.
 
 The story core (package `io.github.hubertrybak.codestory.core`) has no IDE
 dependencies: the story model, the validation rules, the anchor policy, the file

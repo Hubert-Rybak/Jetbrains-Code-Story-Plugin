@@ -196,7 +196,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
             document.replaceString(document.getLineStartOffset(9), document.getLineEndOffset(9), "        gateway.reverse(amount)")
         }
         val panel = StoryListPanel(project).also { panel = it }
-        PlatformTestUtil.waitWithEventsDispatching("the stories are not listed", { panel.tree.rowCount == 4 && rowText(0).contains("lost") }, TIMEOUT_SECONDS)
+        PlatformTestUtil.waitWithEventsDispatching("the stories are not listed", { panel.tree.rowCount == 6 && rowText(0).contains("lost") }, TIMEOUT_SECONDS)
 
         assertTrue(rowText(0), rowText(0).endsWith("  1 lost, 1 code changed"))
         assertEquals("1. Charge a card  Billing.kt:4–7  ✓", rowText(1))
@@ -255,7 +255,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
 
     private fun rowText(row: Int): String {
         val tree = panel!!.tree
-        val path = tree.getPathForRow(row)
+        val path = tree.getPathForRow(row + 1)
         val renderer = tree.cellRenderer.getTreeCellRendererComponent(tree, path.lastPathComponent, false, true, true, row, false)
         return (renderer as SimpleColoredComponent).getCharSequence(false).toString()
     }

@@ -19,7 +19,7 @@ import java.io.IOException
 import java.nio.file.Path
 
 /** The live markers of the playing story at one moment, with the text of their documents. */
-class LiveSnapshot(val storyId: String, val ranges: Map<String, LiveRange>, val texts: Map<Path, CharSequence>)
+class LiveSnapshot(val storyKey: String, val ranges: Map<String, LiveRange>, val texts: Map<Path, CharSequence>)
 
 /**
  * Live range markers for the story that plays. The markers move with every edit in their
@@ -40,8 +40,8 @@ class AnchorTracker : Disposable {
      */
     fun track(stored: StoredStory, files: StoryFiles): StoredStory {
         ApplicationManager.getApplication().assertIsDispatchThread()
-        val previous = tracked?.takeIf { it.first == stored.id }?.second.orEmpty()
-        if (tracked?.first != stored.id) release()
+        val previous = tracked?.takeIf { it.first == stored.key }?.second.orEmpty()
+        if (tracked?.first != stored.key) release()
         // A marker belongs to the code that its step explained when the marker was made.
         val locations = stored.story.steps.mapNotNull { step -> step.id?.let { id -> step.location?.let { id to it } } }.toMap()
         val (kept, stale) = previous.partition { marker ->
@@ -56,15 +56,15 @@ class AnchorTracker : Disposable {
             val location = step.location ?: return@mapNotNull null
             if (id in keptIds || resolution.statuses[index] == StepStatus.LOST) null else marker(stored.root, id, location)
         }
-        tracked = stored.id to kept + created
+        tracked = stored.key to kept + created
         return stored.resolved(resolution)
     }
 
     /** The lines that the markers followed and the texts of their documents, read together. */
     fun snapshot(): LiveSnapshot? = ApplicationManager.getApplication().runReadAction(Computable {
-        val (storyId, markers) = tracked ?: return@Computable null
+        val (storyKey, markers) = tracked ?: return@Computable null
         val valid = markers.filter { it.marker.isValid }
-        LiveSnapshot(storyId, ranges(valid), valid.associate { it.path to it.marker.document.immutableCharSequence })
+        LiveSnapshot(storyKey, ranges(valid), valid.associate { it.path to it.marker.document.immutableCharSequence })
     })
 
     /** Removes the markers. Call on the EDT. */

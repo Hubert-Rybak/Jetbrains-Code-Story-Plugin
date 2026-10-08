@@ -191,6 +191,35 @@ class StoryFolderTest {
     }
 
     @Test
+    fun `sharing never overwrites a shared file with the same name`() {
+        val folder = folder()
+        val saved = saved(folder.save(story, date))
+        val stored = folder.get(saved.id)!!
+        val shared = Files.createDirectories(folder.sharedDir).resolve(saved.file.fileName)
+        Files.writeString(shared, "Existing reviewer story")
+        assertTrue(runCatching { folder.setShared(stored, true) }.exceptionOrNull() is java.nio.file.FileAlreadyExistsException)
+        assertEquals("Existing reviewer story", shared.readText())
+        assertEquals(StoryFormat.encode(saved.story, saved.id), saved.file.readText())
+    }
+
+    @Test
+    fun `management rejects storage symlinks and stale paths`() {
+        val folder = folder()
+        val saved = saved(folder.save(story, date))
+        val stored = folder.get(saved.id)!!
+        val outside = temp.newFolder("outside-share").toPath()
+        Files.createSymbolicLink(folder.sharedDir, outside)
+        assertTrue(runCatching { folder.setShared(stored, true) }.exceptionOrNull() is java.io.IOException)
+        assertTrue(Files.exists(saved.file))
+        assertTrue(outside.listDirectoryEntries().isEmpty())
+        Files.delete(folder.sharedDir)
+        val moved = folder.setShared(stored, true)
+        assertFalse(folder.delete(stored))
+        assertTrue(Files.exists(moved.file))
+        assertTrue(folder.delete(moved))
+    }
+
+    @Test
     fun `moved anchors are written only into the local story that was checked`() {
         val folder = folder()
         val first = saved(folder.save(story, date))

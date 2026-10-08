@@ -26,6 +26,7 @@ data class StoryListEntry(
     val changedSteps: Int,
     /** Steps whose code the plugin cannot find, including steps whose file is gone. */
     val lostSteps: Int,
+    val repositoryPath: String,
 ) {
     companion object {
         fun of(stored: StoredStory): StoryListEntry {
@@ -36,6 +37,7 @@ data class StoryListEntry(
                 movedSteps = counts[StepStatus.MOVED] ?: 0,
                 changedSteps = counts[StepStatus.CODE_CHANGED] ?: 0,
                 lostSteps = counts[StepStatus.LOST] ?: 0,
+                repositoryPath = stored.root.toString(),
             )
         }
     }

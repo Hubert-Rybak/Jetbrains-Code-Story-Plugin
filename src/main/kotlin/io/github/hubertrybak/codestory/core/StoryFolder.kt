@@ -25,14 +25,19 @@ class StoredStory(
     val story: Story,
     val modified: FileTime,
     val statuses: List<StepStatus> = emptyList(),
+    val isNew: Boolean = false,
 ) {
     val date: String get() = checkNotNull(story.createdAt).atOffset(ZoneOffset.UTC).toLocalDate().toString()
     val folder: String get() = file.parent.fileName.toString()
+    /** Reader state belongs to a repository and an ID, independently of Local / Shared. */
+    val key: String get() = root.resolve(id).toString()
 
     /** Steps are ok until their anchors are checked. */
     fun status(index: Int): StepStatus = statuses.getOrElse(index) { StepStatus.OK }
 
-    fun resolved(resolution: AnchorResolution) = StoredStory(id, root, file, resolution.story, modified, resolution.statuses)
+    fun resolved(resolution: AnchorResolution) = StoredStory(id, root, file, resolution.story, modified, resolution.statuses, isNew)
+
+    fun withNewMarker(isNew: Boolean) = StoredStory(id, root, file, story, modified, statuses, isNew)
 }
 
 /**
@@ -109,6 +114,31 @@ class StoryFolder(val root: Path) {
         ensureGitIgnore()
         if (text != expected) writeAtomically(file, bytes)
         StoredStory(id, root, file, story, Files.getLastModifiedTime(file))
+    }
+
+    /** Moves the original bytes, keeping IDs and metadata. Never overwrites another story. */
+    fun setShared(stored: StoredStory, shared: Boolean): StoredStory = synchronized(saveLock) {
+        val current = selectedFile(stored) ?: throw IOException("The story has moved or was deleted. Refresh the list.")
+        val target = (if (shared) sharedDir else localDir).resolve(current.file.fileName)
+        if (target == current.file) return current
+        if (hasStorageSymlink(target)) throw IOException("The story folder or file is a symbolic link.")
+        Files.createDirectories(target.parent)
+        if (!shared) ensureGitIgnore()
+        // A plain move fails if the destination exists; ATOMIC_MOVE can replace it on some systems.
+        Files.move(current.file, target)
+        StoredStory(current.id, root, target, current.story, Files.getLastModifiedTime(target))
+    }
+
+    /** Deletes only the selected file, so a stale UI selection cannot delete a moved story. */
+    fun delete(stored: StoredStory): Boolean = synchronized(saveLock) {
+        val current = selectedFile(stored) ?: return false
+        Files.delete(current.file)
+        true
+    }
+
+    private fun selectedFile(stored: StoredStory): StoredStory? {
+        if (stored.root != root || !isValidId(stored.id) || stored.file !in listOf(localDir, sharedDir).map { it.resolve(stored.id + StoryFormat.FILE_SUFFIX) }) return null
+        return read(stored.file) { _, _ -> }
     }
 
     /** Local and shared stories, newest first. Files that cannot be read are skipped. */
