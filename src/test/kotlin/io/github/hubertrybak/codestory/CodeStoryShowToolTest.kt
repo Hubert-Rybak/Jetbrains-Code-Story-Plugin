@@ -93,7 +93,8 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
 
         val file = root.resolve(report.file!!)
         val saved = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        assertEquals(listOf("schemaVersion", "id", "title", "type", "summary", "request", "author", "createdAt", "git", "steps"), saved.keys.toList())
+        assertEquals(listOf("schemaVersion", "id", "title", "type", "summary", "request", "author", "createdAt", "git", "delivery", "steps"), saved.keys.toList())
+        assertEquals("mcp", saved.getValue("delivery").jsonPrimitive.content)
         assertEquals(1, saved.getValue("schemaVersion").jsonPrimitive.content.toInt())
         assertEquals(id, saved.getValue("id").jsonPrimitive.content)
         assertEquals("src/Billing.kt", saved.getValue("steps").jsonArray[1].jsonObject.getValue("location").jsonObject.getValue("file").jsonPrimitive.content)
@@ -172,7 +173,7 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
             assertTrue(report.errors.all { it.message.isNotBlank() && it.hint.isNotBlank() })
             assertTrue(report.next.contains("code_story_show"))
         }
-        assertFalse(root.resolve(".codestory").exists())
+        assertFalse(root.resolve(".codestory/local").exists())
         assertEmpty(CodeStoryService.getInstance(project).stories())
     }
 
@@ -187,7 +188,7 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
 
             assertEquals("rejected", report.status)
             assertEquals(listOf(1 to ErrorCode.OUTSIDE_PROJECT.code), report.errors.map { it.step to it.code })
-            assertFalse(root.resolve(".codestory").exists())
+            assertFalse(root.resolve(".codestory/local").exists())
         } finally {
             outsideDir.toFile().deleteRecursively()
         }
@@ -287,7 +288,7 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
         error as McpExpectedError
 
         assertTrue(error.mcpErrorText, error.mcpErrorText.contains("projectPath"))
-        assertFalse(root.resolve(".codestory").exists())
+        assertFalse(root.resolve(".codestory/local").exists())
     }
 
     private class Report(val status: String, val storyId: String?, val file: String?, val errors: List<Item>, val next: String)

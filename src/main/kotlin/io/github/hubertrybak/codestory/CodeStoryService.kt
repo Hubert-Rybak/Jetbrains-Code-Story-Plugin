@@ -79,9 +79,7 @@ class CodeStoryService(private val project: Project) {
         if (storyId != null && !StoryFolder.isValidId(storyId)) return ShowReport.rejected(listOf(
             ReportItem(null, ErrorCode.INVALID_STORY_ID, "The story ID is not valid.", "Use an ID returned by code_story_list."),
         ))
-        val (documents, live) = readAction { openDocuments() to AnchorTracker.getInstance(project).snapshot() }
-        val files = ideFiles(folder.root, documents.associate { (path, text) -> realPath(path) to text } + live?.texts.orEmpty())
-        val checked = when (val result = StoryValidator(files).validate(story)) {
+        val checked = when (val result = validateIncomingStory(story)) {
             is ValidationResult.Invalid -> return ShowReport.rejected(result.errors, corrections = result.corrections)
             is ValidationResult.Valid -> result
         }
@@ -89,18 +87,30 @@ class CodeStoryService(private val project: Project) {
         val (story, baseWarnings) = StoryChangeInfo.getInstance(project).resolveBase(folder.root, checked.story)
         val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(story) + baseWarnings
         val git = currentGit(folder.root)
-        return when (val saved = folder.save(story, Instant.now(), git, storyId)) {
+        return when (val saved = folder.save(story.copy(delivery = StoryFormat.MCP_DELIVERY), Instant.now(), git, storyId)) {
             is StoryFolder.SaveResult.TooLarge -> ShowReport.rejected(listOf(ReportItem.storyTooLarge(saved.bytes)), warnings, checked.corrections)
             is StoryFolder.SaveResult.NotFound -> ShowReport.rejected(listOf(
                 ReportItem(null, ErrorCode.STORY_NOT_FOUND, "The story `${saved.id}` was not found.", "Call code_story_list to find the current story ID."),
             ), warnings, checked.corrections)
             is StoryFolder.SaveResult.Saved -> {
-                lastShownStoryId = saved.id
-                project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(saved.id)
-                startPlayback(StoredStory(saved.id, folder.root, saved.file, saved.story, Files.getLastModifiedTime(saved.file)), storyId != null)
+                storyDelivered(StoredStory(saved.id, folder.root, saved.file, saved.story, Files.getLastModifiedTime(saved.file)), storyId != null)
                 ShowReport.accepted(saved.id, folder.relativePath(saved.file), warnings, checked.corrections)
             }
         }
+    }
+
+    /** The same arrival validation for MCP and file drops, including unsaved editor text. */
+    suspend fun validateIncomingStory(json: JsonElement): ValidationResult {
+        val folder = storyFolder()
+        val (documents, live) = readAction { openDocuments() to AnchorTracker.getInstance(project).snapshot() }
+        val files = ideFiles(folder.root, documents.associate { (path, text) -> realPath(path) to text } + live?.texts.orEmpty())
+        return StoryValidator(files).validate(json)
+    }
+
+    fun storyDelivered(stored: StoredStory, replacing: Boolean) {
+        lastShownStoryId = stored.id
+        project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(stored.id)
+        startPlayback(stored, replacing)
     }
 
     /**
@@ -109,7 +119,8 @@ class CodeStoryService(private val project: Project) {
      */
     fun stories(): List<StoredStory> {
         val folder = storyFolder()
-        val stored = folder.list { file, reason -> LOG.warn("Code Story skipped $file: $reason") }
+        val rejected = StoryFileWatcher.getInstance(project).problems.keys
+        val stored = folder.list { file, reason -> LOG.warn("Code Story skipped $file: $reason") }.filter { it.file !in rejected }
         if (stored.isEmpty()) return stored
         val live = AnchorTracker.getInstance(project).snapshot()
         val files = ideFiles(folder.root, live)

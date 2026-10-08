@@ -2,4 +2,7 @@
     <extensions defaultExtensionNs="com.intellij.mcpServer">
         <mcpToolset implementation="io.github.hubertrybak.codestory.mcp.CodeStoryToolset"/>
     </extensions>
+    <extensions defaultExtensionNs="io.github.hubertrybak.codestory">
+        <mcpSupport implementation="io.github.hubertrybak.codestory.mcp.CodeStoryMcpSupport"/>
+    </extensions>
 </idea-plugin>

@@ -30,6 +30,7 @@ import io.github.hubertrybak.codestory.StoryChangeInfo
 import io.github.hubertrybak.codestory.StoryChanges
 import io.github.hubertrybak.codestory.StoryListListener
 import io.github.hubertrybak.codestory.StoryGitMetadata
+import io.github.hubertrybak.codestory.StoryFileWatcher
 import io.github.hubertrybak.codestory.core.Location
 import io.github.hubertrybak.codestory.core.StepChange
 import io.github.hubertrybak.codestory.core.StepStatus
@@ -45,6 +46,7 @@ import java.nio.file.Path
 import java.util.concurrent.Future
 import javax.swing.JPanel
 import javax.swing.JTree
+import javax.swing.JTextArea
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
@@ -69,6 +71,8 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     private val treeModel = DefaultTreeModel(rootNode)
     val tree: Tree = Tree(treeModel)
     val cardContainer = JPanel(BorderLayout())
+    val fileProblems = JTextArea().apply { isEditable = false; lineWrap = true; wrapStyleWord = true }
+    private val problemsPane = ScrollPaneFactory.createScrollPane(fileProblems, true).apply { isVisible = false }
     private val player = StoryPlayer.getInstance(project)
     val details = StoryDetailsPanel(::showDiff)
     /** The context menu of stories and steps. */
@@ -91,6 +95,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         installStepOpening()
         tree.addTreeSelectionListener { showSelectedDetails() }
         setContent(JPanel(BorderLayout()).apply {
+            add(problemsPane, BorderLayout.NORTH)
             add(OnePixelSplitter(true, "CodeStory.detailsProportion", 0.5f).apply {
                 firstComponent = ScrollPaneFactory.createScrollPane(tree, true)
                 secondComponent = ScrollPaneFactory.createScrollPane(details, true)
@@ -119,7 +124,19 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
                 return@execute
             }
             val git = stories.map { it.root }.distinct().associateWith { CodeStoryService.getInstance(project).currentGit(it) }
-            onEdt { currentGit = git; showStories(stories, selectStoryId) }
+            val problems = StoryFileWatcher.getInstance(project).problems
+            onEdt {
+                fileProblems.text = problems.entries.joinToString("\n\n") { (file, errors) ->
+                    file.fileName.toString() + "\n" + errors.joinToString("\n") { error ->
+                        "${error.step?.let { "Step $it: " }.orEmpty()}${error.message} ${error.hint}"
+                    }
+                }
+                fileProblems.rows = minOf(8, fileProblems.text.lines().size + 1)
+                problemsPane.isVisible = problems.isNotEmpty()
+                currentGit = git
+                showStories(stories, selectStoryId)
+                revalidate()
+            }
             val changes = stories.mapNotNull { stored -> changesOf(stored)?.let { stored.id to it } }.toMap()
             onEdt { showChanges(changes) }
         }
@@ -238,6 +255,9 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
             add(ActionManager.getInstance().getAction("CodeStory.StopStory"))
             addSeparator()
             add(RefreshAction())
+            addSeparator()
+            add(ActionManager.getInstance().getAction("CodeStory.InstallSkill"))
+            add(ActionManager.getInstance().getAction("CodeStory.CheckSetup"))
         }, true)
         .also { it.targetComponent = this }
         .component

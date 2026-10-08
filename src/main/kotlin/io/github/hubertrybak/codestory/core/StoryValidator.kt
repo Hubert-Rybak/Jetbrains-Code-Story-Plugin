@@ -53,9 +53,13 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             val createdAt = if (readMetadata) createdAt(input, owner) else null
             val git = if (readMetadata) git(input, owner) else StoryGit()
             val baseRef = baseRef(input, owner)
+            val delivery = if (readMetadata) nullableText(input, "delivery", owner, "Omit delivery for file-drop stories, or use mcp.") else null
+            if (delivery != null && delivery != StoryFormat.MCP_DELIVERY) {
+                error(owner, ErrorCode.INVALID_VALUE, "The story has an unknown delivery marker.", "Omit delivery for file-drop stories, or use mcp.")
+            }
             val steps = steps(owner, input)
             return if (title != null && type != null && summary != null && request != null && author != null && steps != null) {
-                Story(title, type, summary, request, author, steps, createdAt, git, baseRef)
+                Story(title, type, summary, request, author, steps, createdAt, git, baseRef, delivery)
             } else null
         }
 

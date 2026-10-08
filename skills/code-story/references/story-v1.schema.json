@@ -72,6 +72,10 @@
       ],
       "pattern": "^(HEAD|[0-9a-fA-F]{4,64})$"
     },
+    "delivery": {
+      "description": "Plugin-owned MCP delivery marker. Other IDEs list the story but never auto-play it. Omit this field for file-drop delivery.",
+      "const": "mcp"
+    },
     "steps": {
       "description": "Steps in reading order: 3 to 12 are best, 15 at most.",
       "type": "array",

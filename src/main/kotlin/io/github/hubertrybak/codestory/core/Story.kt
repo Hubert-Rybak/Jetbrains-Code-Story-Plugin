@@ -25,6 +25,8 @@ data class Story(
      * commit SHA when Git knows it. `HEAD` means the current commit, for uncommitted work.
      */
     val baseRef: String? = null,
+    /** MCP stories play only in the receiving IDE. File-drop stories have no marker. */
+    val delivery: String? = null,
 )
 
 @Serializable

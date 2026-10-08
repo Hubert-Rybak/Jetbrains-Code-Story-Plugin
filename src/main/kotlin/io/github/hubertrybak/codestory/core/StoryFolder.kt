@@ -98,6 +98,19 @@ class StoryFolder(val root: Path) {
         true
     }
 
+    /** Normalize a validated drop in its original file, without overwriting a newer agent edit. */
+    fun acceptDrop(file: Path, expected: String, story: Story): StoredStory? = synchronized(saveLock) {
+        require(file.parent == localDir && isValidId(file.fileName.toString().removeSuffix(StoryFormat.FILE_SUFFIX)))
+        if (hasStorageSymlink(file) || !Files.isRegularFile(file) || Files.readString(file) != expected) return null
+        val id = file.fileName.toString().removeSuffix(StoryFormat.FILE_SUFFIX)
+        val text = StoryFormat.encode(story, id)
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        if (bytes.size > StoryLimits.MAX_FILE_BYTES) return null
+        ensureGitIgnore()
+        if (text != expected) writeAtomically(file, bytes)
+        StoredStory(id, root, file, story, Files.getLastModifiedTime(file))
+    }
+
     /** Local and shared stories, newest first. Files that cannot be read are skipped. */
     fun list(onSkipped: (Path, String) -> Unit = { _, _ -> }): List<StoredStory> {
         val files = listOf(localDir, sharedDir).flatMap { dir ->

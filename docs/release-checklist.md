@@ -19,8 +19,30 @@ the UI checks in light and dark themes. Record the IDE versions used.
 
 ## Agent stories
 
-Switch on the MCP server (Settings | Tools | MCP Server), use Auto-Configure
-for the agent, and install `skills/code-story` by hand.
+Install the skill with **Tools | Code Story | Install Code Story skill**.
+Switch on the MCP server (Settings | Tools | MCP Server) and use Auto-Configure
+for the agent.
+
+## Setup and file drops
+
+- [ ] A fresh profile shows one first-run notification with Install and MCP settings
+      actions. Opening another project does not repeat the first-run steps.
+- [ ] Install writes the skill, guide, schema, example and version to both user
+      agent folders. The project-level option writes both copies at the story root.
+- [ ] After upgrading the plugin, old copies get an update offer. The action updates
+      installed copies at both levels, and Check setup shows their current versions.
+- [ ] Check setup shows the server on/off state, registered tools, and all installed
+      skill locations and versions. The settings action opens MCP Server settings.
+      Code Story never changes the MCP enable setting.
+- [ ] With MCP Server disabled, the agent writes a file through the fallback skill.
+      The story appears and plays; an invalid drop shows errors in the tool window.
+      Correcting or deleting the file clears its errors.
+- [ ] A file dropped while the project is closed plays after opening the project.
+- [ ] With the same repository open in two IDEs, a drop plays in both. An MCP story
+      plays only in its receiving IDE. Anchor rewrites do not restart stopped stories.
+- [ ] Temporary files and files outside `.codestory/` do not trigger story handling.
+
+## Agent delivery
 
 - [ ] `/code-story "<request>"` in the agent creates a story through
       `code_story_show`. The tool window shows it and selects it.
