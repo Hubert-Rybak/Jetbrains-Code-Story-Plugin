@@ -10,6 +10,11 @@ import com.intellij.mcpserver.impl.McpServerService
 import com.intellij.mcpserver.impl.util.asTools
 import com.intellij.notification.Notification
 import com.intellij.notification.Notifications
+import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.components.service
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.testFramework.PlatformTestUtil
@@ -19,6 +24,7 @@ import io.github.hubertrybak.codestory.core.MessageAuthor
 import io.github.hubertrybak.codestory.core.ReplyOutcome
 import io.github.hubertrybak.codestory.core.Story
 import io.github.hubertrybak.codestory.core.StoredStory
+import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
@@ -70,6 +76,9 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         try {
             PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             player.stop()
+            val manager = FileDocumentManager.getInstance()
+            WriteAction.run<RuntimeException> { manager.unsavedDocuments.filter { manager.getFile(it)?.isValid == true }.forEach { manager.reloadFromDisk(it) } }
+            FileEditorManagerEx.getInstanceEx(project).closeAllFiles()
         } catch (e: Throwable) { addSuppressedException(e) }
         finally { super.tearDown() }
     }
@@ -158,10 +167,10 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         assertEquals(ErrorCode.MISSING_FIELD.code, error(reply(stored.id, emptyList())).string("code"))
 
         feedback()
-        val done = JsonObject(answer + ("outcome" to JsonPrimitive("done")))
+        val done = JsonObject(answer + mapOf("outcome" to JsonPrimitive("done"), "changedFiles" to JsonArray(emptyList())))
         val unknown = JsonObject(answer + ("threadId" to JsonPrimitive("missing")))
         val invalid = reply(stored.id, listOf(done, unknown))
-        assertEquals(listOf(ErrorCode.INVALID_VALUE.code to 1, ErrorCode.THREAD_NOT_FOUND.code to 2),
+        assertEquals(listOf(ErrorCode.OUTCOME_MISMATCH.code to 1, ErrorCode.THREAD_NOT_FOUND.code to 2),
             invalid.getValue("errors").jsonArray.map { it.jsonObject.string("code") to it.jsonObject.string("reply").toInt() })
         assertTrue(invalid.string("next").contains("Nothing was saved"))
         assertEquals(ThreadState.RECEIVED, saved(stored).steps[0].threads.single().state)
@@ -318,7 +327,7 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
             "[false]" to "wrong-type",
             """[{"op":"update","stepId":"entry"}]""" to "missing-field",
             """[{"op":"remove","stepId":"missing"}]""" to "step-not-found",
-            """[{"op":"confirm","stepId":"entry"}]""" to "invalid-value",
+            """[{"op":"unknown","stepId":"entry"}]""" to "invalid-value",
             """[{"op":"update","stepId":"entry","comment":"Changed."},{"op":"remove","stepId":"missing"}]""" to "step-not-found",
             """[{"op":"remove","stepId":"entry"}]""" to "no-steps",
             """[{"op":"update","stepId":"entry","comment":" "}]""" to "empty-text",
@@ -404,6 +413,166 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         assertTrue(restored.hasUnread(stored, saved(stored).threads))
     }
 
+    fun `test done rejects unsaved code changes until every affected step is reviewed`() {
+        val stored = show(story(step(id = quoted("entry")), step(id = quoted("core"), start = "10", end = "12")))
+        draft(stored, "Change both paths.", kind = ThreadKind.CHANGE)
+        submit(stored)
+        val comment = feedback(stored.id).getValue("comments").jsonArray.single().jsonObject
+        assertEquals("change", comment.string("kind"))
+        editLine(3, "changed entry")
+        editLine(11, "changed core")
+        val done = reply(comment, "done", "Updated both paths in App.kt.")
+        fun blocked(): JsonObject = reply(stored.id, listOf(done)).getValue("errors").jsonArray.single().jsonObject.also {
+            assertEquals("stale-steps", it.string("code"))
+        }
+        assertTrue(blocked().string("message").contains("entry"))
+        assertTrue(blocked().string("message").contains("core"))
+        assertEquals("accepted", patch(stored, """[{"op":"update","stepId":"entry","comment":"The updated entry starts here."}]""").string("status"))
+        assertFalse(blocked().string("message").contains("`entry`"))
+        assertEquals("accepted", patch(stored, """[{"op":"confirm","stepId":"core"}]""").string("status"))
+        assertEquals("0", list().single().string("changedSteps"))
+        // A later edit invalidates an earlier confirmation, including after another fetch.
+        editLine(11, "changed core again")
+        feedback(stored.id)
+        assertTrue(blocked().string("message").contains("core"))
+        patch(stored, """[{"op":"confirm","stepId":"core"}]""")
+        val report = reply(stored.id, listOf(done))
+        assertEmpty(report.getValue("errors").jsonArray)
+        val answer = saved(stored).threads.single().messages.last()
+        assertEquals(ReplyOutcome.DONE, answer.outcome)
+        assertEquals(listOf("src/App.kt"), answer.changedFiles)
+        assertEquals("Step 1 updated, step 2 confirmed", answer.storyChanges)
+        assertTrue(saved(stored).steps[1].location!!.rangeText!!.contains("changed core again"))
+    }
+
+    fun `test stale steps at fetch still need review after code is restored and feedback is fetched again`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        editLine(3, "changed before fetch")
+        draft(stored, "Review this change.", kind = ThreadKind.CHANGE)
+        submit(stored)
+        val comment = feedback(stored.id).getValue("comments").jsonArray.single().jsonObject
+        assertEquals(listOf("entry"), saved(stored).threads.single().stepsToSync)
+        editLine(3, "line 3")
+        feedback(stored.id)
+        val done = reply(comment, "done", "Reviewed the restored code.")
+        assertEquals("stale-steps", reply(stored.id, listOf(done)).getValue("errors").jsonArray.single().jsonObject.string("code"))
+        patch(stored, """[{"op":"confirm","stepId":"entry"}]""")
+        assertEmpty(reply(stored.id, listOf(done)).getValue("errors").jsonArray)
+        assertEmpty(saved(stored).threads.single().stepsToSync)
+        assertEquals("Step 1 confirmed", saved(stored).threads.single().messages.last().storyChanges)
+    }
+
+    fun `test lost steps can be reanchored separately and full replacement also permits done`() {
+        val stored = show(story(step(id = quoted("entry")), step(id = quoted("core"), start = "10", end = "12")))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        player.stop()
+        editLine(2, "new entry")
+        editLine(10, "new core")
+        draft(stored, "Update the entries.", kind = ThreadKind.CHANGE)
+        submit(stored)
+        val fetched = feedback(stored.id)
+        assertEquals(listOf("lost", "lost"), fetched.getValue("staleSteps").jsonArray.map { it.jsonObject.string("status") })
+        val comment = fetched.getValue("comments").jsonArray.single().jsonObject
+        val done = reply(comment, "done", "Updated the entries in App.kt.")
+        assertEquals("stale-steps", reply(stored.id, listOf(done)).getValue("errors").jsonArray.single().jsonObject.string("code"))
+        val patch = patch(stored, """[{"op":"update","stepId":"entry","location":{"file":"src/App.kt","startLine":2,"endLine":4,"anchorText":"new entry"}}]""")
+        assertEquals(patch.toString(), "accepted", patch.string("status"))
+        assertEquals(listOf("core"), saved(stored).threads.single().stepsToSync)
+        val replaced = callTool("code_story_show", mapOf("storyId" to JsonPrimitive(stored.id), "story" to Json.parseToJsonElement(story(
+            step(id = quoted("entry"), anchor = quoted("new entry")),
+            step(id = quoted("core"), start = "10", end = "12", anchor = quoted("new core")),
+        )))).structuredContent!!
+        assertEquals(replaced.toString(), "accepted", replaced.string("status"))
+        assertEmpty(reply(stored.id, listOf(done)).getValue("errors").jsonArray)
+    }
+
+    fun `test refresh joins the pending round and index follows shared feedback withdrawal and deletion`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        draft(stored, "Why here?")
+        assertFalse(Files.exists(service.storyFolder().localDir.resolve(StoryFolder.PENDING_INDEX)))
+        submit(stored)
+        assertTrue(background { service.requestRefresh(stored) })
+        assertFalse(background { service.requestRefresh(stored) })
+        assertEquals(setOf(1), StoryThreads.pending(saved(stored)).map { it.round }.toSet())
+        assertEquals("2", index().string("pendingComments"))
+        assertEquals("1", index().string("schemaVersion"))
+        val item = index().getValue("stories").jsonArray.single().jsonObject
+        assertEquals(stored.id, item.string("storyId"))
+        assertEquals("[1]", item.getValue("rounds").toString())
+        assertFalse(index().toString().contains("Why here"))
+        background { service.setShared(stored, true) }
+        val shared = service.storyFolder().get(stored.id)!!
+        assertEquals("shared", index().getValue("stories").jsonArray.single().jsonObject.string("folder"))
+        val fetched = feedback(stored.id).getValue("comments").jsonArray.map { it.jsonObject }
+        val refresh = fetched.single { it.string("kind") == "refresh" }
+        editLine(3, "current code")
+        val done = JsonObject(reply(refresh, "done", "Confirmed the step against current code.") + ("changedFiles" to JsonArray(emptyList())))
+        assertEquals("stale-steps", reply(stored.id, listOf(done)).getValue("errors").jsonArray.single().jsonObject.string("code"))
+        assertEquals("2", index().string("pendingComments"))
+        patch(shared, """[{"op":"confirm","stepId":"entry"}]""")
+        assertEmpty(reply(stored.id, listOf(done, reply(fetched.single { it != refresh }, "answered", "The entry starts here."))).getValue("errors").jsonArray)
+        assertEquals("0", index().string("pendingComments"))
+        assertEmpty(index().getValue("stories").jsonArray)
+        assertTrue(background { service.requestRefresh(shared, "entry") })
+        val thread = StoryThreads.pending(saved(shared)).single().thread
+        assertEquals(2, thread.messages.last().round)
+        assertTrue(background { service.withdraw(shared, thread.id) })
+        assertEquals(ThreadKind.REFRESH, reader.drafts(shared.key).single().kind)
+        assertEquals("0", index().string("pendingComments"))
+        submit(shared)
+        assertEquals("1", index().string("pendingComments"))
+        background { service.delete(shared) }
+        assertEquals("0", index().string("pendingComments"))
+    }
+
+    fun `test no comments still returns stale steps for refresh and a missing range cannot be confirmed`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        editLine(3, "changed without comments")
+        val fetched = feedback()
+        assertEmpty(fetched.getValue("comments").jsonArray)
+        assertEquals("entry", fetched.getValue("staleSteps").jsonArray.single().jsonObject.string("stepId"))
+        assertTrue(fetched.string("next").contains("code_story_patch"))
+        patch(stored, """[{"op":"confirm","stepId":"entry"}]""")
+        assertEmpty(feedback().getValue("staleSteps").jsonArray)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        player.stop()
+        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(root.resolve("src/App.kt"))!!
+        FileDocumentManager.getInstance().saveAllDocuments()
+        WriteAction.run<RuntimeException> { file.delete(this) }
+        val before = Files.readString(stored.file)
+        val rejected = patch(stored, """[{"op":"confirm","stepId":"entry"}]""")
+        assertEquals("rejected", rejected.string("status"))
+        assertEquals(before, Files.readString(stored.file))
+        assertEquals("accepted", patch(stored, """[{"op":"update","stepId":"entry","location":null}]""").string("status"))
+    }
+
+    fun `test confirm captures a lost first line and removing an obsolete step permits done`() {
+        val stored = show(story(step(id = quoted("entry")), step(id = quoted("core"), start = "10", end = "12")))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        player.stop()
+        editLine(2, "replaced entry")
+        editLine(10, "obsolete core")
+        background { service.requestRefresh(stored) }
+        val comment = feedback(stored.id).getValue("comments").jsonArray.single().jsonObject
+        val done = JsonObject(reply(comment, "done", "Confirmed the entry and removed the obsolete step.") + ("changedFiles" to JsonArray(emptyList())))
+        assertEquals("accepted", patch(stored, """[{"op":"confirm","stepId":"entry"},{"op":"remove","stepId":"core"}]""").string("status"))
+        assertEmpty(reply(stored.id, listOf(done)).getValue("errors").jsonArray)
+        val current = saved(stored)
+        assertEquals("replaced entry", current.steps.single().location!!.anchorText)
+        assertEquals("Step 2 removed, step 1 confirmed", current.threads.single().messages.last().storyChanges)
+        assertEquals("ok", list().single().string("status"))
+    }
+
+    private fun index(): JsonObject = Json.parseToJsonElement(Files.readString(service.storyFolder().localDir.resolve(StoryFolder.PENDING_INDEX))).jsonObject
+
+    private fun editLine(line: Int, value: String) {
+        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(root.resolve("src/App.kt"))!!
+        val document = FileDocumentManager.getInstance().getDocument(file)!!
+        WriteCommandAction.runWriteCommandAction(project) {
+            document.replaceString(document.getLineStartOffset(line - 1), document.getLineEndOffset(line - 1), value)
+        }
+    }
+
     private fun patch(stored: StoredStory, operations: String): JsonObject = callTool("code_story_patch", mapOf(
         "storyId" to JsonPrimitive(stored.id), "operations" to Json.parseToJsonElement(operations),
     )).structuredContent!!
@@ -414,8 +583,8 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         return service.stories().single { it.id == report.string("storyId") }
     }
 
-    private fun draft(stored: StoredStory, text: String, step: String? = null, thread: String? = null) =
-        reader.saveDraft(StoryDraft(story = stored.key, step = step, thread = thread, text = text))
+    private fun draft(stored: StoredStory, text: String, step: String? = null, thread: String? = null, kind: ThreadKind = ThreadKind.QUESTION) =
+        reader.saveDraft(StoryDraft(story = stored.key, step = step, thread = thread, text = text, kind = kind))
 
     private fun submit(stored: StoredStory) = background { service.submitRound(stored) }
 
@@ -433,6 +602,7 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         put("round", comment.string("round").toInt())
         put("outcome", outcome)
         put("text", text)
+        if (outcome == "done") put("changedFiles", JsonArray(listOf(JsonPrimitive("src/App.kt"))))
     }
 
     private fun list() = callTool("code_story_list").structuredContent!!.getValue("stories").jsonArray.map { it.jsonObject }

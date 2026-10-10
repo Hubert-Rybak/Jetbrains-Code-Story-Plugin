@@ -20,6 +20,11 @@ data class StoryThread(
     /** Plugin-owned feedback bookkeeping, cleared after the reply. */
     val storyBaseline: List<StoryStepSnapshot>? = null,
     val pendingStoryChanges: String? = null,
+    /** Stale steps seen when feedback was fetched, still awaiting an author review. */
+    val stepsToSync: List<String> = emptyList(),
+    val confirmedSteps: List<String> = emptyList(),
+    /** The prior thread kind, restored if the reader withdraws a follow-up before it is fetched. */
+    val previousKind: ThreadKind? = null,
 )
 
 @Serializable
@@ -79,6 +84,7 @@ data class ThreadMessage(
     val outcome: ReplyOutcome? = null,
     /** Computed by the plugin, separate from the agent's answer and writing checks. */
     val storyChanges: String? = null,
+    val changedFiles: List<String> = emptyList(),
 )
 
 /**
@@ -93,7 +99,7 @@ data class DraftComment(
 )
 
 /** An agent's reply to the comment of [round] in the thread [threadId]. */
-data class AgentReply(val threadId: String, val round: Int, val outcome: ReplyOutcome, val text: String)
+data class AgentReply(val threadId: String, val round: Int, val outcome: ReplyOutcome, val text: String, val changedFiles: List<String> = emptyList())
 
 /** A comment that waits for an agent. [stepIndex] is `null` for a comment on the whole story. */
 class PendingComment(val stepIndex: Int?, val thread: StoryThread) {
@@ -104,7 +110,7 @@ class PendingComment(val stepIndex: Int?, val thread: StoryThread) {
     val time: Instant = comments.first().time
 }
 
-/** The thread state machine: submitted → received → answered or declined; a new comment opens a thread again. */
+/** The thread state machine: submitted → received → answered, done or declined; a new comment opens a thread again. */
 object StoryThreads {
     /** Every thread with the index of its step, or `null` for a thread about the whole story. */
     fun all(story: Story): List<Pair<Int?, StoryThread>> =
@@ -126,7 +132,8 @@ object StoryThreads {
             val comment = ThreadMessage(MessageAuthor.READER, round, time, draft.text)
             val thread = draft.threadId?.let { find(result, it) }
             if (thread != null) {
-                change(result, thread.id) { it.copy(state = ThreadState.SUBMITTED, messages = it.messages + comment) }
+                change(result, thread.id) { it.copy(kind = draft.kind, previousKind = it.kind.takeIf { kind -> kind != draft.kind }, state = ThreadState.SUBMITTED, messages = it.messages + comment,
+                    storyBaseline = null, pendingStoryChanges = null, stepsToSync = emptyList(), confirmedSteps = emptyList()) }
             } else {
                 val ids = all(result).map { it.second.id }.toSet()
                 add(result, draft.stepId, StoryThread(generateSequence(newId).first { it !in ids }, draft.kind, ThreadState.SUBMITTED, listOf(comment)))
@@ -145,7 +152,7 @@ object StoryThreads {
         val rest = thread.messages.dropLast(1)
         val draft = DraftComment(comment.text, stepIndex?.let { story.steps[it].id }, threadId.takeIf { rest.isNotEmpty() }, thread.kind)
         val updated = if (rest.isEmpty()) mapThreads(story) { it.takeUnless { it.id == threadId } }
-            else change(story, threadId) { it.copy(state = stateAfter(rest.last()), messages = rest) }
+            else change(story, threadId) { it.copy(kind = it.previousKind ?: it.kind, previousKind = null, state = stateAfter(rest.last()), messages = rest) }
         return updated to draft
     }
 
@@ -163,8 +170,17 @@ object StoryThreads {
         .sortedBy { it.time }
 
     /** An agent fetched the pending comments. They stay available until an agent replies. */
-    fun markReceived(story: Story): Story =
-        mapThreads(story) { if (it.state == ThreadState.SUBMITTED) it.copy(state = ThreadState.RECEIVED) else it }
+    fun markReceived(story: Story, staleIds: List<String> = emptyList()): Story = mapThreads(story) {
+        if (it.state.isPending) it.copy(state = ThreadState.RECEIVED, previousKind = null, stepsToSync = (it.stepsToSync + staleIds).distinct()) else it
+    }
+
+    /** Refresh joins the latest unfetched round; repeated requests for the same target are idempotent. */
+    fun requestRefresh(story: Story, stepId: String?, time: Instant): Story {
+        if (pending(story).any { it.thread.kind == ThreadKind.REFRESH && it.stepIndex?.let { index -> story.steps[index].id } == stepId }) return story
+        val round = pending(story).filter { it.thread.state == ThreadState.SUBMITTED }.maxOfOrNull { it.round } ?: nextRound(story)
+        return add(story, stepId, StoryThread(UUID.randomUUID().toString(), ThreadKind.REFRESH, ThreadState.SUBMITTED,
+            listOf(ThreadMessage(MessageAuthor.READER, round, time, "Refresh the steps whose code changed or was lost."))))
+    }
 
     class ReplyResult(val story: Story, val saved: List<String>, val errors: List<ReplyIssue>)
 
@@ -173,21 +189,22 @@ object StoryThreads {
      * comment wins; a reply that does not fit its thread is rejected, and the other replies are saved.
      * The index of each reply is its position in the agent's list.
      */
-    fun reply(story: Story, replies: List<IndexedValue<AgentReply>>, time: Instant): ReplyResult {
+    fun reply(story: Story, replies: List<IndexedValue<AgentReply>>, time: Instant, staleIds: Set<String> = emptySet()): ReplyResult {
         val saved = mutableListOf<String>()
         val errors = mutableListOf<ReplyIssue>()
         val seen = mutableSetOf<String>()
         val result = replies.fold(story) { result, (index, reply) ->
-            val problem = problem(result, reply, seen.add(reply.threadId))
+            val problem = problem(result, reply, seen.add(reply.threadId)) ?: syncProblem(result, reply, staleIds)
             if (problem != null) {
                 errors += ReplyIssue(index + 1, reply.threadId, problem.first.code, problem.second, problem.third)
                 return@fold result
             }
             saved += reply.threadId
             val thread = checkNotNull(find(result, reply.threadId))
-            val message = ThreadMessage(MessageAuthor.AGENT, reply.round, time, reply.text, reply.outcome, thread.pendingStoryChanges)
+            val message = ThreadMessage(MessageAuthor.AGENT, reply.round, time, reply.text, reply.outcome, thread.pendingStoryChanges, reply.changedFiles)
             change(result, reply.threadId) {
-                it.copy(state = reply.outcome.state, messages = it.messages + message, storyBaseline = null, pendingStoryChanges = null)
+                it.copy(state = reply.outcome.state, messages = it.messages + message, storyBaseline = null, pendingStoryChanges = null,
+                    stepsToSync = emptyList(), confirmedSteps = emptyList(), previousKind = null)
             }
         }
         return ReplyResult(result, saved, errors)
@@ -233,10 +250,25 @@ object StoryThreads {
             )
             reply.outcome == ReplyOutcome.ANSWERED && thread.kind != ThreadKind.QUESTION -> Triple(
                 ErrorCode.OUTCOME_MISMATCH, "Thread `$id` is a ${thread.kind.value} request, not a question, so `answered` does not fit.",
-                "Reply `declined` with the reason why you cannot do the request now.",
+                "Use `done` after updating affected steps, or `declined` with a reason.",
+            )
+            reply.outcome == ReplyOutcome.DONE && thread.kind == ThreadKind.QUESTION -> Triple(
+                ErrorCode.OUTCOME_MISMATCH, "Thread `$id` is a question, so `done` does not fit.",
+                "Use `answered` for a question, or `declined` with a reason. Never change code for a question.",
             )
             else -> null
         }
+    }
+
+    private fun syncProblem(story: Story, reply: AgentReply, staleIds: Set<String>): Triple<ErrorCode, String, String>? {
+        if (reply.outcome != ReplyOutcome.DONE) return null
+        val pending = find(story, reply.threadId)!!.stepsToSync + staleIds
+        val steps = story.steps.mapIndexedNotNull { index, step ->
+            if (step.id in pending) "Step ${index + 1} `${step.id}` (${step.title})" else null
+        }
+        if (steps.isEmpty()) return null
+        return Triple(ErrorCode.STALE_STEPS, "Cannot mark done. These steps still need review: ${steps.joinToString("; ")}.",
+            "Read the current code, then update, replace or confirm these steps with code_story_patch or code_story_show before retrying code_story_reply.")
     }
 
     /** The state of a thread whose last message is [last]. */

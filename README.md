@@ -10,8 +10,8 @@ the highlighted code. The **Code Story** tool window lists stories newest first
 and shows their details, including who wrote them and the Git branch and
 commit at creation. It holds the card when the editor has no room for it.
 Text-only steps show their comment in the details pane and leave the editor
-as it is. Readers ask questions about steps, and the agent answers them inside
-the story. See
+as it is. Readers ask questions or request code changes, and the agent replies inside
+the story after synchronizing affected steps. See
 [spec.md](spec.md) for the product specification and
 [issue #1](https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/issues/1)
 for the implementation roadmap.
@@ -151,10 +151,11 @@ Story. Press **C** after the same prefix for **Comment on Current Step**. Change
 Comments support inline code, bold, bullet lists and links to http/https URLs
 or repository files (`src/App.kt#L2-L5`). Links open only when clicked.
 
-### Questions and answers
+### Questions, change requests and refresh
 
 Ask your agent about a story without leaving the IDE. The card’s **💬** button opens
-a small comment input under the step text. Its collapsed **💬 N threads · N drafts**
+a small comment input under the step text. In both the card and details pane, choose
+**Question** (the default) or **Change request** before saving a comment or reply. Its collapsed **💬 N threads · N drafts**
 line expands the threads inside the card. Step rows show open-thread counts and a dot
 for unread answers. Opening the threads clears the dot; unread state stays in your IDE
 workspace across restarts and never changes a shared story file.
@@ -172,8 +173,13 @@ copy the command. Until an agent fetches a comment, it shows "Waiting for agent"
 can **Withdraw** it back to your drafts. A fetched comment shows "Agent working".
 
 The agent calls `code_story_feedback` to get the comments that wait, oldest round first,
-and answers each one with `code_story_reply`: `answered`, or `declined` with a reason. It
-never changes code for a question. The answers appear under your comments, a notification
+and answers each one with `code_story_reply`: `answered` for questions, `done` for
+change or refresh requests, or `declined` with a reason. It never changes code for a question.
+For a change request, the agent applies the code change with its normal permission prompts,
+updates every affected step, and replies with a short summary and `changedFiles` (paths
+relative to the repository). The plugin rejects `done` with a list of steps that still
+need review. Updates, replacements and confirmations count only after feedback was fetched;
+a later code edit requires another review. Changed files appear with the reply. The answers appear under your comments, a notification
 tells you that they arrived, and a story that is playing keeps its step. **Reply** in a
 thread adds a draft that opens the thread again in the next round. **Resolve** closes a
 thread; resolved threads are hidden until you select **Show resolved**.
@@ -188,11 +194,117 @@ the checks give warnings only. A reply to a comment that is already answered get
 
 The agent can clarify step text or insert explanations with `code_story_patch` before
 answering a question. It takes ordered `update` (stepId, title/comment/location),
-`insert` (afterStepId, step), and `remove` (stepId) operations. Locations include anchor
-text; an explicit null makes a step text-only. The complete patch uses the same validation
-and report as `code_story_show`; any error saves nothing. Threads and creation metadata
-stay intact. Replies automatically show a **Story changes** line for net story edits made
+`insert` (afterStepId, step), `remove` (stepId), and `confirm` (stepId) operations.
+Confirm makes the current code the step’s new reference and returns its status to **ok**.
+The agent must read the current code and confirm that the explanation still fits; a
+missing file or range needs a new location or removal. Locations include anchor
+text; an explicit null makes a step text-only. A patch checks the whole structure and
+validates edited steps like `code_story_show`; untouched steps keep their code references,
+including stale steps. It returns the same report; any error saves nothing. Threads and
+creation metadata stay intact. Replies automatically show a **Story changes** line for net story edits made
 while the comment was received. Every tool result directs the agent to its next call.
+
+**Request refresh**, in the story or step context menu, adds a refresh item directly
+to the story’s latest unfetched round (or starts a new round). Tell the agent
+`/code-story feedback` to refresh stale steps. Refresh items use `done` with
+`changedFiles: []` when no code files changed. With no pending comments, feedback mode
+still finds and refreshes **code changed** and **lost** steps.
+
+### Optional feedback hooks
+
+The plugin maintains `.codestory/local/pending-feedback.json`, a small local index of
+pending story IDs, folders, counts and rounds. It includes submitted and fetched
+feedback, omits drafts, comment text and code, and clears entries as feedback is answered,
+withdrawn or deleted. The IDE refreshes it on project open and story file changes.
+**Check setup → Copy feedback hooks** copies the helper and all configurations below.
+The plugin never installs hooks. The snippets need Python 3; replace `python3` with your
+Python executable if needed. Merge the configuration with existing hooks. The reminders
+ask the agent to mention pending feedback and process it when you ask or agree.
+
+Save this helper as `~/.codestory/feedback-hook.py` (create the directory yourself):
+
+```python
+import json
+import os
+from pathlib import Path
+import sys
+
+try:
+    event = json.load(sys.stdin)
+    if not isinstance(event, dict):
+        raise ValueError("Invalid hook input")
+    cwd = Path(event.get("cwd") or os.getcwd()).resolve()
+    ancestors = [cwd, *cwd.parents]
+    root = next((p for p in ancestors if (p / ".git").exists()), None)
+    if root is None:
+        root = next((p for p in ancestors if (p / ".codestory").is_dir()), cwd)
+    index = root / ".codestory/local/pending-feedback.json"
+    data = json.loads(index.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Invalid feedback index")
+    if data.get("schemaVersion") != 1 or data.get("pendingComments", 0) <= 0:
+        raise ValueError("No pending feedback")
+    context = (
+        "Code Story feedback is pending in this repository. Mention it to the "
+        "developer and process it with the code-story feedback skill when they "
+        "ask or agree. Fetch current feedback from the IDE before making changes."
+    )
+    if sys.argv[1] == "copilot":
+        print(json.dumps({"additionalContext": context}))
+    else:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": event["hook_event_name"],
+            "additionalContext": context
+        }}))
+except (OSError, ValueError, KeyError, TypeError, IndexError):
+    print("{}")
+```
+
+Claude Code: merge into `~/.claude/settings.json` (or `.claude/settings.json` in the
+project). Reminders run at session start and on each prompt:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.codestory/feedback-hook.py\" claude"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.codestory/feedback-hook.py\" claude"}]}]
+  }
+}
+```
+
+Codex: merge into `~/.codex/hooks.json` (or `.codex/hooks.json` in the project), using
+a Codex version with lifecycle hook support. Reminders run at session start and on
+each prompt. Review/enable the hook in Codex if your version requires that:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.codestory/feedback-hook.py\" codex"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.codestory/feedback-hook.py\" codex"}]}]
+  }
+}
+```
+
+Copilot CLI: merge into `.github/hooks/code-story.json` in the project. The reminder
+runs at session start. The Rider Copilot plugin has no suitable hook:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [{
+      "type": "command",
+      "bash": "python3 \"$HOME/.codestory/feedback-hook.py\" copilot",
+      "powershell": "python \"$HOME/.codestory/feedback-hook.py\" copilot",
+      "timeoutSec": 5
+    }]
+  }
+}
+```
+
+Agent references: [Claude Code hooks](https://code.claude.com/docs/en/hooks),
+[Codex hooks](https://developers.openai.com/codex/hooks),
+[Copilot CLI hooks](https://docs.github.com/en/copilot/reference/hooks-configuration).
 
 ## Develop
 

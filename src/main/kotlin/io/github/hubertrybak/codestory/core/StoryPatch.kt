@@ -11,14 +11,15 @@ import java.util.UUID
 
 /** Applies operations in order. The caller validates and saves the complete result atomically. */
 object StoryPatch {
-    class Result(val story: JsonObject, val errors: List<ReportItem>, val updatedIds: Set<String>)
+    class Result(val story: JsonObject, val errors: List<ReportItem>, val updatedIds: Set<String>, val confirmedIds: Set<String>)
 
-    fun apply(story: Story, storyId: String, operations: List<JsonElement>): Result {
+    fun apply(story: Story, storyId: String, operations: List<JsonElement>, files: StoryFiles? = null): Result {
         val json = Json.parseToJsonElement(StoryFormat.encode(story, storyId)).jsonObject
         val steps = (json.getValue("steps") as JsonArray).map { it.jsonObject }.toMutableList()
         val errors = mutableListOf<ReportItem>()
         val updatedIds = mutableSetOf<String>()
-        if (operations.isEmpty()) errors += ReportItem(null, ErrorCode.MISSING_FIELD, "The patch has no operations.", "Send at least one update, insert or remove operation.")
+        val confirmedIds = mutableSetOf<String>()
+        if (operations.isEmpty()) errors += ReportItem(null, ErrorCode.MISSING_FIELD, "The patch has no operations.", "Send at least one update, insert, remove or confirm operation.")
         operations.forEachIndexed { index, element ->
             fun error(code: ErrorCode, message: String, step: Int? = null) {
                 errors += ReportItem(step, code, "Operation ${index + 1}: $message", "Read code_story_get for step IDs, then retry code_story_patch.")
@@ -33,9 +34,9 @@ object StoryPatch {
             val fields = when (op) {
                 "update" -> setOf("op", "stepId", "title", "comment", "location")
                 "insert" -> setOf("op", "afterStepId", "step")
-                "remove" -> setOf("op", "stepId")
+                "remove", "confirm" -> setOf("op", "stepId")
                 else -> {
-                    error(ErrorCode.INVALID_VALUE, "Use op update, insert or remove.")
+                    error(ErrorCode.INVALID_VALUE, "Use op update, insert, remove or confirm.")
                     return@forEachIndexed
                 }
             }
@@ -50,13 +51,30 @@ object StoryPatch {
                 return@forEachIndexed
             }
             when (op) {
-                "remove" -> steps.removeAt(target)
+                "remove" -> { steps.removeAt(target); confirmedIds -= id }
+                "confirm" -> {
+                    val location = steps[target]["location"] as? JsonObject
+                    if (location != null) {
+                        val file = (location["file"] as? JsonPrimitive)?.content
+                        val start = (location["startLine"] as? JsonPrimitive)?.content?.toIntOrNull()
+                        val found = file?.let { files?.lookup(it) } as? FileLookup.Found
+                        val first = found?.let { TextFiles.lines(it.text).getOrNull((start ?: 0) - 1) }
+                        if (first == null) {
+                            error(ErrorCode.LINES_OUTSIDE_FILE, "The current code is unavailable. Re-anchor or remove this step before confirming it.", target + 1)
+                            return@forEachIndexed
+                        }
+                        steps[target] = JsonObject(steps[target] + ("location" to JsonObject(location + ("anchorText" to JsonPrimitive(first)))))
+                    }
+                    updatedIds += id
+                    confirmedIds += id
+                }
                 "update" -> {
                     val changes = operation.filterKeys { it in setOf("title", "comment", "location") }
                     if (changes.isEmpty()) error(ErrorCode.MISSING_FIELD, "An update needs title, comment or location.", target + 1)
                     else {
                         steps[target] = JsonObject(steps[target] + changes)
                         updatedIds += id
+                        confirmedIds -= id
                     }
                 }
                 "insert" -> {
@@ -68,10 +86,11 @@ object StoryPatch {
                             JsonObject(step + ("id" to JsonPrimitive(newId)))
                         } else step
                         steps.add(target + 1, assigned)
+                        (assigned["id"] as? JsonPrimitive)?.content?.let { updatedIds += it }
                     }
                 }
             }
         }
-        return Result(JsonObject(json + ("steps" to JsonArray(steps))), errors, updatedIds)
+        return Result(JsonObject(json + ("steps" to JsonArray(steps))), errors, updatedIds, confirmedIds)
     }
 }

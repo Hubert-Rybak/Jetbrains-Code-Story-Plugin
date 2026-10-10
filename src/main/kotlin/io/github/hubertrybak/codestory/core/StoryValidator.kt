@@ -25,7 +25,12 @@ sealed interface ValidationResult {
  * adds a correction, and the code of the range is stored in the story. The size limit applies
  * to the saved file, so [StoryFolder.save] checks it.
  */
-class StoryValidator(private val files: StoryFiles?, private val readMetadata: Boolean = false) {
+class StoryValidator(
+    private val files: StoryFiles?,
+    private val readMetadata: Boolean = false,
+    /** Trusted, untouched steps in a patch retain their reference even when their code is lost. */
+    private val unchangedSteps: Map<String, Step> = emptyMap(),
+) {
 
     fun validate(input: JsonElement): ValidationResult {
         val errors = mutableListOf<ReportItem>()
@@ -100,6 +105,10 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
                 }
             }
             val changes = nullableText(element, "pendingStoryChanges", owner, THREAD_HINT, "$label.pendingStoryChanges")
+            val stepsToSync = stringList(element, "stepsToSync", owner, label, StoryLimits.MAX_STEPS)
+            val confirmedSteps = stringList(element, "confirmedSteps", owner, label, StoryLimits.MAX_STEPS)
+            val previousKind = if (element["previousKind"] == null || element["previousKind"] == JsonNull) null
+                else choice(element, "previousKind", "$label.previousKind", owner, ThreadKind.entries.associateBy { it.value })
             val messages = when (val list = element["messages"]) {
                 is JsonArray -> list.mapIndexed { index, message -> message(owner, "$label.messages[${index + 1}]", message) }
                     .also { if (it.isEmpty()) error(owner, ErrorCode.MISSING_FIELD, "${owner.subject} has no messages in `$label`.", THREAD_HINT) }
@@ -107,7 +116,7 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
                 else -> error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `$label.messages` must be a list.", THREAD_HINT)
             }
             return if (id != null && kind != null && state != null && messages != null && messages.isNotEmpty() && messages.all { it != null }) {
-                StoryThread(id, kind, state, messages.filterNotNull(), removedStep, baseline, changes)
+                StoryThread(id, kind, state, messages.filterNotNull(), removedStep, baseline, changes, stepsToSync, confirmedSteps, previousKind)
             } else null
         }
 
@@ -126,10 +135,20 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             // Only agent replies have an outcome.
             val outcome = if (author == MessageAuthor.AGENT) choice(element, "outcome", "$label.outcome", owner, ReplyOutcome.entries.associateBy { it.value }) else null
             val changes = if (author == MessageAuthor.AGENT) nullableText(element, "storyChanges", owner, THREAD_HINT, "$label.storyChanges") else null
+            val changedFiles = if (author == MessageAuthor.AGENT) stringList(element, "changedFiles", owner, label) else emptyList()
             val text = text(element, "text", owner, THREAD_HINT, "$label.text")
             return if (author != null && round != null && time != null && text != null && (author == MessageAuthor.READER || outcome != null)) {
-                ThreadMessage(author, round, time, text, outcome, changes)
+                ThreadMessage(author, round, time, text, outcome, changes, changedFiles)
             } else null
+        }
+
+        private fun stringList(obj: JsonObject, name: String, owner: Owner, label: String, limit: Int = Int.MAX_VALUE): List<String> {
+            val element = obj[name] ?: return emptyList()
+            if (element !is JsonArray || element.size > limit || element.any { it !is JsonPrimitive || !it.isString || it.content.isBlank() }) {
+                error(owner, ErrorCode.INVALID_VALUE, "${owner.where}, `$label.$name` must be a list of nonempty strings.", THREAD_HINT)
+                return emptyList()
+            }
+            return element.map { (it as JsonPrimitive).content }.distinct()
         }
 
         private fun <T> choice(obj: JsonObject, name: String, label: String, owner: Owner, values: Map<String, T>): T? {
@@ -208,7 +227,8 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             val title = text(element, "title", owner, STEP_TITLE_HINT)
             val comment = text(element, "comment", owner, COMMENT_HINT)
             val id = if (readMetadata) text(element, "id", owner, ID_HINT) else nullableText(element, "id", owner, ID_HINT)
-            val location = if (element["location"] == null || element["location"] == JsonNull) null else location(owner, element)
+            val location = if (id in unchangedSteps) unchangedSteps[id]?.location
+                else if (element["location"] == null || element["location"] == JsonNull) null else location(owner, element)
             val threads = if (readMetadata) threads(element, owner) else emptyList()
             // `children` and `links` are reserved for later modes and ignored in v1.
             return if (title != null && comment != null && threads != null) Step(title, comment, location, id, threads) else null

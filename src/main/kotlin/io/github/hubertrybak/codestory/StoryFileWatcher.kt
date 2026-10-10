@@ -189,6 +189,7 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
             setProblems(file, emptyList())
         }
         if (removed.isNotEmpty()) changed()
+        folder.refreshPendingIndex()
     }
 
     private suspend fun receive(folder: StoryFolder, file: Path, text: String) {

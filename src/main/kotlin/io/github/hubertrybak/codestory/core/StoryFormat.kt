@@ -84,6 +84,9 @@ object StoryFormat {
                     thread.removedStep?.let { put("removedStep", it) }
                     thread.storyBaseline?.let { put("storyBaseline", Json.encodeToJsonElement(it)) }
                     thread.pendingStoryChanges?.let { put("pendingStoryChanges", it) }
+                    thread.previousKind?.let { put("previousKind", it.value) }
+                    if (thread.stepsToSync.isNotEmpty()) put("stepsToSync", Json.encodeToJsonElement(thread.stepsToSync))
+                    if (thread.confirmedSteps.isNotEmpty()) put("confirmedSteps", Json.encodeToJsonElement(thread.confirmedSteps))
                     putJsonArray("messages") {
                         for (message in thread.messages) {
                             addJsonObject {
@@ -92,6 +95,7 @@ object StoryFormat {
                                 put("time", message.time.toString())
                                 message.outcome?.let { put("outcome", it.value) }
                                 message.storyChanges?.let { put("storyChanges", it) }
+                                if (message.changedFiles.isNotEmpty() || message.outcome == ReplyOutcome.DONE) put("changedFiles", Json.encodeToJsonElement(message.changedFiles))
                                 put("text", message.text)
                             }
                         }

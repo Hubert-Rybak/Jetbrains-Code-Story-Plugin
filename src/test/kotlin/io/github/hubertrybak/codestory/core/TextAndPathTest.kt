@@ -78,7 +78,7 @@ class TextAndPathTest {
             setOf(ErrorCode.STORY_TOO_LARGE, ErrorCode.STORY_NOT_FOUND, ErrorCode.INVALID_STORY_ID, ErrorCode.STEP_NOT_FOUND,
                 ErrorCode.INVALID_REPOSITORY, ErrorCode.REPOSITORY_REQUIRED, ErrorCode.CROSS_REPOSITORY) + // Folder, agent API, patch and management tests
             setOf(ErrorCode.DUPLICATE_THREAD_ID, ErrorCode.THREAD_NOT_FOUND, ErrorCode.DUPLICATE_REPLY, ErrorCode.ALREADY_ANSWERED,
-                ErrorCode.NOT_FETCHED, ErrorCode.OUTCOME_MISMATCH) // Thread format, thread state machine and feedback tool tests
+                ErrorCode.NOT_FETCHED, ErrorCode.OUTCOME_MISMATCH, ErrorCode.STALE_STEPS) // Thread format, thread state machine and feedback tool tests
         assertEquals(ErrorCode.entries.toSet(), covered)
     }
 

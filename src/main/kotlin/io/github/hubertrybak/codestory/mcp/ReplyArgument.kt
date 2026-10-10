@@ -40,14 +40,17 @@ internal class ReplyShape(
     val threadId: String,
     @property:McpDescription("The round of the comment, from code_story_feedback.")
     val round: Int,
-    @property:McpDescription("answered for a question; declined when you cannot or should not answer, with the reason in text.")
+    @property:McpDescription("answered for a question; done for a change or refresh request after all affected steps are updated or confirmed; declined with a reason.")
     val outcome: ReplyOutcomeShape,
     @property:McpDescription("Your answer: 1 to 5 sentences, or one lead sentence and up to 6 bullet items; 100 words at most. A reason to decline has 1 to 3 sentences.")
     val text: String,
+    @property:McpDescription("Required for done: changed code files as repository-relative paths. Use [] for a story-only refresh. Summarize the changes in text.")
+    val changedFiles: List<String>? = null,
 )
 
 @Serializable
 internal enum class ReplyOutcomeShape {
     @SerialName("answered") ANSWERED,
+    @SerialName("done") DONE,
     @SerialName("declined") DECLINED,
 }

@@ -1,6 +1,7 @@
 package io.github.hubertrybak.codestory.core
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -11,7 +12,7 @@ import kotlinx.serialization.json.intOrNull
 @Serializable
 data class FeedbackReport(
     val comments: List<FeedbackComment>,
-    /** Steps whose code changed or is lost, in the stories of the comments or in the requested story. */
+    /** Steps whose code changed or is lost, including all stories when there are no pending comments. */
     val staleSteps: List<StaleStep>,
     val next: String,
 )
@@ -52,7 +53,7 @@ data class FeedbackStep(
 data class FeedbackLocation(val file: String, val startLine: Int, val endLine: Int)
 
 @Serializable
-data class FeedbackMessage(val author: MessageAuthor, val round: Int, val outcome: ReplyOutcome?, val text: String, val storyChanges: String? = null)
+data class FeedbackMessage(val author: MessageAuthor, val round: Int, val outcome: ReplyOutcome?, val text: String, val storyChanges: String? = null, val changedFiles: List<String> = emptyList())
 
 @Serializable
 data class StaleStep(
@@ -106,7 +107,8 @@ data class ReplyReport(
 object StoryFeedback {
     /**
      * The comments of [stories] that wait for an agent, oldest first, and the "code changed" and
-     * "lost" steps of the stories with comments. With [requested], every story lists its stale steps.
+     * "lost" steps of the stories with comments. With [requested], or without pending comments,
+     * every selected story lists its stale steps.
      */
     fun report(stories: List<StoredStory>, requested: Boolean): FeedbackReport {
         val pending = stories.flatMap { stored -> StoryThreads.pending(stored.story).map { stored to it } }
@@ -117,19 +119,20 @@ object StoryFeedback {
                 stored.id, stored.story.title, stored.root.toString(), comment.round, comment.thread.id, comment.thread.kind,
                 if (step == null) "story" else "step", step, comment.thread.removedStep,
                 comment.comments.joinToString("\n\n") { it.text },
-                comment.earlier.map { FeedbackMessage(it.author, it.round, it.outcome, it.text, it.storyChanges) },
+                comment.earlier.map { FeedbackMessage(it.author, it.round, it.outcome, it.text, it.storyChanges, it.changedFiles) },
             )
         }
         val withComments = pending.map { it.first.key }.toSet()
-        val stale = stories.filter { requested || it.key in withComments }.flatMap { stored ->
+        val stale = stories.filter { requested || pending.isEmpty() || it.key in withComments }.flatMap { stored ->
             stored.story.steps.indices.filter { stored.status(it) == StepStatus.CODE_CHANGED || stored.status(it) == StepStatus.LOST }.map { index ->
                 val step = stored.story.steps[index]
                 StaleStep(stored.id, stored.root.toString(), step.id, index + 1, step.title, stored.status(index), step.location?.let(::location))
             }
         }
-        val next = if (comments.isEmpty()) "No comments wait for an agent. Tell the developer that there is no feedback to answer. Next: call code_story_feedback after the reader submits a round."
+        val next = if (comments.isEmpty() && stale.isNotEmpty()) "Next: read the stale steps with code_story_get, then refresh them with code_story_patch (update, re-anchor, remove or confirm). No reply is needed without comments."
+            else if (comments.isEmpty()) "No comments wait for an agent. Tell the developer that there is no feedback to answer. Next: call code_story_feedback after the reader submits a round."
             else "Next: answer every comment with code_story_reply: pass storyId, and for each comment its threadId, round, " +
-                "the outcome answered (or declined with a reason) and your text. Never change code for a question. You may clarify the story with code_story_patch before replying."
+                "the outcome answered for questions, done for change or refresh requests, or declined with a reason, and your text. For done, include changedFiles (repository-relative paths; [] for a story-only refresh). Apply requested code changes, then update or confirm every affected step with code_story_patch before done. Never change code for a question."
         return FeedbackReport(comments, stale, next)
     }
 
@@ -143,7 +146,7 @@ object StoryFeedback {
 
 /** Reads the agent's replies. Each reply is an object with `threadId`, `round`, `outcome` and `text`. */
 object ReplyInput {
-    private const val OUTCOME_HINT = "Use `answered` for a question, or `declined` with the reason."
+    private const val OUTCOME_HINT = "Use `answered` for questions, `done` for change or refresh requests, or `declined` with a reason."
 
     fun parse(replies: List<JsonElement>): Pair<List<IndexedValue<AgentReply>>, List<ReplyIssue>> {
         val errors = mutableListOf<ReplyIssue>()
@@ -168,13 +171,29 @@ object ReplyInput {
             val (outcomeText, outcomeProblem) = text(reply, "outcome")
             val outcome = when (outcomeText) {
                 ReplyOutcome.ANSWERED.value -> ReplyOutcome.ANSWERED
+                ReplyOutcome.DONE.value -> ReplyOutcome.DONE
                 ReplyOutcome.DECLINED.value -> ReplyOutcome.DECLINED
                 null -> error(checkNotNull(outcomeProblem), "Reply $number has no valid `outcome`.", OUTCOME_HINT)
                 else -> error(ErrorCode.INVALID_VALUE, "Reply $number has an unknown `outcome`: `${outcomeText.take(40)}`.", OUTCOME_HINT)
             }
             val (text, textProblem) = text(reply, "text")
             textProblem?.let { error(it, "Reply $number has no `text`.", "Write the answer, or the reason why you decline, in `text`.") }
-            if (threadId == null || round == null || outcome == null || text == null) null else IndexedValue(index, AgentReply(threadId, round, outcome, text))
+            val files = reply["changedFiles"]
+            val changedFiles = if (files == null && outcome != ReplyOutcome.DONE) emptyList() else if (files !is JsonArray) {
+                error(if (files == null) ErrorCode.MISSING_FIELD else ErrorCode.WRONG_TYPE,
+                    "Reply $number needs a changedFiles array.", "List repository-relative changed paths; use [] when no code files changed.")
+                null
+            } else {
+                val paths = files.map { value ->
+                    (value as? JsonPrimitive)?.takeIf { it.isString }?.content?.let { StoryPaths.normalize(it) as? StoryPaths.Result.Valid }?.path
+                }
+                if (paths.any { it == null }) {
+                    error(ErrorCode.INVALID_PATH, "Reply $number has an invalid changed file path.", "Use repository-relative paths without parent segments.")
+                    null
+                } else paths.filterNotNull().distinct()
+            }
+            if (threadId == null || round == null || outcome == null || text == null || changedFiles == null) null
+            else IndexedValue(index, AgentReply(threadId, round, outcome, text, changedFiles))
         }
         return parsed to errors
     }

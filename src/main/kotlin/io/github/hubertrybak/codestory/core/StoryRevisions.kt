@@ -22,14 +22,16 @@ object StoryRevisions {
     }
 
     /** Called only for author revisions, never for automatic anchor corrections or reader actions. */
-    fun record(previous: Story, revised: Story): Story {
+    fun record(previous: Story, revised: Story, reviewedIds: Set<String> = revised.steps.mapNotNull { it.id }.toSet(), confirmedIds: Set<String> = emptySet()): Story {
         val before = snapshot(previous)
         val after = snapshot(revised)
         fun record(thread: StoryThread): StoryThread {
             if (thread.state != ThreadState.RECEIVED) return thread
-            if (thread.storyBaseline == null && before == after) return thread
             val baseline = thread.storyBaseline ?: before
-            return thread.copy(storyBaseline = baseline, pendingStoryChanges = summary(baseline, after))
+            val kept = after.map { it.id }.toSet()
+            val confirmed = ((thread.confirmedSteps - reviewedIds) + confirmedIds).filter { it in kept }.distinct()
+            return thread.copy(storyBaseline = baseline, pendingStoryChanges = summary(baseline, after, confirmed.toSet()),
+                stepsToSync = thread.stepsToSync.filter { it in kept && it !in reviewedIds }, confirmedSteps = confirmed)
         }
         return revised.copy(
             threads = revised.threads.map(::record),
@@ -38,19 +40,20 @@ object StoryRevisions {
     }
 
     /** Updated/added numbers refer to the revised story; removed numbers refer to the original. */
-    fun summary(before: List<StoryStepSnapshot>, after: List<StoryStepSnapshot>): String? {
+    fun summary(before: List<StoryStepSnapshot>, after: List<StoryStepSnapshot>, confirmedIds: Set<String> = emptySet()): String? {
         val old = before.associateBy { it.id }
         val current = after.associateBy { it.id }
-        val updated = after.mapIndexedNotNull { index, step -> (index + 1).takeIf { old[step.id]?.let { it.fingerprint != step.fingerprint } == true } }
+        val updated = after.mapIndexedNotNull { index, step -> (index + 1).takeIf { step.id !in confirmedIds && old[step.id]?.let { it.fingerprint != step.fingerprint } == true } }
         val added = after.mapIndexedNotNull { index, step -> (index + 1).takeIf { step.id !in old } }
         val removed = before.mapIndexedNotNull { index, step -> (index + 1).takeIf { step.id !in current } }
+        val confirmed = after.mapIndexedNotNull { index, step -> (index + 1).takeIf { step.id in confirmedIds && it !in updated && it !in added } }
         fun clause(numbers: List<Int>, verb: String): String? {
             if (numbers.isEmpty()) return null
             val list = if (numbers.size < 2) numbers.single().toString()
                 else numbers.dropLast(1).joinToString(", ") + " and " + numbers.last()
             return "${if (numbers.size == 1) "step" else "steps"} $list $verb"
         }
-        val clauses = listOfNotNull(clause(updated, "updated"), clause(added, "added"), clause(removed, "removed"))
+        val clauses = listOfNotNull(clause(updated, "updated"), clause(added, "added"), clause(removed, "removed"), clause(confirmed, "confirmed"))
         return clauses.takeIf { it.isNotEmpty() }?.joinToString(", ")?.replaceFirstChar { it.uppercase() }
     }
 }

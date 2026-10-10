@@ -17,6 +17,7 @@ import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
+import io.github.hubertrybak.codestory.core.ThreadKind
 import io.github.hubertrybak.codestory.core.StoryThreads
 import io.github.hubertrybak.codestory.ui.CommentsPanel
 import io.github.hubertrybak.codestory.ui.StepItem
@@ -27,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.awt.Component
@@ -76,7 +78,7 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         assertFalse(comments.submit.isEnabled)
 
         link("Comment on step").doClick()
-        assertEquals("New question about this step", comments.input!!.title)
+        assertEquals("New comment about this step", comments.input!!.title)
         comments.input!!.text.text = "  Why does it start here?  "
         comments.input!!.save.doClick()
         assertNull(comments.input)
@@ -116,7 +118,7 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         openPanel()
         selectStory(stored)
         perform(panel!!.contextActions, "Comment")
-        assertEquals("New question about the story", comments.input!!.title)
+        assertEquals("New comment about the story", comments.input!!.title)
         comments.input!!.text.text = "What is missing?"
         comments.input!!.save.doClick()
         perform(panel!!.toolbarActions, "Submit Round", "Submit Round (1)")
@@ -281,6 +283,59 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         val tree = panel!!.tree
         val node = nodes().single { (it.userObject as? StepItem)?.let { step -> step.stored.key == stored.key && step.step.id == stepId } == true }
         return (tree.cellRenderer.getTreeCellRendererComponent(tree, node, false, false, false, 0, false) as SimpleColoredComponent).getCharSequence(false).toString()
+    }
+
+    fun `test change request toggles in card and details preserve draft kind and refresh is in the context menu`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        val player = StoryPlayer.getInstance(project)
+        await { player.currentStory?.id == stored.id }
+        val card = player.presentation!!.card
+        card.commentButton.doClick()
+        val input = card.comments.shownInput()!!
+        assertTrue(input.question.isSelected)
+        input.change.doClick()
+        input.text.text = "Change the entry."
+        input.save.doClick()
+        assertEquals(ThreadKind.CHANGE, reader.drafts(stored.key).single().kind)
+        openPanel()
+        selectStep(stored, "entry")
+        assertTrue(labels().contains("Draft change request"))
+        link("Edit").doClick()
+        assertTrue(comments.input!!.change.isSelected)
+        comments.input!!.question.doClick()
+        comments.input!!.save.doClick()
+        assertEquals(ThreadKind.QUESTION, reader.drafts(stored.key).single().kind)
+        link("Edit").doClick()
+        comments.input!!.change.doClick()
+        comments.input!!.save.doClick()
+        comments.submit.doClick()
+        await { labels().contains("Change request · Waiting for agent") }
+        perform(panel!!.contextActions, "Request refresh")
+        await { labels().contains("Refresh request · Waiting for agent") }
+        val submitted = service.storyFolder().get(stored.id)!!.story
+        assertEquals(setOf(ThreadKind.CHANGE, ThreadKind.REFRESH), submitted.steps.single().threads.map { it.kind }.toSet())
+        val fetched = background { service.feedback(stored.id, null)!! }.comments
+        background {
+            service.reply(stored.id, fetched.map { buildJsonObject {
+                put("threadId", it.threadId); put("round", it.round); put("outcome", "done")
+                put("text", "Reviewed the current code."); put("changedFiles", JsonArray(emptyList()))
+            } })
+        }
+        await { labels().contains("Refresh request · Done") && labels().contains("Change request · Done") }
+        // A new reader comment defaults to Question even in a refresh or change thread.
+        links().last { it.text == "Reply" }.doClick()
+        assertTrue(comments.input!!.question.isSelected)
+        comments.input!!.change.doClick()
+        comments.input!!.text.text = "Change the entry again."
+        comments.input!!.save.doClick()
+        comments.submit.doClick()
+        await { labels().contains("Change request · Waiting for agent") }
+        link("Withdraw").doClick()
+        await { labels().contains("Refresh request · Done") && reader.drafts(stored.key).isNotEmpty() }
+        assertEquals(ThreadKind.CHANGE, reader.drafts(stored.key).single().kind)
+        comments.submit.doClick()
+        await { labels().contains("Change request · Waiting for agent") }
+        assertEquals(ThreadKind.CHANGE, background { service.feedback(stored.id, null)!! }.comments.single().kind)
     }
 
     private fun show(json: String): StoredStory {

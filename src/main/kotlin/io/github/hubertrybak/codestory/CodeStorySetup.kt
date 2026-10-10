@@ -9,6 +9,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
@@ -20,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.awt.datatransfer.StringSelection
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -40,8 +42,14 @@ data class CodeStorySetupStatus(
         }
         appendLine("Install Code Story skill writes to:")
         installDirectories.forEach { appendLine(it) }
-        if (!mcp.enabled) append("The MCP server lets your agent send stories and receive validation reports. Enable it in Settings | Tools | MCP Server and use Auto-Configure. File drops work while it is off.")
+        if (!mcp.enabled) appendLine("The MCP server lets your agent send stories and receive validation reports. Enable it in Settings | Tools | MCP Server and use Auto-Configure. File drops work while it is off.")
+        appendLine("Optional feedback hooks: copy snippets for Claude Code and Codex (session start and each prompt), and Copilot CLI (session start).")
+        append("They read .codestory/local/pending-feedback.json. The plugin never installs hooks.")
     }
+}
+
+object CodeStoryFeedbackHooks {
+    val snippets: String get() = checkNotNull(javaClass.getResourceAsStream("/code-story/feedback-hooks.md")).bufferedReader().use { it.readText() }
 }
 
 @Service(Service.Level.APP)
@@ -59,7 +67,9 @@ class CodeStorySetup(private val scope: CoroutineScope) {
     fun check(project: Project) = background(project) {
         val status = status(project)
         onEdt(project) {
-            Messages.showInfoMessage(project, status.text(), "Code Story setup")
+            val choice = Messages.showDialog(project, status.text(), "Code Story setup",
+                arrayOf("Close", "Copy feedback hooks"), 0, Messages.getInformationIcon())
+            if (choice == 1) CopyPasteManager.getInstance().setContents(StringSelection(CodeStoryFeedbackHooks.snippets))
             if (!status.mcp.enabled) notifyMcp(project, status.mcp)
         }
     }

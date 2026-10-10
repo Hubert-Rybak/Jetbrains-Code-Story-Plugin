@@ -1,5 +1,9 @@
 package io.github.hubertrybak.codestory.core
 
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.put
 import java.io.IOException
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -96,6 +100,7 @@ class StoryFolder(val root: Path) {
         Files.createDirectories(file.parent)
         if (file.parent == localDir) ensureGitIgnore()
         writeAtomically(file, bytes)
+        refreshPendingIndex()
         SaveResult.Saved(id, file, saved)
     }
 
@@ -111,6 +116,7 @@ class StoryFolder(val root: Path) {
         val bytes = StoryFormat.encode(updated, id).toByteArray(Charsets.UTF_8)
         if (bytes.size > StoryLimits.MAX_FILE_BYTES) return UpdateResult.TooLarge(bytes.size)
         writeAtomically(current.file, bytes)
+        refreshPendingIndex()
         UpdateResult.Updated(StoredStory(id, root, current.file, updated, Files.getLastModifiedTime(current.file)))
     }
 
@@ -138,6 +144,7 @@ class StoryFolder(val root: Path) {
         if (bytes.size > StoryLimits.MAX_FILE_BYTES) return null
         ensureGitIgnore()
         if (text != expected) writeAtomically(file, bytes)
+        refreshPendingIndex()
         StoredStory(id, root, file, story, Files.getLastModifiedTime(file))
     }
 
@@ -151,6 +158,7 @@ class StoryFolder(val root: Path) {
         if (!shared) ensureGitIgnore()
         // A plain move fails if the destination exists; ATOMIC_MOVE can replace it on some systems.
         Files.move(current.file, target)
+        refreshPendingIndex()
         StoredStory(current.id, root, target, current.story, Files.getLastModifiedTime(target))
     }
 
@@ -158,7 +166,45 @@ class StoryFolder(val root: Path) {
     fun delete(stored: StoredStory): Boolean = synchronized(saveLock) {
         val current = selectedFile(stored) ?: return false
         Files.delete(current.file)
+        refreshPendingIndex()
         true
+    }
+
+    /** A small, local-only index for optional agent reminders. It contains no comment or story text. */
+    fun refreshPendingIndex() {
+        try {
+            writePendingIndex()
+        } catch (e: IOException) {
+            // The story write already succeeded. An optional reminder must not turn it into a failed API call.
+            System.getLogger(StoryFolder::class.java.name).log(System.Logger.Level.WARNING, "Cannot update the Code Story feedback index at $root", e)
+        }
+    }
+
+    private fun writePendingIndex() = synchronized(saveLock) {
+        val index = localDir.resolve(PENDING_INDEX)
+        if (hasStorageSymlink(index)) throw IOException("The feedback index folder or file is a symbolic link.")
+        val pending = list().mapNotNull { stored ->
+            val comments = StoryThreads.pending(stored.story)
+            if (comments.isEmpty()) null else stored to comments
+        }
+        // An unused repository needs no local folder just for the index.
+        if (pending.isEmpty() && !Files.exists(index)) return@synchronized
+        val text = buildJsonObject {
+            put("schemaVersion", 1)
+            put("pendingComments", pending.sumOf { it.second.size })
+            put("stories", buildJsonArray {
+                for ((stored, comments) in pending.sortedBy { it.first.id }) add(buildJsonObject {
+                    put("storyId", stored.id)
+                    put("folder", stored.folder)
+                    put("pendingComments", comments.size)
+                    put("rounds", buildJsonArray { comments.map { it.round }.distinct().sorted().forEach { add(it) } })
+                })
+            })
+        }.toString() + "\n"
+        if (Files.exists(index) && Files.readString(index) == text) return@synchronized
+        Files.createDirectories(localDir)
+        ensureGitIgnore()
+        writeAtomically(index, text.toByteArray(Charsets.UTF_8))
     }
 
     private fun selectedFile(stored: StoredStory): StoredStory? {
@@ -252,6 +298,7 @@ class StoryFolder(val root: Path) {
         const val CODESTORY_DIR = ".codestory"
         const val LOCAL_DIR = "local"
         const val SHARED_DIR = "shared"
+        const val PENDING_INDEX = "pending-feedback.json"
         private const val MAX_SLUG_LENGTH = 60
         private val saveLock = Any()
         private val storyIdPattern = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(?:-[a-z0-9]+)*")

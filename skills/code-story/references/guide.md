@@ -130,6 +130,9 @@ agent, oldest round first. Each comment has `storyId`, `round`, `threadId`, `kin
 status), the comment `text` and the `earlierMessages` of its thread. `staleSteps` lists
 the steps whose code changed or is lost. Fetched comments become "received": the reader
 sees that an agent works on them. They stay available until an agent replies.
+When there are no comments, the tool lists stale steps from all stories. Refresh these
+with `code_story_patch`; no reply is needed without a comment. Refresh items update
+the story only, without changing code.
 
 Answer every comment with `code_story_reply(storyId, replies)`. Each reply has the
 `threadId` and `round` of the comment, an `outcome` and a `text`:
@@ -137,7 +140,13 @@ Answer every comment with `code_story_reply(storyId, replies)`. Each reply has t
 - `answered`: the answer to a question. Answer from the story, the thread and the code.
   Never change code for a question. If the code needs a change, say so and suggest that
   the developer asks for a change request.
-- `declined`: you cannot or should not answer. Give the reason in 1 to 3 sentences.
+- `done`: a completed change or refresh request. Apply requested code changes with your
+  normal permission prompts, then update, replace or confirm every affected step.
+  Summarize the changes in `text` and supply `changedFiles`, an array of repository-relative
+  code paths. Use `[]` for a story-only refresh. The plugin rejects `done` with
+  `stale-steps` until all listed steps are reviewed after feedback was fetched. Later
+  code edits require another review. Questions cannot use `done`.
+- `declined`: you cannot or should not answer or make the change. Give the reason in 1 to 3 sentences.
 
 Answers follow the writing rules above, with larger limits: 1 to 5 sentences, or one
 lead sentence and up to 6 bullet items; 100 words at most. Answers may link to
@@ -226,7 +235,13 @@ code, call `code_story_patch(storyId, operations)` with `projectPath` and, when 
 - Remove: `{"op":"remove","stepId":"old-step"}`. Its threads move to the story
   with the note “step removed”.
 
-A patch validates the complete result using the same rules as `code_story_show` and
+- Confirm: `{"op":"confirm","stepId":"entry"}`. Read the current code first and
+  confirm only when the explanation still fits. The current range becomes the new
+  reference and the status returns to `ok`. Re-anchor or remove a missing range.
+
+A patch validates the complete structure and the code of edited steps. Untouched steps
+retain their reference, including stale steps that still need review. It uses the same rules
+for edited locations as `code_story_show` and
 returns `status`, `storyId`, `file`, `errors`, `corrections`, `warnings`, and `next`.
 Any error rejects all operations. The story keeps its file, metadata and threads.
 
