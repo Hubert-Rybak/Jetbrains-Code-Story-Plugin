@@ -13,6 +13,15 @@ CLI. See [CHANGELOG.md](CHANGELOG.md) for the release notes, [spec.md](spec.md) 
 product specification and [docs/v1-verification.md](docs/v1-verification.md) for the v1
 release checks.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/step-card-dark.png">
+    <img src="docs/images/step-card-light.png" alt="A story step in the editor: the explained code is highlighted, and the step card sits to its right with the step title, the comment, and Prev, Next, Stop and comment buttons." width="720">
+  </picture>
+</p>
+
+*The step card beside the highlighted code. The images in this README are illustrations of the layout, drawn in light and dark themes.*
+
 - [Requirements](#requirements)
 - [Install](#install)
 - [Set up your agent](#set-up-your-agent)
@@ -228,6 +237,13 @@ for the card, the same card appears in the tool window. Text-only steps show the
 comment in the details pane and leave the editor as it is. Steps open in the preview tab
 when the IDE uses preview tabs.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/tool-window-dark.png">
+    <img src="docs/images/tool-window-light.png" alt="The Code Story tool window: a toolbar, stories grouped under Local and Shared with dates, branches and step statuses, and a details pane for the selected step." width="720">
+  </picture>
+</p>
+
 Numbered gutter badges jump to other steps in the same file. Closing the card keeps your
 place and the highlighted code; click the current badge or step to reopen it. Scrolling
 and switching tabs hide and restore the card without moving your caret or scrolling
@@ -298,6 +314,13 @@ each repository has its own `.codestory/`. A story must stay inside one reposito
 ### Questions and change requests
 
 Ask your agent about a story, or ask it for a code change, without leaving the IDE.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/comments-dark.png">
+    <img src="docs/images/comments-light.png" alt="The comments panel: an answered question, a change request that the agent is working on, a draft question, and the Submit Round button." width="720">
+  </picture>
+</p>
 
 1. **Write comments.** The card’s **💬** button opens a small comment input under the
    step text. In the tool window, select a step or a story and click **Comment on step**
