@@ -31,6 +31,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.awt.Component
 import java.awt.Container
+import java.awt.event.ActionEvent
+import java.awt.event.InputEvent
+import java.awt.event.KeyEvent
+import javax.swing.KeyStroke
 import java.awt.datatransfer.DataFlavor
 import java.nio.file.Files
 import java.nio.file.Path
@@ -196,6 +200,87 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         input.cancel.doClick()
         assertNull(comments.input)
         assertEmpty(reader.drafts(stored.key))
+    }
+
+    fun `test card comments save drafts with Ctrl Enter cancel and expand threads inside the card`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        val player = StoryPlayer.getInstance(project)
+        await { player.currentStory?.id == stored.id }
+        val card = player.presentation!!.card
+        assertEquals("💬 0 threads", card.threadLine.text)
+        assertFalse(card.comments.expanded)
+        card.commentButton.doClick()
+        val input = card.comments.shownInput()!!
+        input.text.text = "Why does it start here?"
+        val saveShortcut = input.text.getActionForKeyStroke(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK))!!
+        saveShortcut.actionPerformed(ActionEvent(input.text, ActionEvent.ACTION_PERFORMED, "save"))
+        await { card.threadLine.text == "💬 0 threads · 1 draft" }
+        assertEquals("entry", reader.drafts(stored.key).single().step)
+        assertFalse(Files.readString(stored.file).contains("Why does it start here?"))
+        card.commentButton.doClick()
+        card.comments.input!!.text.text = "Discard this."
+        card.comments.input!!.cancel.doClick()
+        assertEquals(1, reader.drafts(stored.key).size)
+        card.threadLine.doClick()
+        assertTrue(card.comments.expanded)
+        assertTrue(components(card.comments).filterIsInstance<JTextArea>().any { it.text == "Why does it start here?" })
+        card.comments.submit.doClick()
+        await { card.threadLine.text == "💬 1 thread" }
+        assertTrue(components(card.comments).filterIsInstance<JLabel>().any { it.text == "Question · Waiting for agent" })
+        // The current-step shortcut also reopens a dismissed card.
+        player.presentation!!.dismissCard()
+        player.commentOnCurrentStep()
+        assertFalse(player.presentation!!.cardDismissed)
+        assertNotNull(card.comments.shownInput())
+        card.comments.input!!.cancel.doClick()
+    }
+
+    fun `test collapsed card leaves new replies unread until threads open and shows story changes`() {
+        val stored = show(story(step(id = quoted("entry")), step(id = quoted("core"), start = "5", end = "6")))
+        val player = StoryPlayer.getInstance(project)
+        await { player.currentStory?.id == stored.id }
+        reader.saveDraft(StoryDraft(story = stored.key, step = "entry", text = "Explain this?"))
+        background { service.submitRound(stored) }
+        val comment = background { service.feedback(stored.id, null)!! }.comments.single()
+        background { service.patch(stored.id, listOf(Json.parseToJsonElement("""{"op":"update","stepId":"entry","comment":"The controller receives the request."}"""))) }
+        await { player.currentStory?.story?.steps?.first()?.comment == "The controller receives the request." }
+        background {
+            service.reply(stored.id, listOf(buildJsonObject {
+                put("threadId", comment.threadId); put("round", comment.round); put("outcome", "answered"); put("text", "The controller receives the request first.")
+            }))
+        }
+        await { player.currentStory!!.story.steps[0].threads.single().messages.size == 2 }
+        val card = player.presentation!!.card
+        assertFalse(card.comments.expanded)
+        assertTrue(reader.hasUnread(stored, saved(stored).steps[0].threads))
+        openPanel()
+        selectStep(stored, "core")
+        assertTrue(stepRow(stored, "entry").contains("1 open thread"))
+        assertTrue(stepRow(stored, "entry").contains("●"))
+        val before = Files.readString(stored.file)
+        card.threadLine.doClick()
+        assertFalse(reader.hasUnread(stored, saved(stored).steps[0].threads))
+        assertFalse(stepRow(stored, "entry").contains("●"))
+        assertEquals(before, Files.readString(stored.file))
+        assertTrue(components(card.comments).filterIsInstance<JTextArea>().any { it.text == "Story changes: Step 1 updated" })
+    }
+
+    fun `test an unsaved card input survives a story revision`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        val player = StoryPlayer.getInstance(project)
+        await { player.currentStory?.id == stored.id }
+        player.presentation!!.card.commentButton.doClick()
+        player.presentation!!.card.comments.input!!.text.text = "Half written question"
+        background { service.patch(stored.id, listOf(Json.parseToJsonElement("""{"op":"update","stepId":"entry","comment":"A clearer explanation."}"""))) }
+        await { player.currentStory!!.story.steps[0].comment == "A clearer explanation." }
+        assertEquals("Half written question", player.presentation!!.card.comments.shownInput()!!.text.text)
+        assertEmpty(reader.drafts(stored.key))
+    }
+
+    private fun stepRow(stored: StoredStory, stepId: String): String {
+        val tree = panel!!.tree
+        val node = nodes().single { (it.userObject as? StepItem)?.let { step -> step.stored.key == stored.key && step.step.id == stepId } == true }
+        return (tree.cellRenderer.getTreeCellRendererComponent(tree, node, false, false, false, 0, false) as SimpleColoredComponent).getCharSequence(false).toString()
     }
 
     private fun show(json: String): StoredStory {

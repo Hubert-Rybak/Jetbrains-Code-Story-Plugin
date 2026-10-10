@@ -87,7 +87,7 @@ class StoryFolder(val root: Path) {
             },
         )
         // Threads belong to the plugin: a revision keeps them on their steps.
-        val saved = if (existing == null) revised else StoryThreads.carryOver(existing.story, revised)
+        val saved = if (existing == null) revised else StoryRevisions.record(existing.story, StoryThreads.carryOver(existing.story, revised))
         val bytes = StoryFormat.encode(saved, id).toByteArray(Charsets.UTF_8)
         if (bytes.size > StoryLimits.MAX_FILE_BYTES) return SaveResult.TooLarge(bytes.size)
 

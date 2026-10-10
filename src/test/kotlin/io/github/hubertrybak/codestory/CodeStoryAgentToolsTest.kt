@@ -69,7 +69,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
     }
 
     fun `test all agent tools expose their typed parameters`() {
-        assertEquals(setOf("code_story_guide", "code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_reply"),
+        assertEquals(setOf("code_story_guide", "code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_patch", "code_story_reply"),
             CodeStoryToolset().asTools().map { it.descriptor.name }.toSet())
         val show = tool("code_story_show").descriptor.inputSchema
         assertTrue("storyId" in show.propertiesSchema)
@@ -78,6 +78,10 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         val feedback = tool("code_story_feedback").descriptor.inputSchema
         assertTrue("storyId" in feedback.propertiesSchema)
         assertFalse("storyId" in feedback.requiredProperties)
+        val patch = tool("code_story_patch").descriptor.inputSchema
+        assertEquals(setOf("storyId", "operations"), patch.requiredProperties.toSet() - "projectPath")
+        val operations = patch.propertiesSchema.getValue("operations").toString()
+        for (field in listOf("op", "stepId", "afterStepId", "step", "title", "comment", "location", "anchorText")) assertTrue(operations, operations.contains(field))
         val reply = tool("code_story_reply").descriptor.inputSchema
         assertEquals(setOf("storyId", "replies"), reply.requiredProperties.toSet() - "projectPath")
         val replies = reply.propertiesSchema.getValue("replies").toString()
@@ -94,7 +98,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         assertEquals("# Code Story writing guide\n\nInstalled plugin version: $version\n\n$bundled", guide)
         for (rule in listOf("ASD-STE100", "20 words", "25 words", "60 words", "30 lines", "code_story_get", "Fix all reported errors and writing warnings once",
             "anchorText", "within 20 lines", "corrections", "code-changed", "lost", "baseRef", "HEAD", "Show diff",
-            "code_story_feedback", "code_story_reply", "100 words", "declined", "already-answered", "Never change code for a question")) {
+            "code_story_feedback", "code_story_patch", "code_story_reply", "100 words", "declined", "already-answered", "Never change code for a question")) {
             assertTrue(rule, guide.contains(rule))
         }
         val example = Regex("```json\\n(.*?)\\n```", RegexOption.DOT_MATCHES_ALL).find(guide)!!.groupValues[1]
@@ -130,7 +134,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
             assertEquals("The controller charges the card.", saved.string("summary"))
         }
         assertEquals(listOf("shared", "local"), listed.map { it.string("folder") })
-        assertEquals(Json.parseToJsonElement(Files.readString(shared.resolve(second.string("storyId") + ".story.json"))), get(second.string("storyId")))
+        assertEquals(Json.parseToJsonElement(Files.readString(shared.resolve(second.string("storyId") + ".story.json"))), JsonObject(get(second.string("storyId")) - "next"))
     }
 
     fun `test list status uses current unsaved code without showing writing warnings`() {
@@ -288,10 +292,11 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
     }
 
     fun `test project tools require an open project`() {
-        for (name in listOf("code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_reply")) {
+        for (name in listOf("code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_patch", "code_story_reply")) {
             val args = when (name) {
                 "code_story_get" -> mapOf("storyId" to JsonPrimitive("2000-01-01-story"))
                 "code_story_show" -> mapOf("story" to Json.parseToJsonElement(story(step())))
+                "code_story_patch" -> mapOf("storyId" to JsonPrimitive("2000-01-01-story"), "operations" to Json.parseToJsonElement("[]"))
                 "code_story_reply" -> mapOf("storyId" to JsonPrimitive("2000-01-01-story"), "replies" to Json.parseToJsonElement("[]"))
                 else -> emptyMap()
             }

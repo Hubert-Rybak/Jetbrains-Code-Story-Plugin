@@ -39,6 +39,8 @@ import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryLimits
 import io.github.hubertrybak.codestory.core.StoryListEntry
+import io.github.hubertrybak.codestory.core.StoryPatch
+import io.github.hubertrybak.codestory.core.StoryRevisions
 import io.github.hubertrybak.codestory.core.StoryThreads
 import io.github.hubertrybak.codestory.core.StoryWritingChecks
 import io.github.hubertrybak.codestory.core.StoryGit
@@ -129,6 +131,71 @@ class CodeStoryService(private val project: Project) : Disposable {
             }
         }
     }
+
+    /** Patch against the latest saved story under the same lock as replies and full replacements. */
+    suspend fun patch(storyId: String, operations: List<JsonElement>, repositoryPath: String? = null): ShowReport {
+        fun rejected(code: ErrorCode, message: String) = patchReport(ShowReport.rejected(listOf(
+            ReportItem(null, code, message, "Read code_story_get for the story and step IDs, then retry code_story_patch."),
+        )))
+        if (!StoryFolder.isValidId(storyId)) return rejected(ErrorCode.INVALID_STORY_ID, "The story ID is not valid.")
+        val matches = storyFolders().filter { repositoryPath == null || it.root.toString() == repositoryPath }.mapNotNull { it.get(storyId) }
+        if (matches.size > 1) return rejected(ErrorCode.REPOSITORY_REQUIRED, "That story ID exists in several repositories. Pass repositoryPath from code_story_list.")
+        val stored = matches.singleOrNull() ?: return rejected(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.")
+        val folder = StoryFolder(stored.root)
+        val files = readAction { ideFiles(stored.root) }
+        var report: ShowReport? = null
+        val result = folder.update(storyId) { previous ->
+            val patched = StoryPatch.apply(previous, storyId, operations)
+            if (patched.errors.isNotEmpty()) {
+                report = ShowReport.rejected(patched.errors)
+                return@update previous
+            }
+            val checked = when (val validation = StoryValidator(files).validate(patched.story)) {
+                is ValidationResult.Invalid -> {
+                    report = ShowReport.rejected(validation.errors, corrections = validation.corrections)
+                    return@update previous
+                }
+                is ValidationResult.Valid -> validation
+            }
+            StoryRepositories(project).select(checked.story, storyId, stored.root.toString()).error?.let {
+                report = ShowReport.rejected(listOf(it))
+                return@update previous
+            }
+            val (validated, baseWarnings) = StoryChangeInfo.getInstance(project).resolveBase(stored.root, checked.story)
+            val byId = previous.steps.associateBy { it.id }
+            val revised = validated.copy(
+                createdAt = previous.createdAt, git = previous.git, delivery = StoryFormat.MCP_DELIVERY,
+                // Validation of other steps must not silently confirm code that they no longer explain.
+                steps = validated.steps.map { step ->
+                    val old = byId[step.id]
+                    if (old != null && step.id !in patched.updatedIds && step.location != null) {
+                        step.copy(location = step.location.copy(rangeText = old.location?.rangeText))
+                    } else step
+                },
+            )
+            val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(revised) + baseWarnings
+            report = ShowReport.accepted(storyId, folder.relativePath(stored.file), warnings, checked.corrections)
+            StoryRevisions.record(previous, StoryThreads.carryOver(previous, revised))
+        }
+        when (result) {
+            StoryFolder.UpdateResult.NotFound -> return rejected(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.")
+            is StoryFolder.UpdateResult.TooLarge -> return patchReport(ShowReport.rejected(
+                listOf(ReportItem.storyTooLarge(result.bytes)), report?.warnings.orEmpty(), report?.corrections.orEmpty(),
+            ))
+            is StoryFolder.UpdateResult.Updated -> {
+                report = checkNotNull(report).copy(file = folder.relativePath(result.stored.file))
+                storyDelivered(result.stored, replacing = true)
+            }
+            is StoryFolder.UpdateResult.Unchanged -> if (report?.file != null) report = checkNotNull(report).copy(file = folder.relativePath(result.stored.file))
+        }
+        return patchReport(checkNotNull(report))
+    }
+
+    private fun patchReport(report: ShowReport): ShowReport = report.copy(next = if (report.errors.isNotEmpty())
+        "Nothing was saved. Next: fix the errors and retry code_story_patch with the complete operations list."
+    else if (report.warnings.isNotEmpty())
+        "Next: fix writing warnings once with code_story_patch, then answer fetched comments with code_story_reply."
+    else "Next: answer fetched comments with code_story_reply, or call code_story_feedback for pending comments.")
 
     /** The same arrival validation for MCP and file drops, including unsaved editor text. */
     suspend fun validateIncomingStory(json: JsonElement, folder: StoryFolder = storyFolder()): ValidationResult {

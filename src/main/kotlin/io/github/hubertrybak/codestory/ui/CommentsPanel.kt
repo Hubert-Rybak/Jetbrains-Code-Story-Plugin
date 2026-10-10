@@ -51,9 +51,15 @@ fun threadStateLabel(state: ThreadState): String = when (state) {
  * The comment threads of a story or of one step, the reader's drafts and the comment input.
  * Comments come from story files and from readers, so they show as plain text, never as HTML.
  */
-class CommentsPanel(private val comments: StoryComments) : JPanel(VerticalLayout(10)) {
+class CommentsPanel(private val comments: StoryComments, private val compact: Boolean = false, private val layoutChanged: () -> Unit = {}) : JPanel(VerticalLayout(10)) {
     private var stored: StoredStory? = null
     private var stepIndex: Int? = null
+    var expanded: Boolean = !compact
+        set(value) { field = value; rebuild() }
+
+    init {
+        addHierarchyListener { if (isShowing) markShownRead() }
+    }
 
     /**
      * The unsaved input. It belongs to one story or step: it hides while the reader looks at
@@ -98,6 +104,7 @@ class CommentsPanel(private val comments: StoryComments) : JPanel(VerticalLayout
             if (value.isEmpty()) return close()
             input = null
             comments.save(draft.copy(text = value))
+            rebuild()
         }
 
         fun close() {
@@ -117,6 +124,7 @@ class CommentsPanel(private val comments: StoryComments) : JPanel(VerticalLayout
 
     /** Opens the input for a new question about the shown story or step. */
     fun startComment() {
+        shownInput()?.let { it.text.requestFocusInWindow(); return }
         val stored = stored ?: return
         val step = stepIndex?.let { stored.story.steps[it] }
         open(StoryDraft(story = stored.key, step = step?.id), if (step == null) "New question about the story" else "New question about this step")
@@ -140,6 +148,24 @@ class CommentsPanel(private val comments: StoryComments) : JPanel(VerticalLayout
         revalidate()
         repaint()
         if (focused) shownInput()?.text?.requestFocusInWindow()
+        if (isShowing) markShownRead()
+        layoutChanged()
+    }
+
+    fun markShownRead() {
+        if (!expanded) return
+        val stored = stored ?: return
+        val threads = stepIndex?.let { stored.story.steps[it].threads } ?: stored.story.threads
+        comments.read(stored, threads.filter { showResolved.isSelected || it.state != ThreadState.RESOLVED })
+    }
+
+    /** Keeps partially typed card input when an agent replaces the same step. */
+    fun restoreInput(previous: CommentsPanel) {
+        val old = previous.shownInput() ?: return
+        val stored = stored ?: return
+        if (old.target != target(stored)) return
+        input = Input(old.target, old.draft.copy(text = old.text.text), old.title)
+        expanded = previous.expanded
     }
 
     private fun build(stored: StoredStory) {
@@ -153,6 +179,10 @@ class CommentsPanel(private val comments: StoryComments) : JPanel(VerticalLayout
         val replies = drafts.filter { it.thread in threadIds }.associateBy { it.thread }
         val newDrafts = drafts.filter { it.thread !in threadIds && if (step != null) it.step == step.id else it.step !in stepIds }
         val input = shownInput()
+        if (compact && !expanded) {
+            input?.let { add(it.component) }
+            return
+        }
         val editing = input?.draft?.id
         val resolved = threads.count { it.state == ThreadState.RESOLVED }
         val shown = threads.filter { showResolved.isSelected || it.state != ThreadState.RESOLVED }
@@ -182,10 +212,11 @@ class CommentsPanel(private val comments: StoryComments) : JPanel(VerticalLayout
 
     private fun threadView(stored: StoredStory, stepId: String?, thread: StoryThread, reply: StoryDraft?) = block(JBColor.border()).apply {
         add(JBLabel("${threadKindLabel(thread.kind)} · ${threadStateLabel(thread.state)}").apply { font = JBFont.label().asBold() })
-        thread.removedStep?.let { add(note("About a removed step: $it")) }
+        thread.removedStep?.let { add(note("step removed: $it")) }
         for (message in thread.messages) {
             add(JBLabel(header(message)).apply { font = JBFont.small(); foreground = UIUtil.getContextHelpForeground() })
             add(text(message.text))
+            message.storyChanges?.let { add(note("Story changes: $it")) }
         }
         reply?.let { add(draftView(it, "Draft reply")) }
         val replying = input?.draft?.thread == thread.id

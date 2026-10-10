@@ -18,9 +18,10 @@ Use it for `/code-story feedback [storyId]` (`$code-story feedback` in Codex). T
 
 1. Call `code_story_feedback` with `projectPath`, and with `storyId` when the developer names a story. It returns the comments that wait for an agent, oldest round first, each with its story, step, thread history, `threadId` and `round`.
 2. Answer each question from the story, its thread and the code. Read the code before you answer. Never change code for a question. If the code needs a change, say so in the answer and suggest that the developer asks for it as a change request.
-3. For each story, call `code_story_reply` with `storyId` and one reply per comment: its `threadId` and `round`, the outcome `answered`, or `declined` with the reason, and your text. Follow the answer rules in the guide.
-4. Read `errors`, `warnings` and `next`. Fix rejected replies and send only those again. Do not reply again to a comment that is already answered.
-5. Summarize in the chat what you answered, and point the developer to the Code Story tool window for the answers.
+3. If a question shows that the story was unclear, call `code_story_get` for stable step IDs, then use `code_story_patch` to improve step text or insert an explanation. Read its report and fix errors before replying. These edits change the story only, never the code. The plugin adds a “Story changes” line to the reply; do not write this line yourself.
+4. For each story, call `code_story_reply` with `storyId` and one reply per comment: its `threadId` and `round`, the outcome `answered`, or `declined` with the reason, and your text. Follow the answer rules in the guide.
+5. Read `errors`, `warnings` and `next`. Fix rejected replies and send only those again. Do not reply again to a comment that is already answered.
+6. Summarize in the chat what you answered and which story steps you improved, and point the developer to the Code Story tool window for the answers.
 
 Feedback needs the Code Story tools. If they are missing, tell the developer to switch on Settings | Tools | MCP Server.
 

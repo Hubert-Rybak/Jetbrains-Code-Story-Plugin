@@ -26,7 +26,7 @@ class CodeStorySetupTest : HeavyPlatformTestCase() {
         try {
             val initial = CodeStorySetup.getInstance().status(project, user)
             assertTrue(initial.mcp.available)
-            assertEquals(setOf("code_story_guide", "code_story_show", "code_story_list", "code_story_get", "code_story_feedback", "code_story_reply"), initial.mcp.tools.toSet())
+            assertEquals(setOf("code_story_guide", "code_story_show", "code_story_list", "code_story_get", "code_story_feedback", "code_story_patch", "code_story_reply"), initial.mcp.tools.toSet())
             assertTrue(initial.skills.isEmpty())
             assertEquals(CodeStorySkill.directories(user), initial.installDirectories)
             CodeStorySkill.install(user)

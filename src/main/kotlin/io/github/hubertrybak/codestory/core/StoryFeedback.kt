@@ -52,7 +52,7 @@ data class FeedbackStep(
 data class FeedbackLocation(val file: String, val startLine: Int, val endLine: Int)
 
 @Serializable
-data class FeedbackMessage(val author: MessageAuthor, val round: Int, val outcome: ReplyOutcome?, val text: String)
+data class FeedbackMessage(val author: MessageAuthor, val round: Int, val outcome: ReplyOutcome?, val text: String, val storyChanges: String? = null)
 
 @Serializable
 data class StaleStep(
@@ -92,10 +92,10 @@ data class ReplyReport(
         fun of(storyId: String?, saved: List<String>, errors: List<ReplyIssue>, warnings: List<ReplyIssue>) = ReplyReport(
             storyId, saved, errors, warnings,
             next = when {
-                errors.isNotEmpty() && saved.isEmpty() -> "Nothing was saved. Fix the errors and send the replies again. Do not reply to comments that are already answered."
-                errors.isNotEmpty() -> "The other replies are saved. Fix the errors and send only the rejected replies again. Do not reply to comments that are already answered."
-                warnings.isNotEmpty() -> "The replies are saved. Use the writing rules in your next replies. Tell the developer that the answers are in the Code Story tool window."
-                else -> "Tell the developer that the answers are in the Code Story tool window."
+                errors.isNotEmpty() && saved.isEmpty() -> "Nothing was saved. Next: fix the errors and call code_story_reply again. Do not reply to comments that are already answered."
+                errors.isNotEmpty() -> "The other replies are saved. Next: fix the errors and call code_story_reply with only the rejected replies. Do not reply to comments that are already answered."
+                warnings.isNotEmpty() -> "The replies are saved. Use the writing rules in your next replies. Tell the developer that the answers are in the Code Story tool window. Next: call code_story_feedback for pending comments."
+                else -> "Tell the developer that the answers are in the Code Story tool window. Next: call code_story_feedback for pending comments."
             },
         )
 
@@ -117,7 +117,7 @@ object StoryFeedback {
                 stored.id, stored.story.title, stored.root.toString(), comment.round, comment.thread.id, comment.thread.kind,
                 if (step == null) "story" else "step", step, comment.thread.removedStep,
                 comment.comments.joinToString("\n\n") { it.text },
-                comment.earlier.map { FeedbackMessage(it.author, it.round, it.outcome, it.text) },
+                comment.earlier.map { FeedbackMessage(it.author, it.round, it.outcome, it.text, it.storyChanges) },
             )
         }
         val withComments = pending.map { it.first.key }.toSet()
@@ -127,9 +127,9 @@ object StoryFeedback {
                 StaleStep(stored.id, stored.root.toString(), step.id, index + 1, step.title, stored.status(index), step.location?.let(::location))
             }
         }
-        val next = if (comments.isEmpty()) "No comments wait for an agent. Tell the developer that there is no feedback to answer."
-            else "Answer every comment with code_story_reply: pass storyId, and for each comment its threadId, round, " +
-                "the outcome answered (or declined with a reason) and your text. Never change code for a question."
+        val next = if (comments.isEmpty()) "No comments wait for an agent. Tell the developer that there is no feedback to answer. Next: call code_story_feedback after the reader submits a round."
+            else "Next: answer every comment with code_story_reply: pass storyId, and for each comment its threadId, round, " +
+                "the outcome answered (or declined with a reason) and your text. Never change code for a question. You may clarify the story with code_story_patch before replying."
         return FeedbackReport(comments, stale, next)
     }
 

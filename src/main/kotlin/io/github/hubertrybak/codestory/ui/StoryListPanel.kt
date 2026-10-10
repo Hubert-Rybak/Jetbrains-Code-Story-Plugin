@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.DumbAwareAction
@@ -32,6 +33,8 @@ import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.tree.TreeUtil
 import io.github.hubertrybak.codestory.CodeStoryService
+import io.github.hubertrybak.codestory.StoryReaderListener
+import io.github.hubertrybak.codestory.StoryReaderState
 import io.github.hubertrybak.codestory.StoryChangeInfo
 import io.github.hubertrybak.codestory.StoryChanges
 import io.github.hubertrybak.codestory.StoryListListener
@@ -45,6 +48,8 @@ import io.github.hubertrybak.codestory.core.StoryGit
 import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryMarkdownExport
 import io.github.hubertrybak.codestory.core.StoryType
+import io.github.hubertrybak.codestory.core.StoryThread
+import io.github.hubertrybak.codestory.core.ThreadState
 import org.jetbrains.annotations.TestOnly
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
@@ -89,7 +94,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     val fileProblems = JTextArea().apply { isEditable = false; lineWrap = true; wrapStyleWord = true }
     private val problemsPane = ScrollPaneFactory.createScrollPane(fileProblems, true).apply { isVisible = false }
     private val player = StoryPlayer.getInstance(project)
-    private val comments = StoryComments(project, ::manageStory, ::draftsChanged)
+    private val comments = StoryComments(project, ::manageStory)
     val details = StoryDetailsPanel(comments, ::showDiff)
     /** The context menu of stories and steps. */
     val contextActions = DefaultActionGroup(RestartAction(), CommentAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
@@ -121,7 +126,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     init {
         tree.isRootVisible = false
         tree.showsRootHandles = true
-        tree.cellRenderer = StoryTreeCellRenderer(player) { comments.drafts(it).size }
+        tree.cellRenderer = StoryTreeCellRenderer(player, project.service()) { comments.drafts(it).size }
         tree.emptyText.text = "No stories yet"
         tree.emptyText.appendSecondaryText("Ask your agent: /code-story \"<request>\"", SimpleTextAttributes.GRAYED_ATTRIBUTES, null)
         installStepOpening()
@@ -138,6 +143,11 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         PopupHandler.installPopupMenu(tree, contextActions, "CodeStory.StoryMenu")
         project.messageBus.connect(this).subscribe(StoryListListener.TOPIC, StoryListListener { reload(it) })
         project.messageBus.connect(this).subscribe(StoryPlaybackListener.TOPIC, StoryPlaybackListener { updatePlayback() })
+        project.messageBus.connect(this).subscribe(StoryReaderListener.TOPIC, StoryReaderListener { onEdt { draftsChanged() } })
+        project.messageBus.connect(this).subscribe(StoryCommentListener.TOPIC, StoryCommentListener {
+            selectPlayingStep()
+            details.comments?.startComment()
+        })
         updatePlayback()
         StoryGitMetadata.EP.extensionList.forEach { it.subscribe(project, this) { reload() } }
         project.messageBus.connect(this).subscribe(ProjectLevelVcsManager.VCS_CONFIGURATION_CHANGED, VcsListener { reload() })
@@ -455,7 +465,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     }
 }
 
-private class StoryTreeCellRenderer(private val player: StoryPlayer, private val drafts: (StoredStory) -> Int) : ColoredTreeCellRenderer() {
+private class StoryTreeCellRenderer(private val player: StoryPlayer, private val reader: StoryReaderState, private val drafts: (StoredStory) -> Int) : ColoredTreeCellRenderer() {
     override fun customizeCellRenderer(
         tree: JTree, value: Any?, selected: Boolean, expanded: Boolean, leaf: Boolean, row: Int, hasFocus: Boolean,
     ) {
@@ -485,6 +495,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer, private val
                 (git.branch ?: if (git.commit != null) "Detached HEAD" else null)
                     ?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
                 staleSteps(item.stored)?.let { append("  $it", WARNING) }
+                threadBadges(item.stored, item.stored.story.threads)
                 drafts(item.stored).takeIf { it > 0 }?.let { append("  $it ${if (it == 1) "draft" else "drafts"}", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
                 toolTipText = item.stored.id
             }
@@ -503,10 +514,17 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer, private val
                     StepStatus.LOST -> append("  lost", WARNING)
                     StepStatus.OK, StepStatus.MOVED -> Unit
                 }
+                threadBadges(item.stored, item.step.threads)
                 if (player.wasVisited(item.stored, item.index)) append("  ✓", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                toolTipText = listOfNotNull(location?.file, item.change?.let { changeTip(it, item.changes) }).joinToString(" · ").ifEmpty { null }
+                toolTipText = listOfNotNull(location?.file, item.change?.let { changeTip(it, item.changes) }, "Unread answers".takeIf { reader.hasUnread(item.stored, item.step.threads) }).joinToString(" · ").ifEmpty { null }
             }
         }
+    }
+
+    private fun threadBadges(stored: StoredStory, threads: List<StoryThread>) {
+        val open = threads.count { it.state != ThreadState.RESOLVED }
+        if (open > 0) append("  💬 $open ${if (open == 1) "open thread" else "open threads"}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+        if (reader.hasUnread(stored, threads)) append("  ●", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
     }
 
     private fun changeTip(change: StepChange, changes: StoryChanges?): String {

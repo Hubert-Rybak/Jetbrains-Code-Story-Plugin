@@ -10,6 +10,7 @@ import com.intellij.openapi.project.Project
 import io.github.hubertrybak.codestory.CodeStoryService
 import io.github.hubertrybak.codestory.StoryDraft
 import io.github.hubertrybak.codestory.StoryReaderState
+import io.github.hubertrybak.codestory.StoryReaderListener
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryThread
 import java.awt.datatransfer.StringSelection
@@ -20,8 +21,8 @@ import java.awt.datatransfer.StringSelection
  */
 class StoryComments(
     private val project: Project,
-    private val background: (() -> Unit) -> Unit,
-    private val draftsChanged: () -> Unit,
+    private val background: (() -> Unit) -> Unit = { action -> ApplicationManager.getApplication().executeOnPooledThread(action) },
+    private val draftsChanged: () -> Unit = {},
 ) {
     private val reader get() = project.service<StoryReaderState>()
     private val service get() = CodeStoryService.getInstance(project)
@@ -31,20 +32,32 @@ class StoryComments(
     fun save(draft: StoryDraft) {
         reader.saveDraft(draft)
         draftsChanged()
+        changed()
     }
 
     fun delete(draft: StoryDraft) {
         reader.deleteDrafts(listOf(draft.id))
         draftsChanged()
+        changed()
     }
 
-    fun submit(stored: StoredStory) = background { service.submitRound(stored) }
+    fun read(stored: StoredStory, threads: List<StoryThread>) {
+        if (reader.markRead(stored, threads)) changed()
+    }
 
-    fun withdraw(stored: StoredStory, thread: StoryThread) = background {
+    private fun changed() = project.messageBus.syncPublisher(StoryReaderListener.TOPIC).readerChanged()
+
+    fun submit(stored: StoredStory) = changeFile { service.submitRound(stored) }
+
+    fun withdraw(stored: StoredStory, thread: StoryThread) = changeFile {
         if (!service.withdraw(stored, thread.id)) notify("An agent already fetched this comment. It stays in the story until the agent replies.")
     }
 
-    fun resolve(stored: StoredStory, thread: StoryThread) = background { service.resolve(stored, thread.id) }
+    fun resolve(stored: StoredStory, thread: StoryThread) = changeFile { service.resolve(stored, thread.id) }
+
+    private fun changeFile(action: () -> Unit) = background {
+        try { action() } catch (e: java.io.IOException) { notify("Code Story could not change the story file: ${e.message}") }
+    }
 
     fun copy(text: String) = CopyPasteManager.getInstance().setContents(StringSelection(text))
 

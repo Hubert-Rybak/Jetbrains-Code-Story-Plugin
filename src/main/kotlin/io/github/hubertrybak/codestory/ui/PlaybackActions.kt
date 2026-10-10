@@ -31,3 +31,5 @@ class PreviousStepAction : PlaybackAction(StoryPlayer::previous) {
 }
 
 class StopStoryAction : PlaybackAction(StoryPlayer::stop)
+
+class CommentOnCurrentStepAction : PlaybackAction(StoryPlayer::commentOnCurrentStep)

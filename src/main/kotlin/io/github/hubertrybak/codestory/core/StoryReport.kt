@@ -10,6 +10,7 @@ enum class ErrorCode(val code: String) {
     EMPTY_TEXT("empty-text"),
     INVALID_VALUE("invalid-value"),
     DUPLICATE_STEP_ID("duplicate-step-id"),
+    STEP_NOT_FOUND("step-not-found"),
     NO_STEPS("no-steps"),
     TOO_MANY_STEPS("too-many-steps"),
     STORY_TOO_LARGE("story-too-large"),
@@ -104,8 +105,8 @@ data class ShowReport(
                 warnings.isNotEmpty() && corrections.isNotEmpty() ->
                     "Fix the warnings once, then call code_story_show with the whole story, the corrected lines and storyId \"$storyId\" to replace it."
                 warnings.isNotEmpty() -> "Fix the warnings once, then call code_story_show with the whole story and storyId \"$storyId\" to replace it."
-                corrections.isNotEmpty() -> "The plugin corrected some line numbers. Tell the developer that the story is in the Code Story tool window."
-                else -> "Tell the developer that the story is in the Code Story tool window."
+                corrections.isNotEmpty() -> "The plugin corrected some line numbers. Tell the developer that the story is in the Code Story tool window. Next: call code_story_feedback when the reader submits comments."
+                else -> "Tell the developer that the story is in the Code Story tool window. Next: call code_story_feedback when the reader submits comments."
             },
         )
 
@@ -116,7 +117,7 @@ data class ShowReport(
             errors = errors,
             corrections = corrections,
             warnings = warnings,
-            next = "Nothing was saved. Fix all errors, then call code_story_show again with the whole story.",
+            next = "Nothing was saved. Next: fix all errors, then call code_story_show again with the whole story.",
         )
     }
 }

@@ -29,6 +29,10 @@
     </extensions>
 
     <actions>
+        <action id="CodeStory.CommentOnCurrentStep" class="io.github.hubertrybak.codestory.ui.CommentOnCurrentStepAction"
+                text="Comment on Current Step" description="Write a draft question about the current step" icon="AllIcons.General.Balloon">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift Z" second-keystroke="C"/>
+        </action>
         <group id="CodeStory.Setup" text="Code Story" popup="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <action id="CodeStory.InstallSkill" class="io.github.hubertrybak.codestory.InstallCodeStorySkillAction"

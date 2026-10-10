@@ -40,6 +40,7 @@ import com.intellij.util.ui.UIUtil
 import io.github.hubertrybak.codestory.CodeStoryService
 import io.github.hubertrybak.codestory.CodeStorySettings
 import io.github.hubertrybak.codestory.StorySettingsListener
+import io.github.hubertrybak.codestory.StoryReaderListener
 import io.github.hubertrybak.codestory.core.StoredStory
 import java.awt.Component
 import java.awt.Graphics
@@ -59,7 +60,7 @@ class StepPresentation(
     private val index: Int,
     private val player: StoryPlayer,
 ) : Disposable {
-    val card = StepCardPanel(project, stored, index, player, ::dismissCard)
+    val card = StepCardPanel(project, stored, index, player, ::dismissCard, ::queueUpdate)
     val range = checkNotNull(StepNavigator.getInstance(project).currentHighlighter)
     val badges = mutableListOf<RangeHighlighter>()
     var balloon: Balloon? = null
@@ -74,6 +75,11 @@ class StepPresentation(
     private var anchor = Point()
 
     init {
+        project.messageBus.connect(this).subscribe(StoryReaderListener.TOPIC, StoryReaderListener {
+            ApplicationManager.getApplication().invokeLater({
+                if (!disposed) card.refreshComments(player.currentStory?.takeIf { it.key == stored.key } ?: stored)
+            }, ModalityState.nonModal(), Condition<Any?> { disposed || project.isDisposed })
+        })
         installBadges()
         editor.scrollingModel.addVisibleAreaListener({ queueUpdate() }, this)
         editor.caretModel.addCaretListener(object : CaretListener {
@@ -121,6 +127,14 @@ class StepPresentation(
         player.changed()
     }
 
+    fun startComment() {
+        cardDismissed = false
+        card.startComment()
+        updatePlacement()
+        if (balloon == null && !inToolWindow) setToolWindow(true)
+        card.comments.shownInput()?.text?.requestFocusInWindow()
+    }
+
     private fun queueUpdate() {
         if (disposed || updateQueued) return
         updateQueued = true
@@ -140,7 +154,7 @@ class StepPresentation(
         val active = FileEditorManager.getInstance(project).selectedEditors.filterIsInstance<TextEditor>().any { it.editor == editor }
         if (!active) {
             hideBalloon()
-            setToolWindow(false)
+            setToolWindow(card.comments.shownInput() != null)
             return
         }
         // Until the editor has a viewport, keep its explanation available in the tool window.
@@ -151,7 +165,7 @@ class StepPresentation(
         }
         if (!editor.contentComponent.isShowing || end.y + editor.lineHeight <= visible.y || start.y >= visible.y + visible.height) {
             hideBalloon()
-            setToolWindow(false)
+            setToolWindow(card.comments.shownInput() != null)
             return
         }
         val document = editor.document
@@ -177,6 +191,7 @@ class StepPresentation(
         val caret = editor.visualPositionToXY(editor.caretModel.visualPosition)
         val caretBounds = Rectangle(caret.x, caret.y, JBUI.scale(8), editor.lineHeight)
         val fits = !wrapped && visible.contains(bounds) && !bounds.intersects(caretBounds)
+        val focusedInput = card.comments.shownInput()?.text?.takeIf { it.isFocusOwner }
         if (!fits) {
             hideBalloon()
             setToolWindow(true)
@@ -185,6 +200,7 @@ class StepPresentation(
             val existing = balloon
             if (existing != null && !existing.isDisposed) existing.revalidate() else showBalloon()
         }
+        focusedInput?.requestFocusInWindow()
     }
 
     private fun showBalloon() {
