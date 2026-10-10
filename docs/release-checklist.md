@@ -15,13 +15,29 @@ the UI checks in light and dark themes. Record the IDE versions used.
       still loads and the window opens.
 - [ ] The IDE log has no Code Story loading or runtime errors.
 - [ ] CI build, checks and all eight Plugin Verifier jobs pass.
-- [ ] The release tag matches `version` in `gradle.properties`.
+- [ ] The release tag matches `version` in `gradle.properties` and
+      `skills/code-story/version.txt`.
+- [ ] CHANGELOG.md has an entry for the version, with the release date.
+- [ ] For 1.0.0, every v1 done criterion in [v1-verification.md](v1-verification.md)
+      has a result.
 
-## Agent stories
+## Agents
 
 Install the skill with **Tools | Code Story | Install Code Story skill**.
-Switch on the MCP server (Settings | Tools | MCP Server) and use Auto-Configure
-for the agent.
+Switch on the MCP server (Settings | Tools | MCP Server), and connect each agent as the
+[README](../README.md#set-up-your-agent) describes. Follow the README step by step, so
+that these checks also test its setup instructions.
+
+- [ ] Claude Code: Auto-Configure, then `/code-story "<request>"` creates a story
+      through `code_story_show`, and `/code-story feedback` answers a round.
+- [ ] Codex CLI: `$code-story "<request>"` and `$code-story feedback` work the same way.
+- [ ] GitHub Copilot in Rider (Agent mode): `/code-story "<request>"` and
+      `/code-story feedback` work the same way.
+- [ ] GitHub Copilot CLI: `/code-story "<request>"` and `/code-story feedback` work the
+      same way.
+- [ ] **Check setup** lists the seven Code Story tools and the installed skill copies.
+- [ ] The optional hook snippets from **Copy feedback hooks** remind Claude Code, Codex
+      and Copilot CLI of pending feedback, and print `{}` when nothing is pending.
 
 ## Setup and file drops
 

@@ -1,214 +1,379 @@
 # Code Story
 
-A JetBrains plugin for guided code walkthroughs, with Rider as the primary
-target. Requires Rider or IntelliJ IDEA 2025.3 or newer.
+Code Story is a JetBrains IDE plugin for guided code walkthroughs, with Rider as the
+primary target. Ask your AI coding agent for a story, for example
+`/code-story "Explain the main change for this ticket"`. The agent writes a short story
+of ordered steps and sends it to your running IDE. Each step opens its file, highlights
+the code that it explains and shows a floating card with a short comment. Stories stay on
+the right code while you edit, travel with your branch when you share them, and carry
+your questions and change requests back to the agent.
 
-An AI agent builds a story with a type, summary, original request, author and
-ordered steps, and sends it through the IDE's MCP server or drops a story file into the project.
-The story starts in the receiving IDE, with a floating comment card beside
-the highlighted code. The **Code Story** tool window lists stories newest first
-and shows their details, including who wrote them and the Git branch and
-commit at creation. It holds the card when the editor has no room for it.
-Text-only steps show their comment in the details pane and leave the editor
-as it is. Readers ask questions or request code changes, and the agent replies inside
-the story after synchronizing affected steps. See
-[spec.md](spec.md) for the product specification and
-[issue #1](https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/issues/1)
-for the implementation roadmap.
+Code Story works with Claude Code, Codex CLI, GitHub Copilot in Rider and GitHub Copilot
+CLI. See [CHANGELOG.md](CHANGELOG.md) for the release notes, [spec.md](spec.md) for the
+product specification and [docs/v1-verification.md](docs/v1-verification.md) for the v1
+release checks.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/step-card-dark.png">
+    <img src="docs/images/step-card-light.png" alt="A story step in the editor: the explained code is highlighted, and the step card sits to its right with the step title, the comment, and Prev, Next, Stop and comment buttons." width="720">
+  </picture>
+</p>
+
+*The step card beside the highlighted code. The images in this README are illustrations of the layout, drawn in light and dark themes.*
+
+- [Requirements](#requirements)
+- [Install](#install)
+- [Set up your agent](#set-up-your-agent)
+- [Use](#use)
+- [Settings](#settings)
+- [Agent tools](#agent-tools)
+- [Story files](#story-files)
+- [Known limits](#known-limits)
+- [Privacy and security](#privacy-and-security)
+- [Develop](#develop)
+- [Release](#release)
+
+## Requirements
+
+- Rider or IntelliJ IDEA 2025.3 or newer, running on your machine. Other IntelliJ-based
+  IDEs from 2025.3 also load the plugin; v1 is tested in Rider and IntelliJ IDEA.
+- An AI coding agent on the same machine: Claude Code, Codex CLI, GitHub Copilot in Rider
+  (agent mode) or GitHub Copilot CLI.
+- Optional: the bundled MCP Server plugin, so that agents send stories directly and get
+  validation reports. Without it, agents write story files instead.
+- Optional: the bundled Git plugin, for branch and commit metadata and change information.
+- Optional: Python 3, for the [feedback hook snippets](#optional-feedback-hooks).
 
 ## Install
 
-Download the plugin zip from [GitHub Releases](https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases).
-In the IDE, open **Settings | Plugins | gear icon | Install Plugin from Disk**,
-select the zip, and restart if prompted. Open **View | Tool Windows | Code Story**.
-The window starts on the right; use the IDE's normal tool window controls to move it.
+1. Download `code-story-1.0.0.zip` from
+   [GitHub Releases](https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases).
+   Do not unpack it.
+2. In the IDE, open **Settings | Plugins**, click the gear icon and choose
+   **Install Plugin from Disk**. Select the zip, and restart the IDE if it asks.
+3. Open **View | Tool Windows | Code Story**. The window starts on the right; use the
+   IDE's normal tool window controls to move it.
 
-The MCP Server plugin is optional: without it, agents deliver stories as files. The
-Git plugin is optional; it supplies branch and commit metadata and change
-information when available.
+To update, install a newer zip the same way. The plugin is not on JetBrains Marketplace
+yet, so the IDE does not update it by itself. After an update, the plugin offers to update
+the installed skills. To remove the plugin, uninstall **Code Story** in
+**Settings | Plugins**; your story files stay in `.codestory/`.
+
+## Set up your agent
+
+Your agent needs two things: the `code-story` skill, and a connection to the IDE's MCP
+server. On the first run, the plugin shows one notification with both steps.
+
+### 1. Install the skill
+
+Choose **Tools | Code Story | Install Code Story skill** (also in the Code Story toolbar).
+It writes the same skill to `~/.agents/skills/code-story/` and
+`~/.claude/skills/code-story/`, so that every supported agent finds it. To install the
+skill into the project instead, select **Install the Code Story skill in the current
+project** in **Settings | Tools | Code Story** and run the action again: the copies then go
+to `.agents/skills/code-story/` and `.claude/skills/code-story/` at the Git repository
+root (the project folder without Git). After a plugin update, the plugin offers to update
+older copies. You can also copy [`skills/code-story`](skills/code-story) into these
+folders by hand.
+
+### 2. Switch on the MCP server
+
+Open **Settings | Tools | MCP Server**, select **Enable MCP Server**, confirm with
+**Enable**, and click **Apply**. The confirmation lists the access that local programs get
+to your open projects. Code Story never changes this setting itself.
+
+**Auto-Configure**, in the **Clients Auto-Configuration** list on the same page, writes
+the configuration of a detected agent for you. The list depends on the IDE version: 2025.3
+lists Claude Code, and 2026.2 also lists Codex and GitHub Copilot CLI. Restart the agent
+after you configure it. For an agent that is not in the list, **Manual Client
+Configuration** copies the server address: **Copy SSE Config**, **Copy Stdio Config**, and
+**Copy HTTP Stream Config** in newer versions.
+
+### 3. Connect your agent
+
+| Agent | Skill folder | MCP connection | Ask for a story |
+|---|---|---|---|
+| [Claude Code](#claude-code) | `~/.claude/skills/` | Auto-Configure | `/code-story "<request>"` |
+| [Codex CLI](#codex-cli) | `~/.agents/skills/` | Auto-Configure or `~/.codex/config.toml` | `$code-story "<request>"` |
+| [GitHub Copilot in Rider](#github-copilot-in-rider) | `~/.agents/skills/` | `mcp.json` of Copilot Chat | `/code-story "<request>"` in Agent mode |
+| [GitHub Copilot CLI](#github-copilot-cli) | `~/.agents/skills/` | Auto-Configure or `/mcp add` | `/code-story "<request>"` |
+
+Start the agent in the folder of a project that is open in the IDE.
+
+#### Claude Code
+
+1. Claude Code reads the skill from `~/.claude/skills/code-story/`. A running session
+   picks up new skills; if the `~/.claude/skills/` folder did not exist when the session
+   started, run `/reload-skills`.
+2. Click **Auto-Configure** next to **Claude Code**, then restart Claude Code. `/mcp`
+   shows the IDE's server.
+3. Type `/code-story "Explain the main change for this ticket"`.
+
+#### Codex CLI
+
+1. Codex reads the skill from `~/.agents/skills/code-story/` and finds new skills by
+   itself. If `$code-story` does not appear in `/skills`, restart Codex.
+2. If the list has **Codex**, click **Auto-Configure**. Otherwise, add the server to
+   `~/.codex/config.toml` yourself. Codex connects to streamable HTTP and stdio servers,
+   not to SSE servers. Use the URL from **Copy HTTP Stream Config**:
+
+   ```toml
+   [mcp_servers.jetbrains]
+   url = "<the URL from Copy HTTP Stream Config>"
+   ```
+
+   IDE 2025.3 has no HTTP stream configuration: put the `command`, `args` and `env` values
+   from **Copy Stdio Config** into the same table instead. Restart Codex; `/mcp` lists the
+   server.
+3. Type `$code-story "Explain the main change for this ticket"`.
+
+#### GitHub Copilot in Rider
+
+1. Copilot reads the skill from `~/.agents/skills/code-story/`. If Copilot does not use
+   it, check that agent skills are on in **Settings | Tools | GitHub Copilot | Chat |
+   Agent**.
+2. Open Copilot Chat in **Agent** mode, click the tools icon, and click **Add MCP Tools**.
+   In `mcp.json`, add the IDE's server with the URL from **Copy HTTP Stream Config** or
+   **Copy SSE Config**:
+
+   ```json
+   {
+     "servers": {
+       "rider": { "url": "<the URL from the copied configuration>" }
+     }
+   }
+   ```
+
+   On Business and Enterprise plans, an administrator must allow the "MCP servers in
+   Copilot" policy.
+3. In Agent mode, type `/code-story "Explain the main change for this ticket"`. Copilot
+   loads the skill when the request matches the skill's description.
+
+#### GitHub Copilot CLI
+
+1. Copilot CLI reads the skill from `~/.agents/skills/code-story/`. In a running session,
+   run `/skills reload`; `/skills info code-story` shows where Copilot found it.
+2. If the list has **GitHub Copilot CLI**, click **Auto-Configure**. Otherwise, run
+   `/mcp add`, choose the HTTP type with the URL from **Copy HTTP Stream Config** (or the
+   SSE type with the URL from **Copy SSE Config**), and allow all tools. The CLI saves the
+   server in `~/.copilot/mcp-config.json`, and `/mcp show <name>` lists its tools.
+3. Type `/code-story "Explain the main change for this ticket"`.
+
+### Check setup
+
+**Tools | Code Story | Check setup** (also in the Code Story toolbar) shows whether the
+MCP server is on, the Code Story tools that it registered, the bundled skill version, and
+every installed skill copy with its version. **Copy feedback hooks** in the same dialog
+copies the [optional feedback hooks](#optional-feedback-hooks). When the MCP server is
+off, a notification links to its settings page.
+
+### Without the MCP server
+
+When the Code Story tools are missing, or the target project is not open in the IDE, the
+skill writes a complete story file to `.codestory/local/`, using a temporary file and
+then a rename. The plugin watches `.codestory/` only, including files dropped before the
+project opens. It checks new and changed local stories against the same location rules
+and unsaved editor text as MCP. A file drop has no report channel to the agent: errors
+appear in the tool window and clear when the file is fixed or removed. Valid drops play
+in every IDE that has the project open. MCP-delivered stories carry `"delivery": "mcp"`,
+so other IDEs list them without auto-playing them.
 
 ## Use
 
-1. Choose **Tools | Code Story | Install Code Story skill** (also in the tool-window
-   toolbar). This installs the bundled skill into both `~/.agents/skills/code-story/`
-   and `~/.claude/skills/code-story/`. To install into the project instead, enable
-   that option in **Settings | Tools | Code Story**, then run the action.
-2. For direct delivery and validation reports, open **Settings | Tools | MCP Server**,
-   switch on the MCP server, and use **Auto-Configure** for your agent.
-3. Open the project in the IDE, and ask your agent:
-   `/code-story "Explain the main change for this ticket"` (`$code-story` in Codex).
+### Ask for a story
 
-The first run shows one notification with these setup steps. Code Story opens the
-MCP settings when you choose its notification action; it never enables the server
-itself. **Tools | Code Story | Check setup** reports the server state, registered
-Code Story tools, and installed skill paths and versions. After a plugin update,
-the plugin offers to update older installed skills. You can also install manually
-by copying [`skills/code-story`](skills/code-story) to either agent skills folder.
+Open the project in the IDE, and ask your agent:
+
+```text
+/code-story "Explain the main change for this ticket"
+/code-story "How does the payment flow work?"
+/code-story "How can this NullReferenceException occur?"
+/code-story "Prepare a review handoff for this branch"
+```
+
+Use `$code-story` in Codex. The agent uses the conversation, and explores the code when
+the conversation does not cover the subject. It writes a story with a type (change,
+exploration, bug trace or review), a title, a short summary and 3 to 12 steps (15 at
+most). Each step explains one idea about a small code range, in short sentences of simple
+English. Text-only steps can introduce or close the story.
 
 The agent first calls `code_story_guide` for the writing rules, format and example
-bundled with the installed plugin version. It calls `code_story_show` with the story and the
-`projectPath` of the project. The IDE checks the story against the project
-files. A valid story is saved in `.codestory/local/` at the Git repository
-root (the project folder when there is no Git) and appears in the tool window.
-It starts at step 1 and brings the IDE to the front. Turn off bring-to-front
-or change the range highlight color in **Settings | Tools | Code Story**.
-`.codestory/local/` has its own `.gitignore`, so local stories stay out of Git.
-A story with errors is not saved: the tool returns each error with the step
-number, a code, a message and a fix hint, so the agent can correct the story.
+bundled with the installed plugin version. It calls `code_story_show` with the story and
+the `projectPath` of the project. The IDE checks the story against the project files. A
+valid story is saved in `.codestory/local/` at the Git repository root (the project
+folder when there is no Git) and appears in the tool window. It starts at step 1 and
+brings the IDE to the front (see [Settings](#settings)). `.codestory/local/` has its own
+`.gitignore`, so local stories stay out of Git.
 
-When the tools are missing or the target project is not open, the skill writes a
-complete story to `.codestory/local/`, using a temporary file and then a rename.
-The plugin watches `.codestory/` only, including files dropped before the project
-opens. It checks new and changed local stories against the same location rules and
-unsaved editor text as MCP. Errors appear in the tool window and clear when the
-file is fixed or removed. Valid drops play in every IDE that has the project open.
-MCP-delivered stories carry `"delivery": "mcp"`, so other IDEs list them without
-auto-playing them. Shared stories refresh the list without auto-play.
+A story with errors is not saved: the tool returns each error with the step number, a
+code, a message and a fix hint, so the agent can correct the story and send it again.
+Each step location carries `anchorText`, the exact text of its first line. The IDE
+compares it with the line that it shows, including unsaved edits; indentation, trailing
+spaces and line endings do not matter. When the text is within 20 lines of the given
+line, the IDE moves the range and the report lists a correction (for example
+`Step 4: lines 120–131 changed to 123–134.`). When it cannot find the text, it rejects
+the story. The plugin stores the code of each range in the story.
 
-Each step location also carries `anchorText`, the exact text of its first line.
-The IDE compares it with the line that it shows, including unsaved edits;
-indentation, trailing spaces and line endings do not matter. When the text is
-within 20 lines of the given line, the IDE moves the range and the report lists
-a correction (for example `Step 4: lines 120–131 changed to 123–134.`). When it
-cannot find the text, it rejects the story. The plugin stores the code of each
-range in the story.
+The report also includes writing warnings and warnings for ranges longer than 30 lines.
+They never block a story and appear only in the agent report. The guide asks the agent
+to fix them once and replace the story with its returned ID. Mechanical checks cover
+title, sentence and comment lengths, list structure, semicolons and contractions. Code
+names count as one word. Optional passive voice and -ing hints are off by default.
 
-While a story plays, live range markers follow your edits, so the card and the
-highlight stay on the right code. When a story is listed or played, the plugin
-finds the code of each step again. A step is **ok**; **moved** (the lines are
-updated); **code changed** (the range has other code than the step explains:
-the tree shows a badge and the card a note); or **lost** (the code is gone: the
-step plays at its stored lines, and the card warns "The code changed. This step
-can be wrong."). The story row shows the number of lost and changed steps, and
-`code_story_list` reports the status. Moved lines are saved in local stories
-only; shared story files never change, and their corrections stay in memory.
+To revise a story, ask your agent. It finds the story with `code_story_list` and
+`code_story_get`, and replaces it with `code_story_show(story, storyId)`; the same file
+and creation metadata are kept. A playing story reloads at the same step number, or the
+last step if the revision is shorter.
 
-A story about a change can set `baseRef`: the commit before the change, or
-`HEAD` for uncommitted work. The plugin saves the full SHA of that commit, so the
-base stays the same after the work is committed. Each step then shows **A** in
-the tree when all of its lines are new since the base, or **M** when some of them
-changed; steps without changes show no badge. **Show diff**, in the step details
-and the context menu, opens the IDE diff viewer: the file at the base commit
-against the current file, scrolled to the step's lines. A renamed file is compared
-with its old path. A `baseRef` that Git does not know gives an `unknown-base-ref`
-warning in the report, and the story then shows no change information, like a
-story without a base. Without the Git plugin, change information is off.
+### Read a story
 
-`code_story_list` lists local and shared stories with their ID, title, type, date,
-branch, repository path, folder and status: `ok`, `moved`, `code-changed` or `lost`, with the number
-of moved, changed and lost steps. `code_story_get(storyId)` returns the full saved
-story. To revise it, the agent calls `code_story_show(story, storyId)`;
-the same file and creation metadata are kept. A playing story reloads at the same
-step number, or the last step if the revision is shorter.
+The current step shows a floating card beside the highlighted code, with "Step N of M",
+the step title, the comment and **Prev**, **Next** and **Stop**; the tool-window toolbar
+has the same buttons. On the last step, **Next** becomes **Finish**. The card leaves the
+target code and the caret visible and does not take keyboard focus, so you can type,
+select code and click in the editor while the story plays. When the editor has no room
+for the card, the same card appears in the tool window. Text-only steps show their
+comment in the details pane and leave the editor as it is. Steps open in the preview tab
+when the IDE uses preview tabs.
 
-The tree groups stories under **Local** and **Shared**. **Share** moves a story
-to `.codestory/shared/` so you can commit it with the branch; **Unshare** moves it
-back. Its ID and creation metadata stay the same. **Delete** asks for confirmation
-before removing the file. These actions are in the toolbar and context menu.
-**Copy as Markdown**, in both menus, copies the title, summary, and steps with
-repository-relative line links and comments for a pull request description.
-Reader threads are not included.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/tool-window-dark.png">
+    <img src="docs/images/tool-window-light.png" alt="The Code Story tool window: a toolbar, stories grouped under Local and Shared with dates, branches and step statuses, and a details pane for the selected step." width="720">
+  </picture>
+</p>
 
-Shared stories that arrive through checkout or pull appear automatically with a
-**new** marker. They do not start playback. Playing one clears the marker in your
-IDE workspace, without changing the shared file.
+Numbered gutter badges jump to other steps in the same file. Closing the card keeps your
+place and the highlighted code; click the current badge or step to reopen it. Scrolling
+and switching tabs hide and restore the card without moving your caret or scrolling
+back. **Stop** and **Finish** remove the card, the highlight and the badges.
 
-With several Git repositories mapped in one project, the tree groups by repository
-and each repository has its own `.codestory/`. A story must stay inside one
-repository. Pass `repositoryPath` (the absolute repository root) to
-`code_story_show` when paths match several repositories or the story is text-only.
-The same parameter selects the repository for `code_story_get` and replacements
-when an ID appears in several repositories; `code_story_list` returns it for each story.
+The **Code Story** tool window lists stories newest first, with title, date, branch and
+type icon, and their steps with number, title, file and lines. ✓ marks show the steps
+that you visited in this IDE session. Selecting a story shows its summary, original
+request, "Written by <agent> (<model>)", creation date, branch and commit. A note
+appears when the current branch differs from the branch where the story was created.
+Without Git, the metadata is shown as unavailable.
 
-The report also includes writing warnings and warnings for ranges longer than
-30 lines. They never block a story and appear only in the agent report. The guide
-asks the agent to fix them once and replace the story with its returned ID.
-Mechanical checks cover title, sentence and comment lengths, list structure,
-semicolons and contractions. Code names count as one word. Optional passive voice
-and -ing hints are off by default; enable them in **Settings | Tools | Code Story**.
+**Play** resumes the selected story at your last step. Right-click the story and choose
+**Restart** to start at step 1. One story plays at a time in a project. Reading positions
+stay in your IDE workspace and never go into story files.
 
-Story files are named `<yyyy-MM-dd>-<slug>.story.json`. Their format is
-described by the JSON Schema in [`schema/story-v1.schema.json`](schema/story-v1.schema.json).
-Paths are relative to the repository root; line numbers are 1-based and inclusive.
-The plugin records creation time and Git state, assigns stable IDs to steps
-that have none, and adds a number suffix when a story name already exists.
-The story details show a note when the current branch differs from the branch
-where the story was created. Without Git, the metadata is shown as unavailable.
+The default shortcuts start with **Ctrl+Alt+Shift+Z**; release those keys, then press
+**Right** for **Next Step**, **Left** for **Previous Step**, **End** for **Stop Story**,
+or **C** for **Comment on Current Step**. Change them in **Settings | Keymap** by
+searching for the action name.
 
-Use **Prev**, **Next** and **Stop** in the card or tool-window toolbar. On the
-last step, **Next** becomes **Finish**. Numbered gutter badges jump to other
-steps in the same file. Closing the card keeps your place and the highlighted
-code; click the current badge or step to reopen it. Scrolling and switching
-tabs hide and restore the card without moving your caret or scrolling back.
+Comments support inline code, bold, bullet lists and links to http/https URLs or
+repository files (`src/App.kt#L2-L5`). Links open only when clicked. Headings, images,
+tables and HTML stay plain text.
 
-**Play** resumes the selected story at your last step. Right-click the story
-and choose **Restart** to start at step 1. Reading positions stay in your IDE
-workspace, and visited marks last for the current session.
+### Stories about a change
 
-The default shortcuts start with **Ctrl+Alt+Shift+Z**; release those keys, then
-press **Right** for Next Step, **Left** for Previous Step, or **End** for Stop
-Story. Press **C** after the same prefix for **Comment on Current Step**. Change them in **Settings | Keymap** by searching for the action name.
-Comments support inline code, bold, bullet lists and links to http/https URLs
-or repository files (`src/App.kt#L2-L5`). Links open only when clicked.
+A story about a change can set `baseRef`: the commit before the change, or `HEAD` for
+uncommitted work. The plugin saves the full SHA of that commit, so the base stays the
+same after the work is committed. Each step then shows **A** in the tree when all of its
+lines are new since the base, or **M** when some of them changed; steps without changes
+show no badge. **Show diff**, in the step details and the context menu, opens the IDE
+diff viewer: the file at the base commit against the current file, scrolled to the
+step's lines. A renamed file is compared with its old path. A `baseRef` that Git does not
+know gives an `unknown-base-ref` warning in the report, and the story then shows no
+change information, like a story without a base. Without the Git plugin, change
+information is off.
 
-### Questions, change requests and refresh
+### When the code changes
 
-Ask your agent about a story without leaving the IDE. The card’s **💬** button opens
-a small comment input under the step text. In both the card and details pane, choose
-**Question** (the default) or **Change request** before saving a comment or reply. Its collapsed **💬 N threads · N drafts**
-line expands the threads inside the card. Step rows show open-thread counts and a dot
-for unread answers. Opening the threads clears the dot; unread state stays in your IDE
-workspace across restarts and never changes a shared story file.
+While a story plays, live range markers follow your edits, so the card and the highlight
+stay on the right code. When a story is listed or played, the plugin finds the code of
+each step again. A step is **ok**; **moved** (the lines are updated); **code changed**
+(the range has other code than the step explains: the tree shows a badge and the card a
+note); or **lost** (the code is gone: the step plays at its stored lines, and the card
+warns "The code changed. This step can be wrong."). The story row shows the number of
+lost and changed steps, and `code_story_list` reports the status. Moved lines are saved
+in local stories only; shared story files never change, and their corrections stay in
+memory. To bring stale steps up to date, use **Request refresh**
+([below](#questions-and-change-requests)).
 
-Select a step or a story in the
-tool window, and click **Comment on step** or **Comment on story** in the details pane
-(or **Comment** in the context menu). **Save Draft** (Ctrl+Enter) keeps the question as a
-draft in your IDE workspace; drafts never go into the story file. You can edit or delete
-a draft, and the story row shows how many drafts it has.
+### Share and manage stories
 
-**Submit Round** (in the details pane and the toolbar) writes all drafts of the story into
-the story file as one numbered round. Then tell your agent `/code-story feedback`
-(`$code-story feedback` in Codex); the notification and the details pane have buttons that
-copy the command. Until an agent fetches a comment, it shows "Waiting for agent" and you
-can **Withdraw** it back to your drafts. A fetched comment shows "Agent working".
+The tree groups stories under **Local** and **Shared**. **Share** moves a story to
+`.codestory/shared/` so you can commit it with the branch; **Unshare** moves it back. Its
+ID and creation metadata stay the same. **Delete** asks for confirmation before removing
+the file. These actions are in the toolbar and context menu. **Copy as Markdown**, in
+both menus, copies the title, summary, and steps with repository-relative line links and
+comments for a pull request description. Reader threads are not included.
+
+Shared stories that arrive through checkout or pull appear automatically with a **new**
+marker. They do not start playback. Playing one clears the marker in your IDE workspace,
+without changing the shared file.
+
+With several Git repositories mapped in one project, the tree groups by repository and
+each repository has its own `.codestory/`. A story must stay inside one repository.
+
+### Questions and change requests
+
+Ask your agent about a story, or ask it for a code change, without leaving the IDE.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/comments-dark.png">
+    <img src="docs/images/comments-light.png" alt="The comments panel: an answered question, a change request that the agent is working on, a draft question, and the Submit Round button." width="720">
+  </picture>
+</p>
+
+1. **Write comments.** The card’s **💬** button opens a small comment input under the
+   step text. In the tool window, select a step or a story and click **Comment on step**
+   or **Comment on story** in the details pane (or **Comment** in the context menu).
+   **Ctrl+Alt+Shift+Z**, then **C**, comments on the current step. For each comment or
+   reply, choose **Question** (the default) or **Change request**. **Save Draft**
+   (Ctrl+Enter) keeps the comment as a draft in your IDE workspace; drafts never go into
+   the story file. You can edit or delete a draft, and the story row shows how many
+   drafts it has.
+2. **Submit the round.** **Submit Round (N)**, in the details pane and the toolbar,
+   writes all drafts of the story into the story file as one numbered round. Until an
+   agent fetches a comment, it shows "Waiting for agent", and you can **Withdraw** it back
+   to your drafts.
+3. **Hand it to your agent.** Tell your agent `/code-story feedback`
+   (`$code-story feedback` in Codex); the notification and the details pane have buttons
+   that copy the command. Any agent session in the project can process the round. A
+   fetched comment shows "Agent working".
+4. **Read the answers.** A notification tells you that answers arrived, and **Open**
+   shows the story. The answers appear under your comments, and a story that is playing
+   keeps its step. Step rows show open-thread counts and a dot for unread answers;
+   opening the threads clears the dot. The collapsed **💬 N threads · N drafts** line in
+   the card expands the threads inside the card.
+5. **Continue or close.** **Reply** in a thread adds a draft that opens the thread again
+   in the next round. **Resolve** closes a thread; resolved threads are hidden until you
+   select **Show resolved**.
 
 The agent calls `code_story_feedback` to get the comments that wait, oldest round first,
-and answers each one with `code_story_reply`: `answered` for questions, `done` for
-change or refresh requests, or `declined` with a reason. It never changes code for a question.
-For a change request, the agent applies the code change with its normal permission prompts,
-updates every affected step, and replies with a short summary and `changedFiles` (paths
-relative to the repository). The plugin rejects `done` with a list of steps that still
-need review. Updates, replacements and confirmations count only after feedback was fetched;
-a later code edit requires another review. Changed files appear with the reply. The answers appear under your comments, a notification
-tells you that they arrived, and a story that is playing keeps its step. **Reply** in a
-thread adds a draft that opens the thread again in the next round. **Resolve** closes a
-thread; resolved threads are hidden until you select **Show resolved**.
+and answers each one with `code_story_reply`: `answered` for questions, `done` for change
+or refresh requests, or `declined` with a reason.
 
-Threads are part of the story file, so they travel with a shared story. When an agent
-revises a story, each thread stays on its step (by step ID); threads of removed steps move
-to the story with the note “step removed”. `code_story_list` reports `pendingComments` for each story, and
-`code_story_get` returns the threads. Agent answers follow the writing rules with larger
-limits (1 to 5 sentences, or a lead sentence and up to 6 list items, 100 words at most);
-the checks give warnings only. A reply to a comment that is already answered gets
-`already-answered`, so two agent sessions never answer the same comment twice.
+- **Questions:** the agent answers from the story, the thread and the code, and never
+  changes code. When a question shows that the story was unclear, it improves the step
+  text or inserts steps with `code_story_patch`. The plugin then adds a **Story changes**
+  line to the reply.
+- **Change requests:** the agent applies the change with its normal tools and permission
+  prompts, updates every affected step, and replies `done` with a short summary and the
+  changed files, which appear with the reply. The plugin rejects `done` with a list of
+  steps that still need review: every step in **code changed** or **lost** status must
+  be updated, replaced or confirmed after the round was fetched, and a later code edit
+  requires another review.
+- **Request refresh**, in the story or step context menu, adds a refresh item to the
+  story’s latest unfetched round (or starts a new round). `/code-story feedback` then
+  refreshes the stale steps. With no pending comments, feedback mode still finds and
+  refreshes **code changed** and **lost** steps.
 
-The agent can clarify step text or insert explanations with `code_story_patch` before
-answering a question. It takes ordered `update` (stepId, title/comment/location),
-`insert` (afterStepId, step), `remove` (stepId), and `confirm` (stepId) operations.
-Confirm makes the current code the step’s new reference and returns its status to **ok**.
-The agent must read the current code and confirm that the explanation still fits; a
-missing file or range needs a new location or removal. Locations include anchor
-text; an explicit null makes a step text-only. A patch checks the whole structure and
-validates edited steps like `code_story_show`; untouched steps keep their code references,
-including stale steps. It returns the same report; any error saves nothing. Threads and
-creation metadata stay intact. Replies automatically show a **Story changes** line for net story edits made
-while the comment was received. Every tool result directs the agent to its next call.
-
-**Request refresh**, in the story or step context menu, adds a refresh item directly
-to the story’s latest unfetched round (or starts a new round). Tell the agent
-`/code-story feedback` to refresh stale steps. Refresh items use `done` with
-`changedFiles: []` when no code files changed. With no pending comments, feedback mode
-still finds and refreshes **code changed** and **lost** steps.
+Threads are part of the story file, so they travel with a shared story, and a comment on
+a shared story changes that file. Unread state stays in your IDE workspace across
+restarts and never changes a story file. When an agent revises a story, each thread stays
+on its step (by step ID); threads of removed steps move to the story with the note “step
+removed”. Agent answers follow the writing rules with larger limits (1 to 5 sentences, or
+a lead sentence and up to 6 list items, 100 words at most); the checks give warnings only.
+A reply to a comment that is already answered gets `already-answered`, so two agent
+sessions never answer the same comment twice.
 
 ### Optional feedback hooks
 
@@ -306,6 +471,113 @@ Agent references: [Claude Code hooks](https://code.claude.com/docs/en/hooks),
 [Codex hooks](https://developers.openai.com/codex/hooks),
 [Copilot CLI hooks](https://docs.github.com/en/copilot/reference/hooks-configuration).
 
+## Settings
+
+**Settings | Tools | Code Story**:
+
+| Setting | Default | What it does |
+|---|---|---|
+| Bring the IDE to the front on a new story | On | A new story brings the IDE window to the front. When it is off, the story still opens and plays. |
+| Include passive voice and -ing hints in agent reports | Off | Adds these optional writing hints to the agent's reports. Code text such as "string" or "mapping" can give false hints. |
+| Install the Code Story skill in the current project instead of the user folder | Off | **Install Code Story skill** writes to `.agents/skills/` and `.claude/skills/` at the repository root instead of your home folder. |
+| Highlight color | Use theme default | The background of the current step's range. Clear **Use theme default** to choose a color; transparency is supported. |
+
+Other places:
+
+- **Settings | Keymap**: **Next Step**, **Previous Step**, **Stop Story** and
+  **Comment on Current Step**.
+- **Settings | Tools | MCP Server**: the IDE's MCP server (see
+  [Switch on the MCP server](#2-switch-on-the-mcp-server)).
+- **Settings | Appearance & Behavior | Notifications**: the **Code Story** notification
+  group.
+
+## Agent tools
+
+The plugin adds seven tools to the IDE's MCP server. Each call needs the `projectPath` of
+an open project, and each result names the agent's next call. `repositoryPath`, the
+absolute repository root, selects the repository when paths or story IDs match several
+repositories, or for a text-only story.
+
+| Tool | What it does |
+|---|---|
+| `code_story_guide` | Returns the writing guide, the story format and an example for the installed version. |
+| `code_story_show` | Checks a story; when it has no errors, saves and plays it. With `storyId`, replaces that story in its local or shared file. Returns errors, corrections and warnings. |
+| `code_story_list` | Lists local and shared stories: ID, title, type, date, branch, repository path, folder, status (`ok`, `moved`, `code-changed` or `lost`, with step counts) and `pendingComments`. |
+| `code_story_get` | Returns the full saved story with its comment threads. |
+| `code_story_patch` | Edits a story with ordered `update`, `insert`, `remove` and `confirm` operations. |
+| `code_story_feedback` | Returns the reader's comments that wait for an agent, oldest round first, and the stale steps. |
+| `code_story_reply` | Saves one reply per comment: `answered`, `done` with `changedFiles` (`[]` when no code files changed), or `declined` with a reason. |
+
+`code_story_patch` operations: `update` (stepId; title, comment or location),
+`insert` (afterStepId and a complete step), `remove` (stepId) and `confirm` (stepId).
+Confirm makes the current code the step’s new reference and returns its status to **ok**;
+the agent must read the current code first and check that the explanation still fits. A
+missing file or range needs a new location or removal. Locations include anchor text; an
+explicit null makes a step text-only. A patch checks the whole structure and validates
+edited steps like `code_story_show`; untouched steps keep their code references,
+including stale steps. Any error saves nothing. Threads and creation metadata stay
+intact. Replies show a **Story changes** line for the net story edits made while the
+comment was received.
+
+## Story files
+
+- Stories are in `.codestory/local/` (ignored by Git) and `.codestory/shared/` (committed
+  with the branch) at the Git repository root, or in the project folder without Git.
+- Files are named `<yyyy-MM-dd>-<slug>.story.json`; the name without `.story.json` is the
+  story ID. The plugin adds a number suffix when a name already exists.
+- The format is described by the JSON Schema in
+  [`schema/story-v1.schema.json`](schema/story-v1.schema.json) (`schemaVersion` 1).
+  Paths are relative to the repository root; line numbers are 1-based and inclusive.
+- A story has at most 15 steps, and a file at most 256 KB.
+- The plugin records the creation time and Git state, and assigns stable IDs to steps
+  that have none.
+- `.codestory/local/pending-feedback.json` is the local index for the
+  [feedback hooks](#optional-feedback-hooks).
+- Reading positions, visited marks, comment drafts and unread markers stay in IDE
+  workspace storage, never in story files.
+
+## Known limits
+
+- **Local IDE only.** Remote development, split mode and JetBrains Client are not
+  supported.
+- **Install from disk.** The plugin is not on JetBrains Marketplace yet, and the IDE does
+  not update it automatically.
+- **Tested IDEs.** v1 is tested in Rider and IntelliJ IDEA. Other IntelliJ-based IDEs from
+  2025.3 load the plugin without such tests.
+- **The MCP server is off by default.** Only you can switch it on. Without it, agents
+  deliver stories as files and get no validation report.
+- **One IDE per agent connection.** An agent talks to the MCP server of the IDE that it
+  is configured for. When the project is not open in that IDE, the skill writes a file.
+- **No push to the agent.** After **Submit Round**, tell your agent `/code-story feedback`.
+  The hooks only remind the agent, and Copilot in Rider has no suitable hook. A listening
+  mode is planned for v1.1.
+- **Text anchors.** Steps anchor to a file, a line range and the text of the first line,
+  not to code symbols. After large edits, steps can be **lost** until the agent
+  refreshes them.
+- **Git only.** Change information needs Git and the Git plugin; other version control
+  systems are not supported.
+- **Agent-written stories.** You cannot edit, rename or reorder stories or steps in the
+  IDE; ask the agent. One story plays at a time in a project, and each step has one code
+  range at most.
+- **Writing checks.** The checks are mechanical and for English only. There is no check
+  against the ASD-STE100 dictionary.
+- **Your own agent.** Comments go to your agent, not to the author of a shared story.
+- **No CodeTour import or export** yet; it is planned for v1.1.
+
+## Privacy and security
+
+- The plugin makes no network calls and sends no telemetry.
+- Code Story tools only create, read and update stories and their threads in
+  `.codestory/`. They never run code or commands. Code changes for change requests are
+  made by your agent, with its own tools and permission prompts.
+- The IDE's MCP server accepts calls from local programs and has its own tools. Its
+  confirmation dialog lists what they can do; Code Story adds only the tools above.
+- Story files from Git are untrusted input. Paths must stay inside the repository:
+  absolute paths, `..` and symbolic links that lead outside are rejected. Text is shown
+  without HTML; links allow only http/https and project files, and open only on click.
+- Every story shows "Written by <agent> (<model>)".
+- The plugin never installs hooks and never changes the MCP server setting.
+
 ## Develop
 
 This single-module Kotlin project is based on the
@@ -314,8 +586,9 @@ It compiles against IntelliJ IDEA 2025.3 with a Java 21 toolchain. Kotlin's
 language and API versions match the 2.2 standard library in that IDE;
 the plugin does not bundle its own standard library.
 
-Use JDK 21 or newer to run Gradle. The toolchain resolver downloads JDK 21
-if it is missing. Import the repository as a Gradle project, or run:
+Use JDK 21 or newer to run Gradle, with a UTF-8 locale (some test names contain
+typographic apostrophes). The toolchain resolver downloads JDK 21 if it is missing.
+Import the repository as a Gradle project, or run:
 
 ```sh
 ./gradlew check buildPlugin verifyPluginStructure
@@ -373,11 +646,17 @@ CI builds the zip, runs `check`, checks the plugin structure, and runs the
 Plugin Verifier in eight jobs: Rider and IDEA 2025.3, 2026.1, 2026.2 and the
 latest EAP for each product. Reports and the zip are workflow artifacts.
 
-Set `version` in `gradle.properties`, complete the
-[manual checklist](docs/release-checklist.md), and push a matching tag
-(for example, `v0.1.0`). The same workflow publishes the verified build's zip
-to GitHub Releases after every build and verifier job passes. A tag that
-does not match the configured version fails the build. Release publication
-uses the workflow's `GITHUB_TOKEN`; no Marketplace credentials are needed.
+1. Set `version` in `gradle.properties` and in
+   [`skills/code-story/version.txt`](skills/code-story/version.txt).
+2. Add an entry for the version, with the release date, to [CHANGELOG.md](CHANGELOG.md).
+3. Complete the [manual checklist](docs/release-checklist.md). For 1.0.0, also record the
+   v1 done criteria in [docs/v1-verification.md](docs/v1-verification.md).
+4. Push a matching tag, for example `v1.0.0`.
+
+The tag build fails when the tag does not match `version` or when CHANGELOG.md has no
+entry for the version. After every build and verifier job passes, the workflow publishes
+the verified build's zip to GitHub Releases, with the CHANGELOG entry above the generated
+notes. Release publication uses the workflow's `GITHUB_TOKEN`; no Marketplace
+credentials are needed.
 
 Licensed under [Apache-2.0](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).

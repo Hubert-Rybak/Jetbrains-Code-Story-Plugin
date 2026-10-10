@@ -171,6 +171,11 @@ class StepPresentation(
         val document = editor.document
         val firstLine = maxOf(document.getLineNumber(range.startOffset), editor.xyToLogicalPosition(Point(visible.x, visible.y)).line)
         val lastLine = minOf(document.getLineNumber(range.endOffset), editor.xyToLogicalPosition(Point(visible.x, visible.y + visible.height)).line)
+        val padding = JBUI.scale(40)
+        val width = card.preferredSize.width + padding
+        val height = card.preferredSize.height + padding
+        val targetY = maxOf(start.y, visible.y) + editor.lineHeight / 2
+        val cardY = (targetY - height / 2).coerceIn(visible.y, maxOf(visible.y, visible.y + visible.height - height))
         var codeRight = start.x
         var wrapped = false
         for (line in firstLine..lastLine) {
@@ -181,11 +186,13 @@ class StepPresentation(
             codeRight = maxOf(codeRight, from.x, to.x)
             if (from.y != to.y) wrapped = true
         }
-        val padding = JBUI.scale(40)
-        val width = card.preferredSize.width + padding
-        val height = card.preferredSize.height + padding
-        val targetY = maxOf(start.y, visible.y) + editor.lineHeight / 2
-        val cardY = (targetY - height / 2).coerceIn(visible.y, maxOf(visible.y, visible.y + visible.height - height))
+        // The card is taller than the range, so it must also clear the longer lines next to the range.
+        val coveredFirst = editor.xyToLogicalPosition(Point(visible.x, cardY)).line.coerceIn(0, document.lineCount - 1)
+        val coveredLast = editor.xyToLogicalPosition(Point(visible.x, cardY + height)).line.coerceIn(0, document.lineCount - 1)
+        for (line in coveredFirst..coveredLast) {
+            if (editor.foldingModel.isOffsetCollapsed(document.getLineStartOffset(line))) continue
+            codeRight = maxOf(codeRight, editor.offsetToXY(document.getLineEndOffset(line)).x)
+        }
         anchor = Point(maxOf(codeRight, visible.x) + JBUI.scale(8), targetY)
         val bounds = Rectangle(anchor.x, cardY, width, height)
         val caret = editor.visualPositionToXY(editor.caretModel.visualPosition)
