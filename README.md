@@ -358,8 +358,8 @@ it cannot restart an agent that ended its turn. Copilot in Rider needs no hook w
 client supports active waiting calls. Optional hooks only remind sessions that are not
 listening.
 
-The listening tool uses the same fetch path as `code_story_feedback`, oldest round first,
-and answers each one with `code_story_reply`: `answered` for questions, `done` for change
+The listening tool uses the same fetch path as `code_story_feedback`, oldest round first.
+The agent answers each comment with `code_story_reply`: `answered` for questions, `done` for change
 or refresh requests, or `declined` with a reason.
 
 - **Questions:** the agent answers from the story, the thread and the code, and never
@@ -374,8 +374,8 @@ or refresh requests, or `declined` with a reason.
   requires another review.
 - **Request refresh**, in the story or step context menu, adds a refresh item to the
   story’s latest unfetched round (or starts a new round). The listening agent picks it
-  up automatically; use `/code-story feedback` if the agent has stopped. With no pending comments, feedback mode still finds and
-  refreshes **code changed** and **lost** steps.
+  up automatically; use `/code-story feedback` if the agent has stopped. With no pending
+  comments, feedback mode still finds and refreshes **code changed** and **lost** steps.
 
 Threads are part of the story file, so they travel with a shared story, and a comment on
 a shared story changes that file. Unread state stays in your IDE workspace across
@@ -492,6 +492,7 @@ Agent references: [Claude Code hooks](https://code.claude.com/docs/en/hooks),
 | Bring the IDE to the front on a new story | On | A new story brings the IDE window to the front. When it is off, the story still opens and plays. |
 | Include passive voice and -ing hints in agent reports | Off | Adds these optional writing hints to the agent's reports. Code text such as "string" or "mapping" can give false hints. |
 | Install the Code Story skill in the current project instead of the user folder | Off | **Install Code Story skill** writes to `.agents/skills/` and `.claude/skills/` at the repository root instead of your home folder. |
+| Let connected agents listen for submitted feedback automatically | On | Waiting agents pick up Submit Round. Turning this off ends waiting calls; manual feedback remains available. |
 | Highlight color | Use theme default | The background of the current step's range. Clear **Use theme default** to choose a color; transparency is supported. |
 
 Other places:
