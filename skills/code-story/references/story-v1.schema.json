@@ -283,6 +283,33 @@
           "items": {
             "$ref": "#/$defs/message"
           }
+        },
+        "storyBaseline": {
+          "description": "Plugin-owned step fingerprints from the first story edit for a received comment. Used across restarts to calculate net story changes; cleared after the reply.",
+          "type": "array",
+          "maxItems": 15,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "fingerprint"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "fingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "pendingStoryChanges": {
+          "description": "Plugin-owned summary of author revisions since the first edit for this received comment. Copied to the agent reply and cleared after the reply.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -324,6 +351,11 @@
           "type": "string",
           "minLength": 1,
           "pattern": "\\S"
+        },
+        "storyChanges": {
+          "description": "Agent replies only. Automatic summary of story edits made while the comment was received, computed by the plugin. Displayed as Story changes; agents cannot set it.",
+          "type": "string",
+          "minLength": 1
         }
       }
     }

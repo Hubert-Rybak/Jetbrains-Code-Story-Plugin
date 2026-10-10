@@ -42,6 +42,14 @@ fun interface StoryPlaybackListener {
     }
 }
 
+fun interface StoryCommentListener {
+    fun commentRequested()
+    companion object {
+        @Topic.ProjectLevel
+        val TOPIC = Topic(StoryCommentListener::class.java, Topic.BroadcastDirection.NONE)
+    }
+}
+
 /**
  * All reader controls call this one project player, on the EDT. Each play checks the anchors of
  * the story, so [currentStory] has the current lines and step statuses.
@@ -109,8 +117,10 @@ class StoryPlayer(private val project: Project) : Disposable {
     fun reload(stored: StoredStory) {
         ApplicationManager.getApplication().assertIsDispatchThread()
         val index = stepIndex.coerceAtMost(stored.story.steps.lastIndex)
+        val comments = presentation?.card?.comments
         clearPresentation()
         play(stored, index)
+        comments?.let { presentation?.card?.comments?.restoreInput(it) }
     }
     /** Sharing changes the file location without restarting playback or moving the editor. */
     fun relocated(stored: StoredStory) {
@@ -130,7 +140,18 @@ class StoryPlayer(private val project: Project) : Disposable {
         // The playing story keeps the lines that its live markers followed.
         val story = StoryThreads.carryOver(stored.story, current.story)
         currentStory = StoredStory(current.id, current.root, stored.file, story, stored.modified, current.statuses)
+        presentation?.takeIf { current.story.steps[stepIndex].location != null }?.card?.refreshComments(checkNotNull(currentStory))
         changed()
+    }
+
+    fun commentOnCurrentStep() {
+        val current = currentStory ?: return
+        if (current.story.steps[stepIndex].location != null && presentation != null) presentation!!.startComment()
+        else {
+            ToolWindowManager.getInstance(project).getToolWindow(CodeStoryService.TOOL_WINDOW_ID)?.show {
+                project.messageBus.syncPublisher(StoryCommentListener.TOPIC).commentRequested()
+            }
+        }
     }
 
     fun previous() { currentStory?.takeIf { stepIndex > 0 }?.let { play(it, stepIndex - 1) } }

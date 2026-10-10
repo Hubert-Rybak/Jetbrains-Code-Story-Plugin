@@ -13,6 +13,8 @@ import io.github.hubertrybak.codestory.core.ReplyReport
 import io.github.hubertrybak.codestory.core.ShowReport
 import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryListReport
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
@@ -28,7 +30,7 @@ class CodeStoryToolset : McpToolset {
     @McpTool(name = "code_story_list")
     @McpDescription(description = "Lists all local and shared stories, newest first: ID, title, type, creation date, branch, folder and code status. The status is ok, moved (the IDE found the code at other lines and updated them), code-changed (the code in a range is different from the code that the step explains) or lost (the IDE cannot find the code), with movedSteps, changedSteps and lostSteps. pendingComments counts reader comments that wait for code_story_feedback. Call code_story_get with an ID to read a full story. Always pass projectPath.")
     suspend fun listStories(): StoryListReport = withService {
-        StoryListReport(it.list(), "Call code_story_get with a story ID to read it before a revision.")
+        StoryListReport(it.list(), "Next: call code_story_get with a story ID to read it before a revision.")
     }
 
     @McpTool(name = "code_story_get")
@@ -39,9 +41,9 @@ class CodeStoryToolset : McpToolset {
         @McpDescription(description = "Absolute repository root from code_story_list. Required when the ID exists in several repositories.")
         repositoryPath: String? = null,
     ): SavedStoryResult = withService {
-        if (!StoryFolder.isValidId(storyId)) throw McpExpectedError("Invalid storyId. Use an ID from code_story_list.")
-        val saved = it.get(storyId, repositoryPath) ?: throw McpExpectedError("Story '$storyId' was not found. Call code_story_list for the current IDs.")
-        SavedStoryResult(saved)
+        if (!StoryFolder.isValidId(storyId)) throw McpExpectedError("Invalid storyId. Next: call code_story_list for an ID.")
+        val saved = it.get(storyId, repositoryPath) ?: throw McpExpectedError("Story '$storyId' was not found. Next: call code_story_list for the current IDs.")
+        SavedStoryResult(JsonObject(saved + ("next" to JsonPrimitive("Next: call code_story_patch to edit steps, code_story_show to replace the story, or code_story_feedback for pending comments."))))
     }
 
     @McpTool(name = "code_story_show")
@@ -77,6 +79,17 @@ class CodeStoryToolset : McpToolset {
         repositoryPath: String? = null,
     ): ShowReport = withService { it.show(story.json, storyId, repositoryPath) }
 
+    @McpTool(name = "code_story_patch")
+    @McpDescription(description = "Edits a saved story atomically with ordered operations. Use op update with stepId and title, comment or location (including anchorText; null removes the location); op insert with afterStepId and a complete step; or op remove with stepId. Read code_story_get for stable IDs. All operations pass the same validation as code_story_show and return its report; any error saves nothing. Threads stay on their steps by ID; removed-step threads move to the story with a step removed note. The plugin records story changes for fetched comments and adds the summary to code_story_reply. Always pass projectPath, and repositoryPath when IDs are ambiguous.")
+    suspend fun patchStory(
+        @McpDescription(description = "The existing story ID from code_story_get or code_story_feedback.")
+        storyId: String,
+        @McpDescription(description = "Ordered update, insert and remove operations. Any error rejects the entire patch.")
+        operations: List<PatchArgument>,
+        @McpDescription(description = "Absolute repository root from code_story_list or code_story_feedback.")
+        repositoryPath: String? = null,
+    ): ShowReport = withService { it.patch(storyId, operations.map(PatchArgument::json), repositoryPath) }
+
     @McpTool(name = "code_story_feedback")
     @McpDescription(
         description = """
@@ -85,7 +98,7 @@ class CodeStoryToolset : McpToolset {
         |Each comment has storyId, round, threadId, kind, target (story or step), the step (ID, number, title, comment, current lines and status),
         |the comment text and the earlier messages of its thread. staleSteps lists steps whose code changed or is lost.
         |Fetched comments become "received" (the reader sees that an agent works on them) and stay available until an agent replies.
-        |Answer every comment with code_story_reply. Never change code for a question. Always pass projectPath.
+        |Answer every comment with code_story_reply. Never change code for a question. If the explanation was unclear, improve step text or insert steps with code_story_patch before you reply. Always pass projectPath.
         """,
     )
     suspend fun storyFeedback(
@@ -94,8 +107,8 @@ class CodeStoryToolset : McpToolset {
         @McpDescription(description = "Absolute repository root from code_story_list. Required when the ID exists in several repositories.")
         repositoryPath: String? = null,
     ): FeedbackReport = withService {
-        if (storyId != null && !StoryFolder.isValidId(storyId)) throw McpExpectedError("Invalid storyId. Use an ID from code_story_list.")
-        it.feedback(storyId, repositoryPath) ?: throw McpExpectedError("Story '$storyId' was not found. Call code_story_list for the current IDs.")
+        if (storyId != null && !StoryFolder.isValidId(storyId)) throw McpExpectedError("Invalid storyId. Next: call code_story_list for an ID.")
+        it.feedback(storyId, repositoryPath) ?: throw McpExpectedError("Story '$storyId' was not found. Next: call code_story_list for the current IDs.")
     }
 
     @McpTool(name = "code_story_reply")
@@ -121,12 +134,12 @@ class CodeStoryToolset : McpToolset {
     private suspend fun <T> withService(action: suspend (CodeStoryService) -> T): T {
         // The MCP server finds the project from the projectPath that it adds to every tool. The plugin never guesses.
         val project = currentCoroutineContext().mcpCallInfoOrNull?.project
-            ?: throw noSuitableProjectError("Code Story needs the path of the project that holds the story's files.")
+            ?: throw noSuitableProjectError("Code Story needs the path of the project that holds the story's files. Next: retry code_story_list with projectPath.")
         return withContext(Dispatchers.IO) {
             try {
                 action(CodeStoryService.getInstance(project))
             } catch (e: IOException) {
-                throw McpExpectedError("Code Story cannot access the story files: ${e.message}")
+                throw McpExpectedError("Code Story cannot access the story files: ${e.message}. Next: call code_story_list after correcting the file access problem.")
             }
         }
     }

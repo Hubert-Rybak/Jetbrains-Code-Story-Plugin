@@ -2,6 +2,7 @@ package io.github.hubertrybak.codestory.core
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -81,6 +82,8 @@ object StoryFormat {
                     put("kind", thread.kind.value)
                     put("state", thread.state.value)
                     thread.removedStep?.let { put("removedStep", it) }
+                    thread.storyBaseline?.let { put("storyBaseline", Json.encodeToJsonElement(it)) }
+                    thread.pendingStoryChanges?.let { put("pendingStoryChanges", it) }
                     putJsonArray("messages") {
                         for (message in thread.messages) {
                             addJsonObject {
@@ -88,6 +91,7 @@ object StoryFormat {
                                 put("round", message.round)
                                 put("time", message.time.toString())
                                 message.outcome?.let { put("outcome", it.value) }
+                                message.storyChanges?.let { put("storyChanges", it) }
                                 put("text", message.text)
                             }
                         }

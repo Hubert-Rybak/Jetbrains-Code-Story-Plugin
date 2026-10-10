@@ -5,23 +5,30 @@ import com.intellij.ide.ui.UISettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.ScrollPaneFactory
+import com.intellij.ui.components.ActionLink
+import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryMarkdown
+import io.github.hubertrybak.codestory.core.ThreadState
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
+import java.awt.Rectangle
 import java.nio.file.Files
 import javax.swing.JButton
 import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTextArea
+import javax.swing.Scrollable
 import javax.swing.SwingConstants
 import javax.swing.event.HyperlinkEvent
 import javax.swing.text.html.HTMLEditorKit
@@ -36,10 +43,11 @@ fun statusNote(status: StepStatus): String? = when (status) {
 /** This exact panel moves between the balloon and the tool window. */
 class StepCardPanel(
     private val project: Project,
-    private val stored: StoredStory,
+    private var stored: StoredStory,
     private val index: Int,
     player: StoryPlayer,
     dismiss: () -> Unit,
+    private val layoutChanged: () -> Unit = {},
 ) : JPanel(BorderLayout(0, JBUI.scale(8))) {
     val previous = JButton("Prev").apply {
         mnemonic = 'P'.code
@@ -77,6 +85,29 @@ class StepCardPanel(
         putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
         addHyperlinkListener { if (it.eventType == HyperlinkEvent.EventType.ACTIVATED) openLink(it.description) }
     }
+    private val readerComments = StoryComments(project)
+    val comments = CommentsPanel(readerComments, compact = true, layoutChanged = ::resizeCard).apply { isOpaque = false }
+    val commentButton = JButton("💬").apply {
+        toolTipText = "Comment on current step"
+        accessibleContext.accessibleName = "Comment on current step"
+        addActionListener { startComment() }
+    }
+    val threadLine = ActionLink("") {
+        comments.expanded = !comments.expanded
+        if (comments.expanded) comments.markShownRead()
+    }
+    private val body = object : JPanel(VerticalLayout(8)), Scrollable {
+        override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+        override fun getScrollableUnitIncrement(visibleRect: Rectangle, orientation: Int, direction: Int) = JBUI.scale(16)
+        override fun getScrollableBlockIncrement(visibleRect: Rectangle, orientation: Int, direction: Int) = visibleRect.height
+        override fun getScrollableTracksViewportWidth() = true
+        override fun getScrollableTracksViewportHeight() = false
+    }.apply {
+        isOpaque = false
+        add(comment)
+        add(threadLine)
+        add(comments)
+    }
 
     init {
         border = JBUI.Borders.empty(10)
@@ -95,15 +126,37 @@ class StepCardPanel(
                 add(note, BorderLayout.CENTER)
             }, BorderLayout.CENTER)
         }, BorderLayout.NORTH)
-        add(ScrollPaneFactory.createScrollPane(comment, true).apply {
+        add(ScrollPaneFactory.createScrollPane(body, true).apply {
             border = JBUI.Borders.empty()
             horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
         }, BorderLayout.CENTER)
         add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)).apply {
             isOpaque = false
-            add(previous); add(next); add(stop)
+            add(previous); add(next); add(stop); add(commentButton)
         }, BorderLayout.SOUTH)
         refreshTheme()
+        refreshComments(stored)
+    }
+
+    fun startComment() {
+        comments.expanded = false
+        comments.startComment()
+        // Resizing may move the input from a balloon to the tool window first.
+        ApplicationManager.getApplication().invokeLater({
+            comments.shownInput()?.text?.requestFocusInWindow()
+        }, ModalityState.nonModal(), project.disposed)
+    }
+
+    fun refreshComments(stored: StoredStory) {
+        this.stored = stored
+        comments.show(stored, index)
+        val step = stored.story.steps[index]
+        val threads = step.threads.count { it.state != ThreadState.RESOLVED }
+        val ids = step.threads.map { it.id }.toSet()
+        val drafts = readerComments.drafts(stored).count { it.thread in ids || (it.thread == null && it.step == step.id) }
+        threadLine.text = "💬 $threads ${if (threads == 1) "thread" else "threads"}" +
+            if (drafts > 0) " · $drafts ${if (drafts == 1) "draft" else "drafts"}" else ""
+        resizeCard()
     }
 
     fun refreshTheme() {
@@ -120,6 +173,10 @@ class StepCardPanel(
         comment.editorKit = kit
         comment.text = "<html><body>${StoryMarkdown.render(stored.story.steps[index].comment)}</body></html>"
         comment.caretPosition = 0
+        resizeCard()
+    }
+
+    private fun resizeCard() {
         val width = JBUI.scale(320)
         comment.setSize(width - JBUI.scale(20), Short.MAX_VALUE.toInt())
         val noteHeight = note?.let {
@@ -128,7 +185,12 @@ class StepCardPanel(
             it.setSize(width - JBUI.scale(26) - noteIcon.preferredSize.width, Short.MAX_VALUE.toInt())
             it.preferredSize.height + JBUI.scale(6)
         } ?: 0
-        preferredSize = Dimension(width, comment.preferredSize.height.coerceAtMost(JBUI.scale(200)) + JBUI.scale(90) + noteHeight)
+        comments.setSize(width - JBUI.scale(20), Short.MAX_VALUE.toInt())
+        comments.doLayout()
+        val discussionHeight = comments.preferredSize.height.coerceAtMost(JBUI.scale(240))
+        preferredSize = Dimension(width, comment.preferredSize.height.coerceAtMost(JBUI.scale(200)) + JBUI.scale(115) + noteHeight + discussionHeight)
+        revalidate()
+        layoutChanged()
     }
 
     /** Hyperlinks have no side effects until activation; project links cannot escape the repository. */

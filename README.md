@@ -147,13 +147,19 @@ workspace, and visited marks last for the current session.
 
 The default shortcuts start with **Ctrl+Alt+Shift+Z**; release those keys, then
 press **Right** for Next Step, **Left** for Previous Step, or **End** for Stop
-Story. Change them in **Settings | Keymap** by searching for the action name.
+Story. Press **C** after the same prefix for **Comment on Current Step**. Change them in **Settings | Keymap** by searching for the action name.
 Comments support inline code, bold, bullet lists and links to http/https URLs
 or repository files (`src/App.kt#L2-L5`). Links open only when clicked.
 
 ### Questions and answers
 
-Ask your agent about a story without leaving the IDE. Select a step or a story in the
+Ask your agent about a story without leaving the IDE. The card’s **💬** button opens
+a small comment input under the step text. Its collapsed **💬 N threads · N drafts**
+line expands the threads inside the card. Step rows show open-thread counts and a dot
+for unread answers. Opening the threads clears the dot; unread state stays in your IDE
+workspace across restarts and never changes a shared story file.
+
+Select a step or a story in the
 tool window, and click **Comment on step** or **Comment on story** in the details pane
 (or **Comment** in the context menu). **Save Draft** (Ctrl+Enter) keeps the question as a
 draft in your IDE workspace; drafts never go into the story file. You can edit or delete
@@ -174,11 +180,19 @@ thread; resolved threads are hidden until you select **Show resolved**.
 
 Threads are part of the story file, so they travel with a shared story. When an agent
 revises a story, each thread stays on its step (by step ID); threads of removed steps move
-to the story. `code_story_list` reports `pendingComments` for each story, and
+to the story with the note “step removed”. `code_story_list` reports `pendingComments` for each story, and
 `code_story_get` returns the threads. Agent answers follow the writing rules with larger
 limits (1 to 5 sentences, or a lead sentence and up to 6 list items, 100 words at most);
 the checks give warnings only. A reply to a comment that is already answered gets
 `already-answered`, so two agent sessions never answer the same comment twice.
+
+The agent can clarify step text or insert explanations with `code_story_patch` before
+answering a question. It takes ordered `update` (stepId, title/comment/location),
+`insert` (afterStepId, step), and `remove` (stepId) operations. Locations include anchor
+text; an explicit null makes a step text-only. The complete patch uses the same validation
+and report as `code_story_show`; any error saves nothing. Threads and creation metadata
+stay intact. Replies automatically show a **Story changes** line for net story edits made
+while the comment was received. Every tool result directs the agent to its next call.
 
 ## Develop
 

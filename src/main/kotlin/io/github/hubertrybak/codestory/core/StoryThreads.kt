@@ -17,6 +17,9 @@ data class StoryThread(
     val messages: List<ThreadMessage>,
     /** The title of the step that this thread was about, when a revision removed that step. The thread is then on the story. */
     val removedStep: String? = null,
+    /** Plugin-owned feedback bookkeeping, cleared after the reply. */
+    val storyBaseline: List<StoryStepSnapshot>? = null,
+    val pendingStoryChanges: String? = null,
 )
 
 @Serializable
@@ -74,6 +77,8 @@ data class ThreadMessage(
     val time: Instant,
     val text: String,
     val outcome: ReplyOutcome? = null,
+    /** Computed by the plugin, separate from the agent's answer and writing checks. */
+    val storyChanges: String? = null,
 )
 
 /**
@@ -179,8 +184,11 @@ object StoryThreads {
                 return@fold result
             }
             saved += reply.threadId
-            val message = ThreadMessage(MessageAuthor.AGENT, reply.round, time, reply.text, reply.outcome)
-            change(result, reply.threadId) { it.copy(state = reply.outcome.state, messages = it.messages + message) }
+            val thread = checkNotNull(find(result, reply.threadId))
+            val message = ThreadMessage(MessageAuthor.AGENT, reply.round, time, reply.text, reply.outcome, thread.pendingStoryChanges)
+            change(result, reply.threadId) {
+                it.copy(state = reply.outcome.state, messages = it.messages + message, storyBaseline = null, pendingStoryChanges = null)
+            }
         }
         return ReplyResult(result, saved, errors)
     }

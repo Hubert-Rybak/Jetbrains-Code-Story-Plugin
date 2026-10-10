@@ -209,3 +209,35 @@ This example illustrates the format; verify paths and lines in the actual projec
   ]
 }
 ```
+
+
+## Patch a story during feedback
+
+Call `code_story_get` for the saved step IDs. To clarify an explanation without changing
+code, call `code_story_patch(storyId, operations)` with `projectPath` and, when needed,
+`repositoryPath`. Operations run in list order:
+
+- Update: `{"op":"update","stepId":"entry","comment":"The controller checks the request."}`.
+  You may supply `title`, `comment`, or a complete `location` with `anchorText`.
+  Omitted fields stay unchanged; `location: null` makes the step text-only.
+- Insert: `{"op":"insert","afterStepId":"entry","step":{"title":"Validation","comment":"Invalid requests stop here."}}`.
+  The plugin assigns a stable ID when `step.id` is omitted. Supply an ID to refer to it
+  in a later operation in the same call.
+- Remove: `{"op":"remove","stepId":"old-step"}`. Its threads move to the story
+  with the note “step removed”.
+
+A patch validates the complete result using the same rules as `code_story_show` and
+returns `status`, `storyId`, `file`, `errors`, `corrections`, `warnings`, and `next`.
+Any error rejects all operations. The story keeps its file, metadata and threads.
+
+In feedback mode, improve step text or insert steps if a question shows that the story
+was unclear. Never change code for a question. Fetch feedback before editing, then
+answer with `code_story_reply`. The plugin automatically adds “Story changes” to the
+reply, based on net step edits while that comment was received. In a batch, each
+received thread records the story edits made before its reply. Repeated updates count
+once; reverted edits do not count. Updated and added step numbers refer to the revised
+story; removed step numbers refer to the story before the edits. Automatic anchor
+corrections do not create a change summary. Do not supply change summaries yourself.
+
+Next: call `code_story_show` for a new story, `code_story_list` for a revision, or
+`code_story_feedback` to answer reader comments.

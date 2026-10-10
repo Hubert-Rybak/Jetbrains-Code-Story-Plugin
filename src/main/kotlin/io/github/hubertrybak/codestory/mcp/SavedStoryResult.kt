@@ -1,6 +1,7 @@
 package io.github.hubertrybak.codestory.mcp
 
 import io.github.hubertrybak.codestory.core.MessageAuthor
+import io.github.hubertrybak.codestory.core.StoryStepSnapshot
 import io.github.hubertrybak.codestory.core.ReplyOutcome
 import io.github.hubertrybak.codestory.core.StoryType
 import io.github.hubertrybak.codestory.core.ThreadKind
@@ -48,6 +49,7 @@ internal class SavedStoryShape(
     /** The full SHA of the base commit for a story about a change. */
     val baseRef: String? = null,
     val steps: List<SavedStepShape>,
+    val next: String,
     /** Reader comments and agent replies about the whole story. They belong to the plugin. */
     val threads: List<ThreadShape> = emptyList(),
 )
@@ -71,10 +73,12 @@ internal class ThreadShape(
     val state: ThreadState,
     val removedStep: String? = null,
     val messages: List<MessageShape>,
+    val storyBaseline: List<StoryStepSnapshot>? = null,
+    val pendingStoryChanges: String? = null,
 )
 
 @Serializable
-internal class MessageShape(val author: MessageAuthor, val round: Int, val time: String, val outcome: ReplyOutcome? = null, val text: String)
+internal class MessageShape(val author: MessageAuthor, val round: Int, val time: String, val outcome: ReplyOutcome? = null, val text: String, val storyChanges: String? = null)
 
 /** [anchorText] follows the code; [rangeText] is the code that the step explains, stored by the plugin. */
 @Serializable

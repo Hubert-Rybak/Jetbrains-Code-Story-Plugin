@@ -165,6 +165,21 @@ Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).
 Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark
 themes, including a narrow tool window.
 
+- [ ] The card’s **💬** button opens a small input below the step text. **Save Draft**
+      and Ctrl+Enter save it; **Cancel** and Escape close it without saving. Repeat in
+      Rider and IntelliJ IDEA, light/dark themes, and floating and tool-window cards.
+- [ ] **Ctrl+Alt+Shift+Z**, then **C**, opens **Comment on Current Step**, including a
+      dismissed card and a text-only step. The shortcut can be changed in Keymap.
+- [ ] The collapsed **💬 N threads · N drafts** line expands inside the card. Drafts can
+      be edited, deleted and submitted there. Long threads scroll, and expanding the
+      card preserves code layout and keeps the input usable in narrow/split editors.
+- [ ] Open-thread counts and unread dots appear in step rows when answers arrive.
+      Open the threads to clear the dot; restart the IDE to check read state persists.
+      Another IDE user has independent unread state; shared story files do not change.
+- [ ] A question that exposes unclear wording can trigger `code_story_patch`, then
+      `code_story_reply`. The answer shows the plugin’s **Story changes** line.
+      Replacing the full story keeps threads by step ID; removed-step threads appear
+      at story level with “step removed”.
 - [ ] **Comment on step**, **Comment on story** and the context-menu **Comment** open an
       input with keyboard focus. Ctrl+Enter and **Save Draft** save a draft; Escape and
       **Cancel** discard the input. Drafts can be edited and deleted.

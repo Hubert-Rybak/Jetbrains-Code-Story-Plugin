@@ -1,5 +1,8 @@
 package io.github.hubertrybak.codestory.core
 
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -85,6 +88,18 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             val kind = choice(element, "kind", "$label.kind", owner, ThreadKind.entries.associateBy { it.value })
             val state = choice(element, "state", "$label.state", owner, ThreadState.entries.associateBy { it.value })
             val removedStep = nullableText(element, "removedStep", owner, THREAD_HINT, "$label.removedStep")
+            val baseline = element["storyBaseline"]?.takeUnless { it == JsonNull }?.let {
+                try {
+                    Json.decodeFromJsonElement<List<StoryStepSnapshot>>(it).also { snapshots ->
+                        if (snapshots.size > StoryLimits.MAX_STEPS || snapshots.any { snapshot -> snapshot.id.isBlank() || !snapshot.fingerprint.matches(Regex("[0-9a-f]{64}")) }) {
+                            error(owner, ErrorCode.INVALID_VALUE, "${owner.where}, `$label.storyBaseline` is invalid.", THREAD_HINT)
+                        }
+                    }
+                } catch (_: SerializationException) {
+                    error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `$label.storyBaseline` must be a list of step snapshots.", THREAD_HINT)
+                }
+            }
+            val changes = nullableText(element, "pendingStoryChanges", owner, THREAD_HINT, "$label.pendingStoryChanges")
             val messages = when (val list = element["messages"]) {
                 is JsonArray -> list.mapIndexed { index, message -> message(owner, "$label.messages[${index + 1}]", message) }
                     .also { if (it.isEmpty()) error(owner, ErrorCode.MISSING_FIELD, "${owner.subject} has no messages in `$label`.", THREAD_HINT) }
@@ -92,7 +107,7 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
                 else -> error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `$label.messages` must be a list.", THREAD_HINT)
             }
             return if (id != null && kind != null && state != null && messages != null && messages.isNotEmpty() && messages.all { it != null }) {
-                StoryThread(id, kind, state, messages.filterNotNull(), removedStep)
+                StoryThread(id, kind, state, messages.filterNotNull(), removedStep, baseline, changes)
             } else null
         }
 
@@ -110,9 +125,10 @@ class StoryValidator(private val files: StoryFiles?, private val readMetadata: B
             }
             // Only agent replies have an outcome.
             val outcome = if (author == MessageAuthor.AGENT) choice(element, "outcome", "$label.outcome", owner, ReplyOutcome.entries.associateBy { it.value }) else null
+            val changes = if (author == MessageAuthor.AGENT) nullableText(element, "storyChanges", owner, THREAD_HINT, "$label.storyChanges") else null
             val text = text(element, "text", owner, THREAD_HINT, "$label.text")
             return if (author != null && round != null && time != null && text != null && (author == MessageAuthor.READER || outcome != null)) {
-                ThreadMessage(author, round, time, text, outcome)
+                ThreadMessage(author, round, time, text, outcome, changes)
             } else null
         }
 
