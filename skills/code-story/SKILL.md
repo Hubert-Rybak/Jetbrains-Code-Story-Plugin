@@ -1,6 +1,6 @@
 ---
 name: code-story
-description: Builds or revises a short, clickable code story in the developer's JetBrains IDE, and answers the reader's comments on it. Use for /code-story <request> ($code-story in Codex), /code-story feedback, guided walkthroughs, code tours, bug traces and review handoffs.
+description: Builds or revises a short, clickable code story in the developer's JetBrains IDE, answers reader questions and applies change requests with synchronized steps. Use for /code-story <request> ($code-story in Codex), /code-story feedback, guided walkthroughs, code tours, bug traces and review handoffs.
 ---
 
 # Code Story
@@ -19,9 +19,11 @@ Use it for `/code-story feedback [storyId]` (`$code-story feedback` in Codex). T
 1. Call `code_story_feedback` with `projectPath`, and with `storyId` when the developer names a story. It returns the comments that wait for an agent, oldest round first, each with its story, step, thread history, `threadId` and `round`.
 2. Answer each question from the story, its thread and the code. Read the code before you answer. Never change code for a question. If the code needs a change, say so in the answer and suggest that the developer asks for it as a change request.
 3. If a question shows that the story was unclear, call `code_story_get` for stable step IDs, then use `code_story_patch` to improve step text or insert an explanation. Read its report and fix errors before replying. These edits change the story only, never the code. The plugin adds a “Story changes” line to the reply; do not write this line yourself.
-4. For each story, call `code_story_reply` with `storyId` and one reply per comment: its `threadId` and `round`, the outcome `answered`, or `declined` with the reason, and your text. Follow the answer rules in the guide.
-5. Read `errors`, `warnings` and `next`. Fix rejected replies and send only those again. Do not reply again to a comment that is already answered.
-6. Summarize in the chat what you answered and which story steps you improved, and point the developer to the Code Story tool window for the answers.
+4. For a Change request (`kind: change`), read the code and apply the requested change with your normal tools and permission prompts. Decline with a reason when you cannot or should not make the change. Then review every affected story step, including steps elsewhere in the story: re-anchor or rewrite it with `code_story_patch`, remove it if obsolete, or use `{"op":"confirm","stepId":"..."}` only after reading the current code and checking that the explanation still fits. Confirm saves the current code as the step's reference.
+5. For Refresh requests (`kind: refresh`), refresh all `code-changed` and `lost` steps through the same patch path. Also refresh `staleSteps` when there are no comments; no reply is needed in that case. A missing file or range needs a new location or removal. Refresh changes the story, not the code.
+6. For each story, call `code_story_reply` with `storyId`, `repositoryPath` from feedback, and one reply per comment: its `threadId` and `round`, an outcome and `text`. Use `answered` for questions, `done` for completed change or refresh requests, and `declined` with a reason otherwise. For `done`, give a short summary in `text` and a `changedFiles` array of repository-relative code paths (use `[]` when no code files changed). Follow the answer rules in the guide.
+7. Read `errors`, `warnings` and `next`. A `stale-steps` error lists steps that still need review: update, replace or confirm them, then retry only rejected replies. Another code edit after review requires another review. Do not reply again to a comment that is already answered.
+8. Summarize in the chat what you answered, changed or declined, and point the developer to the Code Story tool window for details. Optional hooks only remind you that feedback is pending; process it when the developer asks or agrees.
 
 Feedback needs the Code Story tools. If they are missing, tell the developer to switch on Settings | Tools | MCP Server.
 

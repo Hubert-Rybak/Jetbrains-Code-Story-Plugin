@@ -310,6 +310,34 @@
           "description": "Plugin-owned summary of author revisions since the first edit for this received comment. Copied to the agent reply and cleared after the reply.",
           "type": "string",
           "minLength": 1
+        },
+        "stepsToSync": {
+          "description": "Plugin-owned stale step IDs that still need review after feedback was fetched. Cleared as steps are updated, replaced or confirmed.",
+          "type": "array",
+          "maxItems": 15,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "confirmedSteps": {
+          "description": "Plugin-owned IDs explicitly confirmed while the comment was received; used for the Story changes summary.",
+          "type": "array",
+          "maxItems": 15,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "previousKind": {
+          "description": "Plugin-owned prior thread kind, restored when an unfetched follow-up is withdrawn. Cleared when fetched.",
+          "enum": [
+            "question",
+            "change",
+            "refresh"
+          ]
         }
       }
     },
@@ -356,6 +384,15 @@
           "description": "Agent replies only. Automatic summary of story edits made while the comment was received, computed by the plugin. Displayed as Story changes; agents cannot set it.",
           "type": "string",
           "minLength": 1
+        },
+        "changedFiles": {
+          "description": "Agent-reported repository-relative changed code paths. Present on done replies; an empty list means no code files changed.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     }

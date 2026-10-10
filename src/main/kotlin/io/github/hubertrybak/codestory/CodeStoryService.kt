@@ -142,15 +142,18 @@ class CodeStoryService(private val project: Project) : Disposable {
         if (matches.size > 1) return rejected(ErrorCode.REPOSITORY_REQUIRED, "That story ID exists in several repositories. Pass repositoryPath from code_story_list.")
         val stored = matches.singleOrNull() ?: return rejected(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.")
         val folder = StoryFolder(stored.root)
-        val files = readAction { ideFiles(stored.root) }
+        val live = AnchorTracker.getInstance(project).snapshot()
+        val files = readAction { ideFiles(stored.root, live) }
         var report: ShowReport? = null
         val result = folder.update(storyId) { previous ->
-            val patched = StoryPatch.apply(previous, storyId, operations)
+            val current = StoryAnchors.resolve(previous, files, live?.takeIf { it.storyKey == stored.key }?.ranges.orEmpty()).story
+            val patched = StoryPatch.apply(current, storyId, operations, files)
             if (patched.errors.isNotEmpty()) {
                 report = ShowReport.rejected(patched.errors)
                 return@update previous
             }
-            val checked = when (val validation = StoryValidator(files).validate(patched.story)) {
+            val unchanged = current.steps.filter { it.id !in patched.updatedIds }.associateBy { checkNotNull(it.id) }
+            val checked = when (val validation = StoryValidator(files, unchangedSteps = unchanged).validate(patched.story)) {
                 is ValidationResult.Invalid -> {
                     report = ShowReport.rejected(validation.errors, corrections = validation.corrections)
                     return@update previous
@@ -162,20 +165,10 @@ class CodeStoryService(private val project: Project) : Disposable {
                 return@update previous
             }
             val (validated, baseWarnings) = StoryChangeInfo.getInstance(project).resolveBase(stored.root, checked.story)
-            val byId = previous.steps.associateBy { it.id }
-            val revised = validated.copy(
-                createdAt = previous.createdAt, git = previous.git, delivery = StoryFormat.MCP_DELIVERY,
-                // Validation of other steps must not silently confirm code that they no longer explain.
-                steps = validated.steps.map { step ->
-                    val old = byId[step.id]
-                    if (old != null && step.id !in patched.updatedIds && step.location != null) {
-                        step.copy(location = step.location.copy(rangeText = old.location?.rangeText))
-                    } else step
-                },
-            )
+            val revised = validated.copy(createdAt = previous.createdAt, git = previous.git, delivery = StoryFormat.MCP_DELIVERY)
             val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(revised) + baseWarnings
             report = ShowReport.accepted(storyId, folder.relativePath(stored.file), warnings, checked.corrections)
-            StoryRevisions.record(previous, StoryThreads.carryOver(previous, revised))
+            StoryRevisions.record(previous, StoryThreads.carryOver(previous, revised), patched.updatedIds, patched.confirmedIds)
         }
         when (result) {
             StoryFolder.UpdateResult.NotFound -> return rejected(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.")
@@ -313,6 +306,16 @@ class CodeStoryService(private val project: Project) : Disposable {
         return true
     }
 
+    /** Adds a refresh item immediately, including when there are no reader drafts. */
+    fun requestRefresh(stored: StoredStory, stepId: String? = null): Boolean {
+        val result = StoryFolder(stored.root).update(stored.id) { story ->
+            StoryThreads.requestRefresh(story, stepId?.takeIf { id -> story.steps.any { it.id == id } }, Instant.now())
+        }
+        threadsChanged(listOf(changedStory(result, null) ?: return false))
+        roundSubmitted(1)
+        return true
+    }
+
     /**
      * Handles `code_story_feedback`: the reader comments that wait for an agent, in one story or in
      * all of them. Fetched comments become "received" and stay available until an agent replies.
@@ -327,15 +330,21 @@ class CodeStoryService(private val project: Project) : Disposable {
             }.ifEmpty { return null }
         // The agent gets what this update marked, so a comment that arrives meanwhile waits for the next call.
         val marked = mutableListOf<StoredStory>()
+        val live = AnchorTracker.getInstance(project).snapshot()
         val fetched = found.mapNotNull { stored ->
-            when (val result = StoryFolder(stored.root).update(stored.id, StoryThreads::markReceived)) {
+            val files = ideFiles(stored.root, live)
+            when (val result = StoryFolder(stored.root).update(stored.id) { story ->
+                val resolved = StoryAnchors.resolve(story, files, live?.takeIf { it.storyKey == stored.key }?.ranges.orEmpty())
+                StoryThreads.markReceived(story, resolved.story.steps.mapIndexedNotNull { index, step ->
+                    step.id?.takeIf { resolved.statuses[index] in listOf(StepStatus.CODE_CHANGED, StepStatus.LOST) }
+                })
+            }) {
                 is StoryFolder.UpdateResult.Updated -> result.stored.also(marked::add)
                 is StoryFolder.UpdateResult.Unchanged -> result.stored
                 StoryFolder.UpdateResult.NotFound, is StoryFolder.UpdateResult.TooLarge -> null
             }
         }
         threadsChanged(marked)
-        val live = AnchorTracker.getInstance(project).snapshot()
         val resolved = fetched.map { resolve(StoryFolder(it.root), it, ideFiles(it.root, live), live) }
         return StoryFeedback.report(resolved, requested = storyId != null)
     }
@@ -354,7 +363,15 @@ class CodeStoryService(private val project: Project) : Disposable {
             ?: return failed(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.", "Call code_story_feedback for the current comments and story IDs.")
         val (parsed, inputErrors) = ReplyInput.parse(replies)
         var replied: StoryThreads.ReplyResult? = null
-        val result = StoryFolder(stored.root).update(storyId) { story -> StoryThreads.reply(story, parsed, Instant.now()).also { replied = it }.story }
+        val live = AnchorTracker.getInstance(project).snapshot()
+        val files = ideFiles(stored.root, live)
+        val result = StoryFolder(stored.root).update(storyId) { story ->
+            val resolved = StoryAnchors.resolve(story, files, live?.takeIf { it.storyKey == stored.key }?.ranges.orEmpty())
+            val stale = story.steps.mapIndexedNotNull { index, step ->
+                step.id?.takeIf { resolved.statuses[index] in listOf(StepStatus.CODE_CHANGED, StepStatus.LOST) }
+            }.toSet()
+            StoryThreads.reply(story, parsed, Instant.now(), stale).also { replied = it }.story
+        }
         if (result is StoryFolder.UpdateResult.TooLarge) return ReplyReport.of(storyId, emptyList(), (inputErrors + parsed.map { (index, reply) ->
             ReplyIssue(index + 1, reply.threadId, ErrorCode.STORY_TOO_LARGE.code, ReportItem.storyTooLarge(result.bytes).message, "Shorten the replies.")
         }).sortedBy { it.reply }, emptyList())

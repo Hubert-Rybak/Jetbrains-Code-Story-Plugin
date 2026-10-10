@@ -80,11 +80,11 @@ class CodeStoryToolset : McpToolset {
     ): ShowReport = withService { it.show(story.json, storyId, repositoryPath) }
 
     @McpTool(name = "code_story_patch")
-    @McpDescription(description = "Edits a saved story atomically with ordered operations. Use op update with stepId and title, comment or location (including anchorText; null removes the location); op insert with afterStepId and a complete step; or op remove with stepId. Read code_story_get for stable IDs. All operations pass the same validation as code_story_show and return its report; any error saves nothing. Threads stay on their steps by ID; removed-step threads move to the story with a step removed note. The plugin records story changes for fetched comments and adds the summary to code_story_reply. Always pass projectPath, and repositoryPath when IDs are ambiguous.")
+    @McpDescription(description = "Edits a saved story atomically with ordered operations. Use op update with stepId and title, comment or location (including anchorText; null removes the location); op insert with afterStepId and a complete step; op remove with stepId; or op confirm with stepId to make the current code the new reference. Read code_story_get for stable IDs. All operations pass the same validation as code_story_show and return its report; any error saves nothing. Threads stay on their steps by ID; removed-step threads move to the story with a step removed note. The plugin records story changes for fetched comments and adds the summary to code_story_reply. Always pass projectPath, and repositoryPath when IDs are ambiguous.")
     suspend fun patchStory(
         @McpDescription(description = "The existing story ID from code_story_get or code_story_feedback.")
         storyId: String,
-        @McpDescription(description = "Ordered update, insert and remove operations. Any error rejects the entire patch.")
+        @McpDescription(description = "Ordered update, insert, remove and confirm operations. Any error rejects the entire patch.")
         operations: List<PatchArgument>,
         @McpDescription(description = "Absolute repository root from code_story_list or code_story_feedback.")
         repositoryPath: String? = null,
@@ -96,8 +96,9 @@ class CodeStoryToolset : McpToolset {
         |Returns the reader's comments that wait for an agent, oldest round first. Use it for /code-story feedback.
         |The reader writes comments on steps or on the whole story in the IDE and submits them as a numbered round.
         |Each comment has storyId, round, threadId, kind, target (story or step), the step (ID, number, title, comment, current lines and status),
-        |the comment text and the earlier messages of its thread. staleSteps lists steps whose code changed or is lost.
+        |the comment text and the earlier messages of its thread. staleSteps lists steps whose code changed or is lost, including stories without comments when no comments wait.
         |Fetched comments become "received" (the reader sees that an agent works on them) and stay available until an agent replies.
+        |Apply change requests with your normal permission prompts, then update or confirm all affected steps with code_story_patch. Refresh stale steps even without comments.
         |Answer every comment with code_story_reply. Never change code for a question. If the explanation was unclear, improve step text or insert steps with code_story_patch before you reply. Always pass projectPath.
         """,
     )
@@ -115,7 +116,9 @@ class CodeStoryToolset : McpToolset {
     @McpDescription(
         description = """
         |Saves your replies to the reader's comments from code_story_feedback. Send one reply per comment, with its threadId and round.
-        |Use outcome "answered" for a question, or "declined" with the reason when you cannot or should not answer.
+        |Use outcome "answered" for a question, "done" for a change or refresh request, or "declined" with a reason.
+        |For done, summarize the changes in text and supply changedFiles as repository-relative paths ([] for a story-only refresh).
+        |Done is rejected with stale-steps until every stale step has been updated, replaced or confirmed after feedback was fetched. Later code edits require another review.
         |Answer from the story, the thread and the code, in 1 to 5 short sentences, or one lead sentence and up to 6 bullet items; 100 words at most.
         |A reason to decline has 1 to 3 sentences. Use the Markdown subset of story comments; links to repository files with lines are allowed.
         |Each reply is saved or rejected on its own. The first reply to a comment wins: a reply to a comment that is already answered gets the error already-answered.

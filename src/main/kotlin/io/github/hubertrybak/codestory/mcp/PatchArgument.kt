@@ -31,12 +31,13 @@ internal enum class PatchOperation {
     @SerialName("update") UPDATE,
     @SerialName("insert") INSERT,
     @SerialName("remove") REMOVE,
+    @SerialName("confirm") CONFIRM,
 }
 
 @Serializable
 internal class PatchShape(
     val op: PatchOperation,
-    @property:McpDescription("For update or remove: the stable ID of the step from code_story_get.")
+    @property:McpDescription("For update, remove or confirm: the stable ID of the step from code_story_get.")
     val stepId: String? = null,
     @property:McpDescription("For insert: put the new step immediately after this step ID.")
     val afterStepId: String? = null,

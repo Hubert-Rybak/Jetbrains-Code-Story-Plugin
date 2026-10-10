@@ -86,7 +86,9 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         assertEquals(setOf("storyId", "replies"), reply.requiredProperties.toSet() - "projectPath")
         val replies = reply.propertiesSchema.getValue("replies").toString()
         for (field in listOf("threadId", "round", "outcome", "text", "\"answered\"", "\"declined\"")) assertTrue(replies, replies.contains(field))
-        assertFalse(replies, replies.contains("\"done\""))
+        assertTrue(replies, replies.contains("\"done\""))
+        assertTrue(replies, replies.contains("changedFiles"))
+        assertTrue(operations, operations.contains("\"confirm\""))
     }
 
     fun `test guide comes from this plugin version and includes a valid example`() {

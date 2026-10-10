@@ -41,6 +41,21 @@ class CodeStorySetupTest : HeavyPlatformTestCase() {
         } finally { user.toFile().deleteRecursively() }
     }
 
+    fun `test setup offers optional hook snippets without installing hooks`() {
+        val status = CodeStorySetup.getInstance().status(project)
+        assertTrue(status.text().contains("pending-feedback.json"))
+        assertTrue(status.text().contains("never installs hooks"))
+        val snippets = CodeStoryFeedbackHooks.snippets
+        assertTrue(snippets.contains("~/.claude/settings.json"))
+        assertTrue(snippets.contains("~/.codex/hooks.json"))
+        assertTrue(snippets.contains(".github/hooks/code-story.json"))
+        assertTrue(snippets.contains("SessionStart") && snippets.contains("UserPromptSubmit") && snippets.contains("sessionStart"))
+        val root = Path.of(project.basePath!!)
+        assertFalse(Files.exists(root.resolve(".codex")))
+        assertFalse(Files.exists(root.resolve(".claude")))
+        assertFalse(Files.exists(root.resolve(".github/hooks")))
+    }
+
     fun `test setup remains available without MCP`() {
         ExtensionTestUtil.maskExtensions(StoryMcpSupport.EP, emptyList(), testRootDisposable)
         val unavailable = CodeStorySetup.getInstance().status(project)

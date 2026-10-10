@@ -47,6 +47,8 @@ class StoryComments(
 
     private fun changed() = project.messageBus.syncPublisher(StoryReaderListener.TOPIC).readerChanged()
 
+    fun requestRefresh(stored: StoredStory, stepId: String?) = changeFile { service.requestRefresh(stored, stepId) }
+
     fun submit(stored: StoredStory) = changeFile { service.submitRound(stored) }
 
     fun withdraw(stored: StoredStory, thread: StoryThread) = changeFile {

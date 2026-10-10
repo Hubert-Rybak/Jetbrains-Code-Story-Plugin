@@ -22,6 +22,8 @@ import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
+import javax.swing.ButtonGroup
+import javax.swing.JToggleButton
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -89,11 +91,16 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
             }
             registerKeyboardAction({ close() }, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_FOCUSED)
         }
+        val question = JToggleButton("Question", draft.kind == ThreadKind.QUESTION)
+        val change = JToggleButton("Change request", draft.kind == ThreadKind.CHANGE)
+        val kind: ThreadKind get() = if (draft.kind == ThreadKind.REFRESH) ThreadKind.REFRESH else if (change.isSelected) ThreadKind.CHANGE else ThreadKind.QUESTION
+        private val kindGroup = ButtonGroup().apply { add(question); add(change) }
         val save = JButton("Save Draft").apply { addActionListener { save() } }
         val cancel = JButton("Cancel").apply { addActionListener { close() } }
         val component = JPanel(VerticalLayout(4)).apply {
             isOpaque = false
             add(JBLabel(title))
+            if (draft.kind != ThreadKind.REFRESH) add(row(question, change))
             add(text)
             add(row(save, cancel))
         }
@@ -103,7 +110,7 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
             val value = text.text.trim()
             if (value.isEmpty()) return close()
             input = null
-            comments.save(draft.copy(text = value))
+            comments.save(draft.copy(text = value, kind = kind))
             rebuild()
         }
 
@@ -122,12 +129,12 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
     /** The input of the shown story or step, if the reader started one. */
     fun shownInput(): Input? = stored?.let { stored -> input?.takeIf { it.target == target(stored) } }
 
-    /** Opens the input for a new question about the shown story or step. */
+    /** Opens the input for a new comment about the shown story or step. */
     fun startComment() {
         shownInput()?.let { it.text.requestFocusInWindow(); return }
         val stored = stored ?: return
         val step = stepIndex?.let { stored.story.steps[it] }
-        open(StoryDraft(story = stored.key, step = step?.id), if (step == null) "New question about the story" else "New question about this step")
+        open(StoryDraft(story = stored.key, step = step?.id), if (step == null) "New comment about the story" else "New comment about this step")
     }
 
     private fun open(draft: StoryDraft, title: String) {
@@ -164,7 +171,7 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
         val old = previous.shownInput() ?: return
         val stored = stored ?: return
         if (old.target != target(stored)) return
-        input = Input(old.target, old.draft.copy(text = old.text.text), old.title)
+        input = Input(old.target, old.draft.copy(text = old.text.text, kind = old.kind), old.title)
         expanded = previous.expanded
     }
 
@@ -193,7 +200,7 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
             if (resolved > 0) add(showResolved, BorderLayout.EAST)
         })
         for (thread in shown) add(threadView(stored, step?.id, thread, replies[thread.id]?.takeIf { it.id != editing }))
-        for (draft in newDrafts.filter { it.id != editing }) add(draftView(draft, "Draft question"))
+        for (draft in newDrafts.filter { it.id != editing }) add(draftView(draft, "Draft ${threadKindLabel(draft.kind).lowercase()}"))
         if (shown.isEmpty() && newDrafts.isEmpty() && input == null) {
             add(note(if (resolved > 0) "Resolved threads are hidden." else "No comments yet. Ask a question, then submit it to your agent."))
         }
@@ -217,6 +224,7 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
             add(JBLabel(header(message)).apply { font = JBFont.small(); foreground = UIUtil.getContextHelpForeground() })
             add(text(message.text))
             message.storyChanges?.let { add(note("Story changes: $it")) }
+            if (message.changedFiles.isNotEmpty()) add(note("Changed files: ${message.changedFiles.joinToString()}"))
         }
         reply?.let { add(draftView(it, "Draft reply")) }
         val replying = input?.draft?.thread == thread.id
@@ -224,7 +232,7 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
         add(row(
             ActionLink("Withdraw") { comments.withdraw(stored, thread) }
                 .apply { isVisible = thread.state == ThreadState.SUBMITTED && last?.author == MessageAuthor.READER },
-            ActionLink("Reply") { open(StoryDraft(story = stored.key, step = stepId, thread = thread.id, kind = thread.kind), "Reply in this thread") }
+            ActionLink("Reply") { open(StoryDraft(story = stored.key, step = stepId, thread = thread.id), "Reply in this thread") }
                 .apply { isVisible = !thread.state.isPending && reply == null && !replying },
             ActionLink("Resolve") { comments.resolve(stored, thread) }
                 .apply { isVisible = !thread.state.isPending && thread.state != ThreadState.RESOLVED },

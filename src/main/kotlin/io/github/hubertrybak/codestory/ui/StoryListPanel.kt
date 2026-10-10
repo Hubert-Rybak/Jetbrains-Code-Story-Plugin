@@ -97,7 +97,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     private val comments = StoryComments(project, ::manageStory)
     val details = StoryDetailsPanel(comments, ::showDiff)
     /** The context menu of stories and steps. */
-    val contextActions = DefaultActionGroup(RestartAction(), CommentAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
+    val contextActions = DefaultActionGroup(RestartAction(), CommentAction(), RequestRefreshAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
     val toolbarActions = DefaultActionGroup().apply {
         add(PlayAction())
         add(ActionManager.getInstance().getAction("CodeStory.PreviousStep"))
@@ -365,6 +365,14 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
         override fun actionPerformed(e: AnActionEvent) { details.comments?.startComment() }
+    }
+
+    private inner class RequestRefreshAction : DumbAwareAction("Request refresh", "Ask your agent to refresh stale steps", AllIcons.Actions.Refresh) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
+        override fun actionPerformed(e: AnActionEvent) {
+            selectedStory()?.let { comments.requestRefresh(it, selectedStep()?.step?.id) }
+        }
     }
 
     /** Writes all comment drafts of the selected story into its file as one round for the agent. */

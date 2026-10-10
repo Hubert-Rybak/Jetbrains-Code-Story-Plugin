@@ -14,6 +14,7 @@ import com.intellij.testFramework.PlatformTestUtil
 import io.github.hubertrybak.codestory.core.DraftComment
 import io.github.hubertrybak.codestory.core.ErrorCode
 import io.github.hubertrybak.codestory.core.StepStatus
+import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
@@ -27,6 +28,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
@@ -82,6 +85,25 @@ class StoryFileDropTest : HeavyPlatformTestCase() {
         start()
         await { player.currentStory?.id == ID }
         assertEquals(0, player.stepIndex)
+    }
+
+    fun `test pending index rebuilds from shared stories at startup and after external removal`() {
+        val folder = service.storyFolder()
+        Files.createDirectories(folder.sharedDir)
+        val file = folder.sharedDir.resolve("$ID.story.json")
+        val original = (StoryFormat.decode(contents()) as StoryFormat.Decoded.Valid).story
+        val pending = StoryThreads.submit(original, listOf(DraftComment("A shared question?")), Instant.now())
+        Files.writeString(file, StoryFormat.encode(pending, ID))
+        val index = folder.localDir.resolve(StoryFolder.PENDING_INDEX)
+        start()
+        fun count(): String? = runCatching {
+            Json.parseToJsonElement(Files.readString(index)).jsonObject.getValue("pendingComments").jsonPrimitive.content
+        }.getOrNull()
+        await { count() == "1" }
+        assertNull(player.currentStory)
+        assertTrue(Files.exists(folder.localDir.resolve(".gitignore")))
+        Files.delete(file)
+        await { count() == "0" }
     }
 
     fun `test a changed drop reloads at the current step`() {

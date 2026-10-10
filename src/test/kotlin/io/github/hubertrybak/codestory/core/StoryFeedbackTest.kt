@@ -51,8 +51,9 @@ class StoryFeedbackTest {
     fun `stale steps come with comments or for the requested story`() {
         val quiet = stored("2026-10-08-quiet", story("Quiet"), listOf(StepStatus.LOST, StepStatus.OK))
         val none = StoryFeedback.report(listOf(quiet), requested = false)
-        assertTrue(none.comments.isEmpty() && none.staleSteps.isEmpty())
-        assertTrue(none.next.contains("No comments"))
+        assertTrue(none.comments.isEmpty())
+        assertEquals(listOf(StepStatus.LOST), none.staleSteps.map { it.status })
+        assertTrue(none.next.contains("code_story_patch"))
         assertEquals(listOf(StepStatus.LOST), StoryFeedback.report(listOf(quiet), requested = true).staleSteps.map { it.status })
     }
 
@@ -72,7 +73,7 @@ class StoryFeedbackTest {
         val (parsed, errors) = ReplyInput.parse(replies)
         assertEquals(listOf(IndexedValue(0, AgentReply("a", 1, ReplyOutcome.ANSWERED, "Because.")), IndexedValue(1, AgentReply("b", 2, ReplyOutcome.DECLINED, "Not now."))), parsed)
         assertEquals(listOf(
-            3 to ErrorCode.MISSING_FIELD, 4 to ErrorCode.INVALID_VALUE, 5 to ErrorCode.INVALID_VALUE, 6 to ErrorCode.INVALID_VALUE,
+            3 to ErrorCode.MISSING_FIELD, 4 to ErrorCode.INVALID_VALUE, 5 to ErrorCode.INVALID_VALUE, 6 to ErrorCode.MISSING_FIELD,
             7 to ErrorCode.EMPTY_TEXT, 8 to ErrorCode.EMPTY_TEXT, 8 to ErrorCode.MISSING_FIELD, 9 to ErrorCode.WRONG_TYPE,
         ), errors.map { it.reply to ErrorCode.entries.single { code -> code.code == it.code } })
         assertEquals(listOf(null, "c", "d", "e", "f", null, null, null), errors.map { it.threadId })

@@ -37,6 +37,7 @@ enum class ErrorCode(val code: String) {
     ALREADY_ANSWERED("already-answered"),
     NOT_FETCHED("not-fetched"),
     OUTCOME_MISMATCH("outcome-mismatch"),
+    STALE_STEPS("stale-steps"),
 }
 
 /** Machine-readable codes of changes that the plugin made to keep a story. */
