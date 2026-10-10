@@ -334,10 +334,11 @@ Ask your agent about a story, or ask it for a code change, without leaving the I
    writes all drafts of the story into the story file as one numbered round. Until an
    agent fetches a comment, it shows "Waiting for agent", and you can **Withdraw** it back
    to your drafts.
-3. **Hand it to your agent.** Tell your agent `/code-story feedback`
-   (`$code-story feedback` in Codex); the notification and the details pane have buttons
-   that copy the command. Any agent session in the project can process the round. A
-   fetched comment shows "Agent working".
+3. **Your listening agent picks it up.** The bundled skill calls `code_story_listen`
+   after showing a story and after each reply, so Submit Round needs no extra chat
+   prompt. A fetched comment shows "Agent working". If your agent has stopped, tell it
+   `/code-story feedback` (`$code-story feedback` in Codex); the notification and details
+   pane have buttons to copy the command.
 4. **Read the answers.** A notification tells you that answers arrived, and **Open**
    shows the story. The answers appear under your comments, and a story that is playing
    keeps its step. Step rows show open-thread counts and a dot for unread answers;
@@ -347,8 +348,18 @@ Ask your agent about a story, or ask it for a code change, without leaving the I
    in the next round. **Resolve** closes a thread; resolved threads are hidden until you
    select **Show resolved**.
 
-The agent calls `code_story_feedback` to get the comments that wait, oldest round first,
-and answers each one with `code_story_reply`: `answered` for questions, `done` for change
+Listening is enabled by default. Install the current bundled skill with **Tools | Code
+Story | Install Code Story skill** to enable this workflow. Disable **Let connected
+agents listen for submitted feedback automatically** in **Settings | Tools | Code Story**
+for manual feedback only. You can also cancel the waiting agent or tell it to stop.
+The tool waits up to 25 seconds per call; the skill reconnects after timeout and after
+answering a round. Drafts do not wake it. Listening requires an active agent session;
+it cannot restart an agent that ended its turn. Copilot in Rider needs no hook when its
+client supports active waiting calls. Optional hooks only remind sessions that are not
+listening.
+
+The listening tool uses the same fetch path as `code_story_feedback`, oldest round first.
+The agent answers each comment with `code_story_reply`: `answered` for questions, `done` for change
 or refresh requests, or `declined` with a reason.
 
 - **Questions:** the agent answers from the story, the thread and the code, and never
@@ -362,9 +373,9 @@ or refresh requests, or `declined` with a reason.
   be updated, replaced or confirmed after the round was fetched, and a later code edit
   requires another review.
 - **Request refresh**, in the story or step context menu, adds a refresh item to the
-  story’s latest unfetched round (or starts a new round). `/code-story feedback` then
-  refreshes the stale steps. With no pending comments, feedback mode still finds and
-  refreshes **code changed** and **lost** steps.
+  story’s latest unfetched round (or starts a new round). The listening agent picks it
+  up automatically; use `/code-story feedback` if the agent has stopped. With no pending
+  comments, feedback mode still finds and refreshes **code changed** and **lost** steps.
 
 Threads are part of the story file, so they travel with a shared story, and a comment on
 a shared story changes that file. Unread state stays in your IDE workspace across
@@ -385,6 +396,7 @@ withdrawn or deleted. The IDE refreshes it on project open and story file change
 The plugin never installs hooks. The snippets need Python 3; replace `python3` with your
 Python executable if needed. Merge the configuration with existing hooks. The reminders
 ask the agent to mention pending feedback and process it when you ask or agree.
+They do not push feedback to the agent or start feedback mode.
 
 Save this helper as `~/.codestory/feedback-hook.py` (create the directory yourself):
 
@@ -480,6 +492,7 @@ Agent references: [Claude Code hooks](https://code.claude.com/docs/en/hooks),
 | Bring the IDE to the front on a new story | On | A new story brings the IDE window to the front. When it is off, the story still opens and plays. |
 | Include passive voice and -ing hints in agent reports | Off | Adds these optional writing hints to the agent's reports. Code text such as "string" or "mapping" can give false hints. |
 | Install the Code Story skill in the current project instead of the user folder | Off | **Install Code Story skill** writes to `.agents/skills/` and `.claude/skills/` at the repository root instead of your home folder. |
+| Let connected agents listen for submitted feedback automatically | On | Waiting agents pick up Submit Round. Turning this off ends waiting calls; manual feedback remains available. |
 | Highlight color | Use theme default | The background of the current step's range. Clear **Use theme default** to choose a color; transparency is supported. |
 
 Other places:
@@ -493,7 +506,7 @@ Other places:
 
 ## Agent tools
 
-The plugin adds seven tools to the IDE's MCP server. Each call needs the `projectPath` of
+The plugin adds eight tools to the IDE's MCP server. Each call needs the `projectPath` of
 an open project, and each result names the agent's next call. `repositoryPath`, the
 absolute repository root, selects the repository when paths or story IDs match several
 repositories, or for a text-only story.
@@ -505,6 +518,7 @@ repositories, or for a text-only story.
 | `code_story_list` | Lists local and shared stories: ID, title, type, date, branch, repository path, folder, status (`ok`, `moved`, `code-changed` or `lost`, with step counts) and `pendingComments`. |
 | `code_story_get` | Returns the full saved story with its comment threads. |
 | `code_story_patch` | Edits a story with ordered `update`, `insert`, `remove` and `confirm` operations. |
+| `code_story_listen` | Waits for submitted rounds by default. Returns feedback, a timeout to reconnect, or stopped when listening is disabled. |
 | `code_story_feedback` | Returns the reader's comments that wait for an agent, oldest round first, and the stale steps. |
 | `code_story_reply` | Saves one reply per comment: `answered`, `done` with `changedFiles` (`[]` when no code files changed), or `declined` with a reason. |
 
@@ -548,9 +562,10 @@ comment was received.
   deliver stories as files and get no validation report.
 - **One IDE per agent connection.** An agent talks to the MCP server of the IDE that it
   is configured for. When the project is not open in that IDE, the skill writes a file.
-- **No push to the agent.** After **Submit Round**, tell your agent `/code-story feedback`.
-  The hooks only remind the agent, and Copilot in Rider has no suitable hook. A listening
-  mode is planned for v1.1.
+- **Listening needs an active agent.** Submit Round is picked up automatically while
+  the agent keeps `code_story_listen` active. The plugin cannot restart an ended agent
+  turn. If the client disconnects or cannot maintain waiting calls, resume with
+  `/code-story feedback`. Hooks are optional reminders, not a requirement for listening.
 - **Text anchors.** Steps anchor to a file, a line range and the text of the first line,
   not to code symbols. After large edits, steps can be **lost** until the agent
   refreshes them.
@@ -616,7 +631,8 @@ in temporary user and project folders; setup tests cover status and first-run gu
 Management tests cover share/unshare, deletion confirmation, shared arrivals without
 playback, repository grouping and separate reader state for duplicate story IDs.
 Core tests also cover Markdown export, including text-only steps and escaped paths.
-Feedback tests submit rounds in the fixture, call `code_story_feedback` and
+Feedback tests cover listening, timeout, cancellation, settings and repository scope,
+submit rounds in the fixture, call `code_story_feedback` and
 `code_story_reply`, and check thread states, withdraw, "already answered", thread
 preservation on revision, drafts in workspace storage and the details pane; core tests
 cover the thread state machine, the thread format and the answer checks.

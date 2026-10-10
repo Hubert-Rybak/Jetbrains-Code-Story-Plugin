@@ -74,7 +74,7 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         val stored = show(story(step(id = quoted("entry")), step(start = "5", end = "6", id = quoted("core"))))
         openPanel()
         selectStep(stored, "entry")
-        assertTrue(notes().contains("No comments yet. Ask a question, then submit it to your agent."))
+        assertTrue(notes().contains("No comments yet. Ask a question, then use Submit Round. Your listening agent picks it up automatically."))
         assertFalse(comments.submit.isEnabled)
 
         link("Comment on step").doClick()
@@ -125,7 +125,7 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         await { labels().contains("Question · Waiting for agent") }
         assertEmpty(reader.drafts(stored.key))
         assertTrue(notes().contains("What is missing?"))
-        assertTrue(notes().contains("Waiting for your agent: tell it /code-story feedback"))
+        assertTrue(notes().contains("Listening agents pick up submitted feedback automatically."))
         link("Copy").doClick()
         assertEquals("/code-story feedback", CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor))
         link("Copy for Codex").doClick()
@@ -142,7 +142,7 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         background { service.feedback(null, null) }
         await { labels().contains("Question · Agent working") }
         assertNull(links().firstOrNull { it.text == "Withdraw" })
-        assertFalse(notes().contains("Waiting for your agent: tell it /code-story feedback"))
+        assertFalse(notes().contains("Listening agents pick up submitted feedback automatically."))
     }
 
     fun `test answers appear in their thread and resolved threads hide until shown`() {

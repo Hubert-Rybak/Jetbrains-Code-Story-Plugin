@@ -10,7 +10,32 @@ description: Builds or revises a short, clickable code story in the developer's 
 3. For a revision, call `code_story_list`, then `code_story_get(storyId)`. Keep the saved step IDs, so that the reader's comment threads stay on their steps.
 4. Build the story and call `code_story_show`. For each location, copy the exact text of line `startLine` into `anchorText`. For a story about a change, set `baseRef` to the commit before the change (`HEAD` for uncommitted work). Pass `projectPath`, and pass the existing `storyId` for a revision.
 5. Read `errors`, `corrections`, `warnings` and `next`. Fix errors and warnings once and send the whole story again with the corrected lines. If the first call was accepted, use its returned `storyId` to replace it.
-6. Tell the developer the accepted story's title and step count, and point to the Code Story tool window. Explain any remaining rejection.
+6. Tell the developer the accepted story's title and step count, and point to the Code Story tool window. Explain any remaining rejection. After acceptance and corrections, enter the listening loop below by default; keep the agent turn active.
+
+## Automatic listening (default)
+
+After showing a story, and after answering each round, call `code_story_listen` with
+`projectPath` and `repositoryPath` for the current repository. Omit `storyId` to
+listen for rounds across that repository. No hook or extra chat command is needed
+while this call is active. Tell the developer you are listening before waiting.
+
+- `status: feedback`: process the returned `feedback` using steps 2–7 below. The tool
+  already fetched those comments. Submit Round is the developer's request to process
+  that round; do not ask for a second confirmation just to fetch or answer it. Keep
+  normal tool permissions for code changes, and never change code for a question.
+- `status: timeout`: immediately call `code_story_listen` again. Each call waits up to
+  25 seconds; timeout is a heartbeat, not completion. Do not repeatedly post idle updates.
+- `status: stopped`: end the loop. Listening was disabled or the project closed.
+- After replies, briefly report the outcome, then listen again. Stop when the
+  developer cancels, asks to stop listening, or gives another task. Do not spawn
+  background agents or keep polling after cancellation.
+
+Listening requires an active MCP tool call. It cannot restart an ended agent turn.
+If the tool is unavailable, disconnects, or the client cannot maintain waiting calls,
+explain that automatic listening stopped and offer `/code-story feedback` as the
+manual fallback; do not claim you are still listening. The IDE setting
+**Tools | Code Story | Let connected agents listen for submitted feedback automatically**
+is enabled by default. When disabled, use feedback mode only on an explicit request.
 
 ## Feedback mode
 
@@ -23,7 +48,7 @@ Use it for `/code-story feedback [storyId]` (`$code-story feedback` in Codex). T
 5. For Refresh requests (`kind: refresh`), refresh all `code-changed` and `lost` steps through the same patch path. Also refresh `staleSteps` when there are no comments; no reply is needed in that case. A missing file or range needs a new location or removal. Refresh changes the story, not the code.
 6. For each story, call `code_story_reply` with `storyId`, `repositoryPath` from feedback, and one reply per comment: its `threadId` and `round`, an outcome and `text`. Use `answered` for questions, `done` for completed change or refresh requests, and `declined` with a reason otherwise. For `done`, give a short summary in `text` and a `changedFiles` array of repository-relative code paths (use `[]` when no code files changed). Follow the answer rules in the guide.
 7. Read `errors`, `warnings` and `next`. A `stale-steps` error lists steps that still need review: update, replace or confirm them, then retry only rejected replies. Another code edit after review requires another review. Do not reply again to a comment that is already answered.
-8. Summarize in the chat what you answered, changed or declined, and point the developer to the Code Story tool window for details. Optional hooks only remind you that feedback is pending; process it when the developer asks or agrees.
+8. Summarize in the chat what you answered, changed or declined, and point the developer to the Code Story tool window for details. Resume the listening loop by default. Optional hooks remain reminders for sessions that are not listening.
 
 Feedback needs the Code Story tools. If they are missing, tell the developer to switch on Settings | Tools | MCP Server.
 

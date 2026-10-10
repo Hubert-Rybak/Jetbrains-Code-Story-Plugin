@@ -11,6 +11,7 @@ import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import io.github.hubertrybak.codestory.StoryDraft
+import io.github.hubertrybak.codestory.CodeStorySettings
 import io.github.hubertrybak.codestory.core.MessageAuthor
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryThread
@@ -77,7 +78,10 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
     }
 
     /** Shown while the story has drafts. Submit writes all drafts of the story as one round. */
-    val submit = JButton("Submit Round").apply { addActionListener { stored?.let(comments::submit) } }
+    val submit = JButton("Submit Round").apply {
+        toolTipText = "Save your comment drafts as a numbered feedback round"
+        addActionListener { stored?.let(comments::submit) }
+    }
 
     /** Writes a new comment on [StoryDraft.step], a reply in [StoryDraft.thread], or changes a saved draft. */
     inner class Input(val target: String, val draft: StoryDraft, val title: String) {
@@ -202,7 +206,7 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
         for (thread in shown) add(threadView(stored, step?.id, thread, replies[thread.id]?.takeIf { it.id != editing }))
         for (draft in newDrafts.filter { it.id != editing }) add(draftView(draft, "Draft ${threadKindLabel(draft.kind).lowercase()}"))
         if (shown.isEmpty() && newDrafts.isEmpty() && input == null) {
-            add(note(if (resolved > 0) "Resolved threads are hidden." else "No comments yet. Ask a question, then submit it to your agent."))
+            add(note(if (resolved > 0) "Resolved threads are hidden." else "No comments yet. Ask a question, then use Submit Round. Your listening agent picks it up automatically."))
         }
         input?.let { add(it.component) }
         submit.text = if (drafts.isEmpty()) "Submit Round" else "Submit Round (${drafts.size})"
@@ -211,7 +215,10 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
         if (StoryThreads.all(story).any { it.second.state == ThreadState.SUBMITTED }) {
             add(JPanel(VerticalLayout(2)).apply {
                 isOpaque = false
-                add(note("Waiting for your agent: tell it $FEEDBACK_COMMAND"))
+                add(note(if (CodeStorySettings.getInstance().state.automaticFeedback)
+                    "Listening agents pick up submitted feedback automatically."
+                else "Automatic listening is off. Tell your agent $FEEDBACK_COMMAND."))
+                add(note("If your agent is stopped, tell it $FEEDBACK_COMMAND to resume."))
                 add(row(ActionLink("Copy") { comments.copy(FEEDBACK_COMMAND) }, ActionLink("Copy for Codex") { comments.copy(CODEX_FEEDBACK_COMMAND) }))
             })
         }

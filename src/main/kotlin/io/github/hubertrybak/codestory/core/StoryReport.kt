@@ -106,8 +106,8 @@ data class ShowReport(
                 warnings.isNotEmpty() && corrections.isNotEmpty() ->
                     "Fix the warnings once, then call code_story_show with the whole story, the corrected lines and storyId \"$storyId\" to replace it."
                 warnings.isNotEmpty() -> "Fix the warnings once, then call code_story_show with the whole story and storyId \"$storyId\" to replace it."
-                corrections.isNotEmpty() -> "The plugin corrected some line numbers. Tell the developer that the story is in the Code Story tool window. Next: call code_story_feedback when the reader submits comments."
-                else -> "Tell the developer that the story is in the Code Story tool window. Next: call code_story_feedback when the reader submits comments."
+                corrections.isNotEmpty() -> "The plugin corrected some line numbers. Tell the developer that the story is in the Code Story tool window. Next: call code_story_listen to pick up submitted feedback automatically."
+                else -> "Tell the developer that the story is in the Code Story tool window. Next: call code_story_listen to pick up submitted feedback automatically."
             },
         )
 

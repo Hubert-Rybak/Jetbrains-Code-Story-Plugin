@@ -9,6 +9,7 @@ import com.intellij.mcpserver.noSuitableProjectError
 import io.github.hubertrybak.codestory.CodeStoryService
 import io.github.hubertrybak.codestory.CodeStoryGuide
 import io.github.hubertrybak.codestory.core.FeedbackReport
+import io.github.hubertrybak.codestory.core.FeedbackListenReport
 import io.github.hubertrybak.codestory.core.ReplyReport
 import io.github.hubertrybak.codestory.core.ShowReport
 import io.github.hubertrybak.codestory.core.StoryFolder
@@ -110,6 +111,22 @@ class CodeStoryToolset : McpToolset {
     ): FeedbackReport = withService {
         if (storyId != null && !StoryFolder.isValidId(storyId)) throw McpExpectedError("Invalid storyId. Next: call code_story_list for an ID.")
         it.feedback(storyId, repositoryPath) ?: throw McpExpectedError("Story '$storyId' was not found. Next: call code_story_list for the current IDs.")
+    }
+
+    @McpTool(name = "code_story_listen")
+    @McpDescription(description = "Listens for submitted feedback by default after showing a story and after replying. Waits up to 25 seconds without blocking the IDE. Returns status feedback with fetched comments, timeout (call again), or stopped (end listening). Process returned comments with the feedback workflow, then listen again. Submit Round authorizes processing the submitted requests; never change code for a question. Stop when the developer cancels or gives a new task. Automatic listening can be disabled in Settings | Tools | Code Story. This requires an active agent tool call; it cannot restart an ended agent turn. Always pass projectPath.")
+    suspend fun listenForFeedback(
+        @McpDescription(description = "Optional story ID. Omit to listen to all stories in the project.")
+        storyId: String? = null,
+        @McpDescription(description = "Optional absolute repository root. Required for ambiguous story IDs.")
+        repositoryPath: String? = null,
+        @McpDescription(description = "Maximum seconds to wait, from 1 to 25. Default 25. On timeout, call again.")
+        waitSeconds: Int = 25,
+    ): FeedbackListenReport = withService {
+        if (storyId != null && !StoryFolder.isValidId(storyId)) throw McpExpectedError("Invalid storyId. Next: call code_story_list for an ID.")
+        if (waitSeconds !in 1..25) throw McpExpectedError("waitSeconds must be between 1 and 25.")
+        it.listenForFeedback(storyId, repositoryPath, waitSeconds)
+            ?: throw McpExpectedError("Story '$storyId' was not found. Next: call code_story_list for the current IDs.")
     }
 
     @McpTool(name = "code_story_reply")
