@@ -7,7 +7,8 @@
         (the <code>code_story_show</code> tool), or writes a story file when MCP is unavailable.
         The plugin installs the agent skill and checks setup. The Code Story tool window lists stories and their steps;
         a click on a step opens its file and highlights the lines that the step explains. Readers ask questions about
-        steps, and the agent answers them inside the story (<code>code_story_feedback</code> and <code>code_story_reply</code>).</p>
+        steps. Connected agents listen for submitted rounds by default (<code>code_story_listen</code>)
+        and answer inside the story (<code>code_story_reply</code>); <code>code_story_feedback</code> remains available for manual requests.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

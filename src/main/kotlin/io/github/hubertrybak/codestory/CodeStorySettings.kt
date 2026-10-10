@@ -36,6 +36,7 @@ class CodeStorySettings : PersistentStateComponent<CodeStorySettings.Options> {
         var optionalStyleHints = false
         var projectSkillInstallation = false
         var setupNotificationShown = false
+        @Volatile var automaticFeedback = true
     }
 
     private var options = Options()
@@ -56,6 +57,7 @@ class CodeStoryConfigurable : Configurable {
     private var bringToFront: JCheckBox? = null
     private var optionalStyleHints: JCheckBox? = null
     private var projectSkillInstallation: JCheckBox? = null
+    private var automaticFeedback: JCheckBox? = null
     private var themeDefault: JCheckBox? = null
     private var color: ColorPanel? = null
 
@@ -64,6 +66,7 @@ class CodeStoryConfigurable : Configurable {
     override fun createComponent(): JComponent {
         bringToFront = JCheckBox("Bring the IDE to the front on a new story")
         optionalStyleHints = JCheckBox("Include passive voice and -ing hints in agent reports")
+        automaticFeedback = JCheckBox("Let connected agents listen for submitted feedback automatically")
         projectSkillInstallation = JCheckBox("Install the Code Story skill in the current project instead of the user folder")
         color = ColorPanel().apply { setSupportTransparency(true) }
         themeDefault = JCheckBox("Use theme default").apply {
@@ -74,6 +77,7 @@ class CodeStoryConfigurable : Configurable {
             border = JBUI.Borders.empty(8)
             add(bringToFront)
             add(optionalStyleHints)
+            add(automaticFeedback)
             add(projectSkillInstallation)
             add(JLabel("Skill installation writes to both .agents/skills/code-story and .claude/skills/code-story."))
             add(JPanel(FlowLayout(FlowLayout.LEFT)).apply {
@@ -89,6 +93,7 @@ class CodeStoryConfigurable : Configurable {
     override fun isModified(): Boolean = panel != null && CodeStorySettings.getInstance().state.let {
         bringToFront!!.isSelected != it.bringToFront || selectedColor() != it.highlightColor ||
             optionalStyleHints!!.isSelected != it.optionalStyleHints ||
+            automaticFeedback!!.isSelected != it.automaticFeedback ||
             projectSkillInstallation!!.isSelected != it.projectSkillInstallation
     }
 
@@ -97,6 +102,7 @@ class CodeStoryConfigurable : Configurable {
             bringToFront = this@CodeStoryConfigurable.bringToFront!!.isSelected
             highlightColor = selectedColor()
             optionalStyleHints = this@CodeStoryConfigurable.optionalStyleHints!!.isSelected
+            automaticFeedback = this@CodeStoryConfigurable.automaticFeedback!!.isSelected
             projectSkillInstallation = this@CodeStoryConfigurable.projectSkillInstallation!!.isSelected
         }
         ApplicationManager.getApplication().messageBus.syncPublisher(StorySettingsListener.TOPIC).settingsChanged()
@@ -107,6 +113,7 @@ class CodeStoryConfigurable : Configurable {
         val settings = CodeStorySettings.getInstance()
         bringToFront!!.isSelected = settings.state.bringToFront
         optionalStyleHints!!.isSelected = settings.state.optionalStyleHints
+        automaticFeedback!!.isSelected = settings.state.automaticFeedback
         projectSkillInstallation!!.isSelected = settings.state.projectSkillInstallation
         themeDefault!!.isSelected = settings.state.highlightColor == null
         color!!.selectedColor = settings.rangeBackground
@@ -119,6 +126,7 @@ class CodeStoryConfigurable : Configurable {
         panel = null
         bringToFront = null
         optionalStyleHints = null
+        automaticFeedback = null
         projectSkillInstallation = null
         themeDefault = null
         color = null

@@ -26,7 +26,7 @@ class CodeStorySetupTest : HeavyPlatformTestCase() {
         try {
             val initial = CodeStorySetup.getInstance().status(project, user)
             assertTrue(initial.mcp.available)
-            assertEquals(setOf("code_story_guide", "code_story_show", "code_story_list", "code_story_get", "code_story_feedback", "code_story_patch", "code_story_reply"), initial.mcp.tools.toSet())
+            assertEquals(setOf("code_story_guide", "code_story_show", "code_story_list", "code_story_get", "code_story_feedback", "code_story_listen", "code_story_patch", "code_story_reply"), initial.mcp.tools.toSet())
             assertTrue(initial.skills.isEmpty())
             assertEquals(CodeStorySkill.directories(user), initial.installDirectories)
             CodeStorySkill.install(user)
@@ -63,6 +63,30 @@ class CodeStorySetupTest : HeavyPlatformTestCase() {
         assertFalse(unavailable.mcp.enabled)
         assertTrue(unavailable.mcp.tools.isEmpty())
         assertTrue(unavailable.text().contains("disabled or unavailable"))
+    }
+
+    fun `test automatic feedback defaults on and can be disabled persistently in settings`() {
+        val settings = CodeStorySettings.getInstance()
+        val original = settings.state
+        val configurable = CodeStoryConfigurable()
+        try {
+            settings.loadState(CodeStorySettings.Options())
+            assertTrue(settings.state.automaticFeedback)
+            fun checkboxes(container: Container): List<JCheckBox> = container.components.flatMap {
+                if (it is JCheckBox) listOf(it) else if (it is Container) checkboxes(it) else emptyList()
+            }
+            val checkbox = checkboxes(configurable.createComponent() as Container).single { it.text.contains("listen for submitted feedback") }
+            assertTrue(checkbox.isSelected)
+            checkbox.isSelected = false
+            assertTrue(configurable.isModified)
+            configurable.apply()
+            assertFalse(configurable.isModified)
+            settings.loadState(XmlSerializer.deserialize(XmlSerializer.serialize(settings.state), CodeStorySettings.Options::class.java))
+            assertFalse(settings.state.automaticFeedback)
+            assertTrue(CodeStorySetup.getInstance().status(project).text().contains("Automatic feedback listening is off"))
+            configurable.reset()
+            assertFalse(checkbox.isSelected)
+        } finally { configurable.disposeUIResources(); settings.loadState(original) }
     }
 
     fun `test setup reports on and off accurately`() {

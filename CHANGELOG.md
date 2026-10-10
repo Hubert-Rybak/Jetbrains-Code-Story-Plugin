@@ -4,6 +4,14 @@ All notable changes to Code Story are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Default-on automatic feedback listening through `code_story_listen`. Connected agents
+  pick up Submit Round, answer, and listen again without another chat prompt.
+- A setting to disable automatic listening, with cancellation and manual feedback fallback.
+
 ## [1.0.0] - 2026-10-10
 
 The first release. Install the zip from disk in Rider or IntelliJ IDEA 2025.3 or newer.

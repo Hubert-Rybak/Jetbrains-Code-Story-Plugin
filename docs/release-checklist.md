@@ -35,7 +35,7 @@ that these checks also test its setup instructions.
       `/code-story feedback` work the same way.
 - [ ] GitHub Copilot CLI: `/code-story "<request>"` and `/code-story feedback` work the
       same way.
-- [ ] **Check setup** lists the seven Code Story tools and the installed skill copies.
+- [ ] **Check setup** lists the eight Code Story tools and the installed skill copies.
 - [ ] The optional hook snippets from **Copy feedback hooks** remind Claude Code, Codex
       and Copilot CLI of pending feedback, and print `{}` when nothing is pending.
 
@@ -203,9 +203,18 @@ themes, including a narrow tool window.
       details pane counts all drafts of the story. Both are disabled without drafts.
 - [ ] Drafts survive an IDE restart and are never written to the story file. An unsaved
       input stays while the story reloads and returns after looking at another step.
-- [ ] After Submit, the notification and the details pane show
-      "Waiting for your agent: tell it /code-story feedback"; both copy buttons put the
-      right command on the clipboard. **Withdraw** returns the comment to the drafts.
+- [ ] After Submit, the notification and details pane explain automatic pickup by a
+      listening agent and show `/code-story feedback` as a fallback for a stopped agent.
+      Both copy buttons put the right command on the clipboard. **Withdraw** returns
+      the comment to drafts before an agent fetches it.
+- [ ] With the current skill installed, the agent calls `code_story_listen` after showing
+      a story, picks up Submit Round without a chat prompt, replies, and listens again.
+      Idle timeouts reconnect; drafts never trigger processing.
+- [ ] Automatic listening is enabled by default. Disable it in Settings | Tools | Code
+      Story while a call is waiting: the call returns stopped. Manual feedback still works.
+      Cancelling the agent stops the loop; closing the project ends its waiting call.
+- [ ] Repeat automatic pickup with Copilot in Rider using MCP, without a hook. If the
+      client cannot maintain waiting calls, the agent explains the manual fallback.
 - [ ] `/code-story feedback` in the agent fetches the comments: they show "Agent working"
       and can no longer be withdrawn. The agent answers without code changes, and a
       notification with **Open** shows the story with the answers.

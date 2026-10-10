@@ -69,7 +69,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
     }
 
     fun `test all agent tools expose their typed parameters`() {
-        assertEquals(setOf("code_story_guide", "code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_patch", "code_story_reply"),
+        assertEquals(setOf("code_story_guide", "code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_listen", "code_story_patch", "code_story_reply"),
             CodeStoryToolset().asTools().map { it.descriptor.name }.toSet())
         val show = tool("code_story_show").descriptor.inputSchema
         assertTrue("storyId" in show.propertiesSchema)
@@ -78,6 +78,10 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         val feedback = tool("code_story_feedback").descriptor.inputSchema
         assertTrue("storyId" in feedback.propertiesSchema)
         assertFalse("storyId" in feedback.requiredProperties)
+        val listen = tool("code_story_listen").descriptor.inputSchema
+        assertTrue("waitSeconds" in listen.propertiesSchema)
+        assertFalse("waitSeconds" in listen.requiredProperties)
+        assertFalse("storyId" in listen.requiredProperties)
         val patch = tool("code_story_patch").descriptor.inputSchema
         assertEquals(setOf("storyId", "operations"), patch.requiredProperties.toSet() - "projectPath")
         val operations = patch.propertiesSchema.getValue("operations").toString()
@@ -294,7 +298,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
     }
 
     fun `test project tools require an open project`() {
-        for (name in listOf("code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_patch", "code_story_reply")) {
+        for (name in listOf("code_story_list", "code_story_get", "code_story_show", "code_story_feedback", "code_story_listen", "code_story_patch", "code_story_reply")) {
             val args = when (name) {
                 "code_story_get" -> mapOf("storyId" to JsonPrimitive("2000-01-01-story"))
                 "code_story_show" -> mapOf("story" to Json.parseToJsonElement(story(step())))

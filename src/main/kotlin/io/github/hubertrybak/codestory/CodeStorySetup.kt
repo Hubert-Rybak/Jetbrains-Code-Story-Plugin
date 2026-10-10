@@ -44,7 +44,10 @@ data class CodeStorySetupStatus(
         installDirectories.forEach { appendLine(it) }
         if (!mcp.enabled) appendLine("The MCP server lets your agent send stories and receive validation reports. Enable it in Settings | Tools | MCP Server and use Auto-Configure. File drops work while it is off.")
         appendLine("Optional feedback hooks: copy snippets for Claude Code and Codex (session start and each prompt), and Copilot CLI (session start).")
-        append("They read .codestory/local/pending-feedback.json. The plugin never installs hooks.")
+        appendLine("They read .codestory/local/pending-feedback.json. The plugin never installs hooks.")
+        appendLine("Automatic feedback listening is ${if (CodeStorySettings.getInstance().state.automaticFeedback) "on" else "off"}. Install the current skill so connected agents call code_story_listen after showing a story and after replying.")
+        appendLine("Submit Round is picked up automatically while the agent is listening. If the agent has stopped, tell it /code-story feedback (\$code-story feedback in Codex).")
+        append("Hooks only provide reminders. Copilot in Rider needs no hook for listening, but its agent must keep the listening tool call active.")
     }
 }
 

@@ -1,5 +1,11 @@
 # Optional feedback reminders
 
+The bundled skill listens for **Submit Round** by default through `code_story_listen`.
+Listening needs an active agent session and no hook. If the agent has stopped, tell it
+`/code-story feedback` (`$code-story feedback` in Codex) to resume. Disable automatic
+listening in **Settings | Tools | Code Story** for manual feedback only.
+These optional hooks provide reminders for sessions that are not listening.
+
 Code Story keeps `.codestory/local/pending-feedback.json` at each repository root.
 It lists story IDs, local/shared folders, pending counts and rounds, including
 feedback an agent has fetched but not answered. It contains no comment text or

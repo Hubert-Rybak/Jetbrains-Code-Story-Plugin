@@ -8,6 +8,14 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 
+/** A bounded listening call. Timeout is a heartbeat, not a request to stop listening. */
+@Serializable
+data class FeedbackListenReport(
+    val status: String,
+    val feedback: FeedbackReport? = null,
+    val next: String,
+)
+
 /** The answer to `code_story_feedback`: the comments that wait for an agent, oldest round first. */
 @Serializable
 data class FeedbackReport(
@@ -95,8 +103,8 @@ data class ReplyReport(
             next = when {
                 errors.isNotEmpty() && saved.isEmpty() -> "Nothing was saved. Next: fix the errors and call code_story_reply again. Do not reply to comments that are already answered."
                 errors.isNotEmpty() -> "The other replies are saved. Next: fix the errors and call code_story_reply with only the rejected replies. Do not reply to comments that are already answered."
-                warnings.isNotEmpty() -> "The replies are saved. Use the writing rules in your next replies. Tell the developer that the answers are in the Code Story tool window. Next: call code_story_feedback for pending comments."
-                else -> "Tell the developer that the answers are in the Code Story tool window. Next: call code_story_feedback for pending comments."
+                warnings.isNotEmpty() -> "The replies are saved. Use the writing rules in your next replies. Tell the developer that the answers are in the Code Story tool window. Next: call code_story_listen to pick up the next submitted round automatically."
+                else -> "Tell the developer that the answers are in the Code Story tool window. Next: call code_story_listen to pick up the next submitted round automatically."
             },
         )
 
@@ -130,7 +138,7 @@ object StoryFeedback {
             }
         }
         val next = if (comments.isEmpty() && stale.isNotEmpty()) "Next: read the stale steps with code_story_get, then refresh them with code_story_patch (update, re-anchor, remove or confirm). No reply is needed without comments."
-            else if (comments.isEmpty()) "No comments wait for an agent. Tell the developer that there is no feedback to answer. Next: call code_story_feedback after the reader submits a round."
+            else if (comments.isEmpty()) "No comments wait for an agent. Tell the developer that there is no feedback to answer. Next: call code_story_listen to wait for the next submitted round."
             else "Next: answer every comment with code_story_reply: pass storyId, and for each comment its threadId, round, " +
                 "the outcome answered for questions, done for change or refresh requests, or declined with a reason, and your text. For done, include changedFiles (repository-relative paths; [] for a story-only refresh). Apply requested code changes, then update or confirm every affected step with code_story_patch before done. Never change code for a question."
         return FeedbackReport(comments, stale, next)

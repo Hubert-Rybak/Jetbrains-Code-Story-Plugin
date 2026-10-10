@@ -376,7 +376,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     }
 
     /** Writes all comment drafts of the selected story into its file as one round for the agent. */
-    private inner class SubmitRoundAction : DumbAwareAction("Submit Round", "Send your comment drafts to your agent through the story", AllIcons.Actions.Commit) {
+    private inner class SubmitRoundAction : DumbAwareAction("Submit Round", "Save your comment drafts as a numbered feedback round", AllIcons.Actions.Commit) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun update(e: AnActionEvent) {
             val drafts = selectedStory()?.let { comments.drafts(it).size } ?: 0

@@ -25,6 +25,7 @@ import io.github.hubertrybak.codestory.core.DraftComment
 import io.github.hubertrybak.codestory.core.ReportItem
 import io.github.hubertrybak.codestory.core.ErrorCode
 import io.github.hubertrybak.codestory.core.FeedbackReport
+import io.github.hubertrybak.codestory.core.FeedbackListenReport
 import io.github.hubertrybak.codestory.core.ReplyInput
 import io.github.hubertrybak.codestory.core.ReplyIssue
 import io.github.hubertrybak.codestory.core.ReplyReport
@@ -55,6 +56,10 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
 import java.awt.datatransfer.StringSelection
 import java.io.IOException
 import java.nio.file.Path
@@ -316,18 +321,48 @@ class CodeStoryService(private val project: Project) : Disposable {
         return true
     }
 
-    /**
-     * Handles `code_story_feedback`: the reader comments that wait for an agent, in one story or in
-     * all of them. Fetched comments become "received" and stay available until an agent replies.
-     * `null` when [storyId] is not found. Reads and writes files, so call it in the background.
-     */
-    fun feedback(storyId: String?, repositoryPath: String?): FeedbackReport? {
+    /** Finds stories in the requested scope without fetching their comments. Call off the EDT. */
+    private fun feedbackStories(storyId: String?, repositoryPath: String?): List<StoredStory>? {
         val rejected = StoryFileWatcher.getInstance(project).problems.keys
         val folders = storyFolders().filter { repositoryPath == null || it.root.toString() == repositoryPath }
-        val found = if (storyId == null) folders.flatMap { folder -> folder.list().filter { it.file !in rejected } }
+        return if (storyId == null) folders.flatMap { folder -> folder.list().filter { it.file !in rejected } }
             else folders.mapNotNull { it.get(storyId) }.also {
                 if (it.size > 1) throw IOException("That story ID exists in several repositories. Pass repositoryPath from code_story_list.")
             }.ifEmpty { return null }
+    }
+
+    /** Wait off the EDT without holding a thread or changing drafts. Client cancellation propagates. */
+    suspend fun listenForFeedback(storyId: String?, repositoryPath: String?, waitSeconds: Int = 25): FeedbackListenReport? {
+        require(waitSeconds in 1..25) { "waitSeconds must be between 1 and 25." }
+        // Poll saved stories too, so rounds written by another IDE or a shared-file update are detected.
+        val result = withTimeoutOrNull(waitSeconds * 1000L) {
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                if (project.isDisposed || !CodeStorySettings.getInstance().state.automaticFeedback) {
+                    return@withTimeoutOrNull FeedbackListenReport("stopped", next = "Stop listening. Automatic feedback is disabled or the project is closed. Use code_story_feedback for a manual fetch.")
+                }
+                val stories = feedbackStories(storyId, repositoryPath)
+                    ?: return@withTimeoutOrNull FeedbackListenReport("not-found", next = "Call code_story_list for current story IDs.")
+                if (stories.any { StoryThreads.pending(it.story).isNotEmpty() }) {
+                    val report = feedback(storyId, repositoryPath)
+                    // The reader may withdraw the round between the check and fetch.
+                    if (report != null && report.comments.isNotEmpty()) {
+                        return@withTimeoutOrNull FeedbackListenReport("feedback", report,
+                            "Answer these comments with code_story_reply, then call code_story_listen again. Never change code for a question.")
+                    }
+                }
+                delay(500)
+            }
+            @Suppress("UNREACHABLE_CODE")
+            error("Unreachable")
+        }
+        return if (result?.status == "not-found") null else result
+            ?: FeedbackListenReport("timeout", next = "No submitted feedback yet. Call code_story_listen again unless the developer stopped listening or gave a new task.")
+    }
+
+    /** Fetches comments, marking them received until answered. Call off the EDT; null means no such story. */
+    fun feedback(storyId: String?, repositoryPath: String?): FeedbackReport? {
+        val found = feedbackStories(storyId, repositoryPath) ?: return null
         // The agent gets what this update marked, so a comment that arrives meanwhile waits for the next call.
         val marked = mutableListOf<StoredStory>()
         val live = AnchorTracker.getInstance(project).snapshot()
@@ -413,13 +448,16 @@ class CodeStoryService(private val project: Project) : Disposable {
         }, ModalityState.nonModal(), project.disposed)
     }
 
-    /** No agent wakes up on its own: the reader hands the round over in the agent's chat. */
+    /** Submitted rounds are available to waiting agents; keep a command for stopped sessions. */
     private fun roundSubmitted(count: Int) = ApplicationManager.getApplication().invokeLater({
         fun copy(command: String) = CopyPasteManager.getInstance().setContents(StringSelection(command))
+        val handoff = if (CodeStorySettings.getInstance().state.automaticFeedback)
+            "Your listening agent picks up the round automatically. If your agent is stopped, tell it"
+        else "Automatic listening is off. Tell your agent"
         NotificationGroupManager.getInstance().getNotificationGroup(StoryListPanel.NOTIFICATION_GROUP)
             .createNotification(
                 "Waiting for your agent",
-                "${if (count == 1) "Your comment is" else "Your $count comments are"} in the story. Tell your agent: $FEEDBACK_COMMAND " +
+                "${if (count == 1) "Your comment is" else "Your $count comments are"} in the story. $handoff $FEEDBACK_COMMAND " +
                     "($CODEX_FEEDBACK_COMMAND in Codex).",
                 NotificationType.INFORMATION,
             )

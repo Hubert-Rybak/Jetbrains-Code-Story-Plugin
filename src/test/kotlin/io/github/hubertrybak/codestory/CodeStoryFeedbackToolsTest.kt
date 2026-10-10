@@ -38,6 +38,11 @@ import io.github.hubertrybak.codestory.core.WarningCode
 import io.github.hubertrybak.codestory.mcp.CodeStoryToolset
 import io.github.hubertrybak.codestory.ui.StoryPlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -133,6 +138,92 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         assertEquals(answered, saved(stored))
         assertEmpty(feedback().getValue("comments").jsonArray)
         assertEquals("0", list().single().string("pendingComments"))
+    }
+
+    fun `test listening picks up a round submitted after the call starts`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        draft(stored, "Explain the entry", step = "entry")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val started = java.util.concurrent.atomic.AtomicBoolean()
+        try {
+            val waiting = scope.async {
+                started.set(true)
+                service.listenForFeedback(stored.id, root.toString())
+            }
+            PlatformTestUtil.waitWithEventsDispatching("Listener did not start", { started.get() }, 5)
+            assertFalse(waiting.isCompleted)
+            assertTrue(StoryThreads.all(saved(stored)).isEmpty()) // Drafts never wake it.
+            submit(stored)
+            PlatformTestUtil.waitWithEventsDispatching("Listener did not receive Submit Round", { waiting.isCompleted }, 5)
+            val result = runBlocking { waiting.await() }!!
+            assertEquals("feedback", result.status)
+            assertEquals("Explain the entry", result.feedback!!.comments.single().text)
+            assertEquals(ThreadState.RECEIVED, StoryThreads.all(saved(stored)).single().second.state)
+            val comment = result.feedback.comments.single()
+            reply(stored.id, listOf(buildJsonObject {
+                put("threadId", comment.threadId)
+                put("round", comment.round)
+                put("outcome", "answered")
+                put("text", "The entry starts this flow.")
+            }))
+            val nextRound = scope.async { service.listenForFeedback(stored.id, root.toString()) }
+            draft(stored, "Explain the next step", thread = comment.threadId)
+            submit(stored)
+            PlatformTestUtil.waitWithEventsDispatching("Listener did not receive the next round", { nextRound.isCompleted }, 5)
+            val nextComment = runBlocking { nextRound.await() }!!.feedback!!.comments.single()
+            assertEquals(comment.round + 1, nextComment.round)
+            assertEquals("Explain the next step", nextComment.text)
+        } finally { scope.cancel() }
+    }
+
+    fun `test listening timeout does not fetch drafts or unrelated repositories`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        draft(stored, "Still a draft")
+        val idle = callTool("code_story_listen", mapOf("waitSeconds" to JsonPrimitive(1))).structuredContent!!
+        assertEquals("timeout", idle.string("status"))
+        assertEquals(1, reader.drafts(stored.key).size)
+        submit(stored)
+        val unrelated = callTool("code_story_listen", mapOf(
+            "repositoryPath" to JsonPrimitive(root.resolve("other").toString()), "waitSeconds" to JsonPrimitive(1),
+        )).structuredContent!!
+        assertEquals("timeout", unrelated.string("status"))
+        assertEquals(ThreadState.SUBMITTED, StoryThreads.all(saved(stored)).single().second.state)
+        val received = callTool("code_story_listen", mapOf("storyId" to JsonPrimitive(stored.id))).structuredContent!!
+        assertEquals("feedback", received.string("status"))
+        assertEquals(1, received.getValue("feedback").jsonObject.getValue("comments").jsonArray.size)
+    }
+
+    fun `test listening can be disabled during a wait and cancelled without fetching`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        val settings = CodeStorySettings.getInstance().state
+        val original = settings.automaticFeedback
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            settings.automaticFeedback = true
+            val waiting = scope.async { service.listenForFeedback(stored.id, root.toString()) }
+            settings.automaticFeedback = false
+            PlatformTestUtil.waitWithEventsDispatching("Disabled listener did not stop", { waiting.isCompleted }, 5)
+            assertEquals("stopped", runBlocking { waiting.await() }!!.status)
+            draft(stored, "Manual feedback still works")
+            submit(stored)
+            assertEquals("stopped", callTool("code_story_listen").structuredContent!!.string("status"))
+            assertEquals(ThreadState.SUBMITTED, StoryThreads.all(saved(stored)).single().second.state)
+            assertEquals(1, feedback().getValue("comments").jsonArray.size)
+            settings.automaticFeedback = true
+            val cancelled = scope.async { service.listenForFeedback(null, root.resolve("other").toString()) }
+            runBlocking { cancelled.cancelAndJoin() }
+            assertTrue(cancelled.isCancelled)
+        } finally { settings.automaticFeedback = original; scope.cancel() }
+    }
+
+    fun `test listening validates timeout and story IDs`() {
+        for (args in listOf(
+            mapOf("waitSeconds" to JsonPrimitive(0)), mapOf("waitSeconds" to JsonPrimitive(26)),
+            mapOf("storyId" to JsonPrimitive("../invalid")), mapOf("storyId" to JsonPrimitive("2000-01-01-missing")),
+        )) {
+            try { callTool("code_story_listen", args); fail("Expected a tool error: $args") }
+            catch (_: McpExpectedError) { }
+        }
     }
 
     fun `test withdraw takes back a comment until an agent fetches it`() {
