@@ -47,6 +47,8 @@ class CodeStorySkillTest {
         }
         val version = javaClass.getResourceAsStream("/code-story/version.txt")!!.bufferedReader().use { it.readText() }.trim()
         assertEquals(version, CodeStorySkill.version)
+        // A manual copy of the skill must not look outdated next to the plugin of the same release.
+        assertEquals("skills/code-story/version.txt", version, Files.readString(java.nio.file.Path.of("skills/code-story/version.txt")).trim())
     }
 
     @Test

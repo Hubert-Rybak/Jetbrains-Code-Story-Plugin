@@ -28,7 +28,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: test "$RELEASE_TAG" = "v$(sed -n 's/^version=//p' gradle.properties)"
+        run: |
+          test "$RELEASE_TAG" = "v$(sed -n 's/^version=//p' gradle.properties)"
+          sh .github/scripts/changelog-entry.sh "${RELEASE_TAG#v}" > /dev/null
       - name: Build and test
         run: ./gradlew check buildPlugin verifyPluginStructure
       - uses: actions/upload-artifact@v7
@@ -90,4 +92,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" dist/*.zip --verify-tag --title "Code Story $RELEASE_TAG" --generate-notes
+        run: |
+          sh .github/scripts/changelog-entry.sh "${RELEASE_TAG#v}" > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$RELEASE_TAG" dist/*.zip --verify-tag --title "Code Story $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes
