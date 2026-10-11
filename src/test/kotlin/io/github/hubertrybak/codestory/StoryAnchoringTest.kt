@@ -140,6 +140,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
         assertEquals(6, get(id).getValue("steps").jsonArray[0].jsonObject.getValue("location").jsonObject.string("startLine").toInt())
         val playing = CodeStoryService.getInstance(project).stories().single()
         player.play(playing, 1)
+        player.awaitPlayback()
         assertEquals(11, player.currentStory!!.story.steps[1].location!!.startLine)
         assertEquals(10, document.getLineNumber(StepNavigator.getInstance(project).currentHighlighter!!.startOffset))
         player.stop()
@@ -155,6 +156,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
         edit { document.insertString(document.getLineStartOffset(7), "\n\n\n") }
 
         player.next()
+        player.awaitPlayback()
 
         assertEquals(1, player.stepIndex)
         assertEquals(12 to 14, player.currentStory!!.story.steps[1].location!!.let { it.startLine to it.endLine })
@@ -164,6 +166,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
         PlatformTestUtil.waitWithEventsDispatching("moved anchors are not saved", { savedLocation(id, 1).startLine == 12 }, TIMEOUT_SECONDS)
         assertEquals(listOf(4, 12, 16), (0..2).map { savedLocation(id, it).startLine })
         player.previous()
+        player.awaitPlayback()
         assertEquals(StepStatus.OK, player.currentStory!!.status(0))
         assertEquals(3, document.getLineNumber(StepNavigator.getInstance(project).currentHighlighter!!.startOffset))
     }
@@ -175,6 +178,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
         edit { document.replaceString(document.getLineStartOffset(8), document.getLineEndOffset(8), "    fun refund(amount: Long) {") }
 
         player.next()
+        player.awaitPlayback()
 
         assertEquals(StepStatus.CODE_CHANGED, player.currentStory!!.status(1))
         assertEquals("The code changed after the agent wrote this step.", player.presentation!!.card.statusText)
@@ -205,6 +209,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
 
         val stored = CodeStoryService.getInstance(project).stories().single()
         player.play(stored, 2)
+        player.awaitPlayback()
         assertTrue(player.isPlaying)
         assertEquals(StepStatus.LOST, player.currentStory!!.status(2))
         assertEquals(Location("src/Billing.kt", 13, 15, "fun audit() {", AUDIT), player.currentStory!!.story.steps[2].location)
@@ -213,6 +218,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
         assertTrue(panel.details.displayedText, panel.details.displayedText.contains("Step 3 of 3: Audit the account\n\nThe code changed. This step can be wrong."))
         player.previous()
+        player.awaitPlayback()
         assertEquals("The code changed after the agent wrote this step.", player.presentation!!.card.statusText)
     }
 
@@ -224,6 +230,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
         LocalFileSystem.getInstance().refreshAndFindFileByNioFile(root.resolve("src"))!!.refresh(false, true)
 
         player.next()
+        player.awaitPlayback()
 
         assertTrue(player.isPlaying)
         assertEquals(1, player.stepIndex)
@@ -245,7 +252,7 @@ class StoryAnchoringTest : HeavyPlatformTestCase() {
     private fun edit(action: () -> Unit) = WriteCommandAction.runWriteCommandAction(project, action)
 
     private fun awaitPlaying(id: String) =
-        PlatformTestUtil.waitWithEventsDispatching("the story did not start", { player.currentStory?.id == id }, TIMEOUT_SECONDS)
+        PlatformTestUtil.waitWithEventsDispatching("the story did not start", { player.currentStory?.id == id && !player.isResolving }, TIMEOUT_SECONDS)
 
     private fun savedLocation(id: String, index: Int): Location {
         val file = CodeStoryService.getInstance(project).storyFolder().get(id)!!.file

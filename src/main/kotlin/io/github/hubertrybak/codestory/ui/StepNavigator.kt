@@ -11,8 +11,8 @@ import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
 import io.github.hubertrybak.codestory.CodeStorySettings
+import io.github.hubertrybak.codestory.StoryNavigationFiles
 import io.github.hubertrybak.codestory.core.Location
 import java.lang.ref.WeakReference
 import java.nio.file.Path
@@ -25,9 +25,7 @@ class StepNavigator(private val project: Project) {
 
     /** Returns the editor, or `null` when the file cannot be opened as text. Call on the EDT. */
     fun open(root: Path, location: Location): Editor? {
-        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(root.resolve(location.file))
-            ?.takeUnless { it.isDirectory }
-            ?: return null
+        val file = StoryNavigationFiles.find(root, location.file) ?: return null
         // The descriptor scrolls with ScrollType.CENTER, which puts the line in the upper third of the editor.
         val editor = FileEditorManager.getInstance(project)
             .openTextEditor(

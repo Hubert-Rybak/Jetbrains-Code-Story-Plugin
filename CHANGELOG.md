@@ -12,6 +12,23 @@ All notable changes to Code Story are listed here. The format follows
   pick up Submit Round, answer, and listen again without another chat prompt.
 - A setting to disable automatic listening, with cancellation and manual feedback fallback.
 
+### Fixed
+
+- Remember accepted file drops across project restarts, preserving saved code baselines
+  and showing changed or missing source as stale instead of rejecting the story.
+- Keep local and shared files with the same ID separate in reader state and comment
+  updates; reject ambiguous agent requests instead of choosing a file.
+- Reject source paths that escape the repository through symlinks during playback and
+  diff viewing, including paths that changed after story validation.
+- Return validation errors for overflowing line ranges without stopping file watching.
+- Keep newly received answers when navigating with gutter badges, and retain drafts,
+  selection and reading position when sharing or unsharing a story.
+
+### Changed
+
+- Resolve playback anchors and read source files in the background. Stopping or changing
+  stories cancels obsolete work, and edits made during a search trigger a fresh check.
+
 ## [1.0.0] - 2026-10-10
 
 The first release. Install the zip from disk in Rider or IntelliJ IDEA 2025.3 or newer.

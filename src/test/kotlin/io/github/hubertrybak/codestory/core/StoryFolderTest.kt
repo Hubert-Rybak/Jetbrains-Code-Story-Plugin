@@ -191,6 +191,85 @@ class StoryFolderTest {
     }
 
     @Test
+    fun `an ID collision from a shared arrival rejects ID-only reads and writes`() {
+        val folder = folder()
+        val local = saved(folder.save(story, date))
+        val shared = Files.createDirectories(folder.sharedDir).resolve(local.file.fileName)
+        val sharedText = StoryFormat.encode(story.copy(title = "Story from another developer"), local.id)
+        Files.writeString(shared, sharedText)
+        val localText = local.file.readText()
+
+        assertEquals(2, folder.list().size)
+        assertTrue(folder.lookup(local.id) is StoryFolder.LookupResult.Ambiguous)
+        assertNull(folder.get(local.id))
+        assertTrue(folder.save(story.copy(title = "Replacement"), date, storyId = local.id) is StoryFolder.SaveResult.Ambiguous)
+        assertTrue(folder.update(local.id) { throw AssertionError("An ambiguous update must not run") } is StoryFolder.UpdateResult.Ambiguous)
+        assertFalse(folder.updateAnchors(local.id, local.story, local.story.copy(title = "Wrong target")))
+        assertEquals(localText, local.file.readText())
+        assertEquals(sharedText, shared.readText())
+    }
+
+    @Test
+    fun `reader changes target the selected shared file when its ID matches a local story`() {
+        val folder = folder()
+        val local = saved(folder.save(story, date))
+        val localText = local.file.readText()
+        val shared = Files.createDirectories(folder.sharedDir).resolve(local.file.fileName)
+        Files.writeString(shared, StoryFormat.encode(story.copy(title = "Different shared story"), local.id))
+        val stories = folder.list()
+        val localSelection = stories.single { it.file == local.file }
+        val sharedSelection = stories.single { it.file == shared }
+
+        assertFalse(localSelection.key == sharedSelection.key)
+        assertEquals(localSelection.legacyKey, sharedSelection.legacyKey)
+        assertEquals(shared, folder.get(sharedSelection)!!.file)
+        val result = folder.update(sharedSelection) {
+            StoryThreads.submit(it, listOf(DraftComment("Comment on the shared story")), date)
+        } as StoryFolder.UpdateResult.Updated
+
+        assertEquals(shared, result.stored.file)
+        assertEquals("Comment on the shared story", result.stored.story.threads.single().messages.single().text)
+        assertEquals(result.stored.story, folder.get(sharedSelection)!!.story)
+        assertEquals(localText, local.file.readText())
+    }
+
+    @Test
+    fun `anchor corrections keep the selected local file when its ID matches a shared story`() {
+        val folder = folder()
+        val local = saved(folder.save(story, date))
+        val shared = Files.createDirectories(folder.sharedDir).resolve(local.file.fileName)
+        val sharedText = StoryFormat.encode(story.copy(title = "Different shared story"), local.id)
+        Files.writeString(shared, sharedText)
+        val selections = folder.list()
+        val selected = selections.single { it.file == local.file }
+        val sharedSelection = selections.single { it.file == shared }
+        val corrected = selected.story.copy(steps = selected.story.steps.map {
+            it.copy(location = it.location!!.copy(startLine = 5, endLine = 7))
+        })
+
+        assertTrue(folder.updateAnchors(selected, selected.story, corrected))
+        assertEquals(corrected, folder.get(selected)!!.story)
+        assertFalse(folder.updateAnchors(selected, selected.story, corrected))
+        assertFalse(folder.updateAnchors(sharedSelection, sharedSelection.story, corrected))
+        assertEquals(sharedText, shared.readText())
+    }
+
+    @Test
+    fun `a stale selected file cannot redirect a reader change after a move`() {
+        val folder = folder()
+        val saved = saved(folder.save(story, date))
+        val selected = folder.get(saved.id)!!
+        val moved = folder.setShared(selected, true)
+        val before = moved.file.readText()
+
+        assertNull(folder.get(selected))
+        assertTrue(folder.update(selected) { throw AssertionError("A stale selection must not change a moved story") } is StoryFolder.UpdateResult.NotFound)
+        assertEquals(before, moved.file.readText())
+        assertEquals(moved.file, (folder.lookup(saved.id) as StoryFolder.LookupResult.Found).stored.file)
+        assertEquals(moved.file, folder.get(moved)!!.file)
+    }
+
+    @Test
     fun `sharing never overwrites a shared file with the same name`() {
         val folder = folder()
         val saved = saved(folder.save(story, date))

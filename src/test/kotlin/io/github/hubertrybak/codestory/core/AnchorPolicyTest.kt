@@ -71,6 +71,8 @@ object AnchorCases {
         ResolveCase("first line edited: not found", lines(header, editedAnchor, footer), saved, LOST, 2, 5),
         ResolveCase("code deleted: not found", lines(header, filler(4), footer), saved, LOST, 2, 5),
         ResolveCase("file ends inside the range", lines(header, method.take(3)), saved, CODE_CHANGED, 2, 4),
+        ResolveCase("largest end line shifted down is clamped to the file", lines(header, method, footer), saved.copy(startLine = 1, endLine = Int.MAX_VALUE), CODE_CHANGED, 2, 6),
+        ResolveCase("largest end line without stored code is clamped to the file", lines(header, method, footer), saved.copy(startLine = 1, endLine = Int.MAX_VALUE, rangeText = null), MOVED, 2, 6),
         ResolveCase("empty file", emptyList(), saved, LOST, 2, 5),
         ResolveCase("no anchor, range in the file", lines(header, changed, footer), Location("src/Billing.kt", 2, 5), OK, 2, 5),
         ResolveCase("no anchor, range after the end", lines(header, method), Location("src/Billing.kt", 2, 6), LOST, 2, 6),
@@ -85,6 +87,10 @@ object AnchorCases {
     )
 
     private val numbered = (1..60).map { "line $it" }
+    private val largest = object : AbstractList<String>() {
+        override val size = Int.MAX_VALUE
+        override fun get(index: Int) = "line ${index + 1}"
+    }
     private val twice = listOf("x", "dup", "x", "x", "x", "dup", "x", "x")
 
     val verify: List<VerifyCase> = listOf(
@@ -98,6 +104,8 @@ object AnchorCases {
         VerifyCase("21 lines away", numbered, 10, "line 31", AnchorPolicy.Verification.NotFound),
         VerifyCase("not found", numbered, 10, "fun missing()", AnchorPolicy.Verification.NotFound),
         VerifyCase("start line after the end", numbered, 70, "line 55", AnchorPolicy.Verification.Shifted(55)),
+        VerifyCase("largest start line beyond the file", numbered, Int.MAX_VALUE, "line 55", AnchorPolicy.Verification.NotFound),
+        VerifyCase("nearby anchor at the largest line numbers", largest, Int.MAX_VALUE, "line ${Int.MAX_VALUE - 1}", AnchorPolicy.Verification.Shifted(Int.MAX_VALUE - 1)),
         VerifyCase("duplicate candidates: the nearest", twice, 5, "dup", AnchorPolicy.Verification.Shifted(6)),
         VerifyCase("duplicate candidates at the same distance", twice, 4, "dup", AnchorPolicy.Verification.Ambiguous(listOf(2, 6))),
         VerifyCase("empty file", emptyList(), 1, "line 1", AnchorPolicy.Verification.NotFound),

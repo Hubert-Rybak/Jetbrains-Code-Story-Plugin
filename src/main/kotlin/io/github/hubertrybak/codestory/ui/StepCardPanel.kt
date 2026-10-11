@@ -49,6 +49,7 @@ class StepCardPanel(
     dismiss: () -> Unit,
     private val layoutChanged: () -> Unit = {},
 ) : JPanel(BorderLayout(0, JBUI.scale(8))) {
+    internal val currentStory: StoredStory get() = stored
     val previous = JButton("Prev").apply {
         mnemonic = 'P'.code
         isEnabled = index > 0
@@ -157,6 +158,11 @@ class StepCardPanel(
         threadLine.text = "💬 $threads ${if (threads == 1) "thread" else "threads"}" +
             if (drafts > 0) " · $drafts ${if (drafts == 1) "draft" else "drafts"}" else ""
         resizeCard()
+    }
+
+    fun relocated(previous: StoredStory, current: StoredStory) {
+        comments.relocated(previous, current)
+        refreshComments(current)
     }
 
     fun refreshTheme() {

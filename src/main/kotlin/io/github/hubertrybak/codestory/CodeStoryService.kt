@@ -71,6 +71,9 @@ fun interface StoryListListener {
     /** [shownStoryKey] identifies the repository and story that an agent just showed, if any. */
     fun storiesChanged(shownStoryKey: String?)
 
+    /** An explicit Share/Unshare keeps the selected file's reader state with its new identity. */
+    fun storyRelocated(previous: StoredStory, moved: StoredStory) {}
+
     companion object {
         @Topic.ProjectLevel
         val TOPIC: Topic<StoryListListener> = Topic(StoryListListener::class.java, Topic.BroadcastDirection.NONE)
@@ -126,6 +129,7 @@ class CodeStoryService(private val project: Project) : Disposable {
         val warnings = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints).check(story) + baseWarnings
         val git = currentGit(folder.root)
         return when (val saved = folder.save(story.copy(delivery = StoryFormat.MCP_DELIVERY), Instant.now(), git, storyId)) {
+            is StoryFolder.SaveResult.Ambiguous -> ShowReport.rejected(listOf(ReportItem.ambiguousStory(saved.id)), warnings, checked.corrections)
             is StoryFolder.SaveResult.TooLarge -> ShowReport.rejected(listOf(ReportItem.storyTooLarge(saved.bytes)), warnings, checked.corrections)
             is StoryFolder.SaveResult.NotFound -> ShowReport.rejected(listOf(
                 ReportItem(null, ErrorCode.STORY_NOT_FOUND, "The story `${saved.id}` was not found.", "Call code_story_list to find the current story ID."),
@@ -143,9 +147,9 @@ class CodeStoryService(private val project: Project) : Disposable {
             ReportItem(null, code, message, "Read code_story_get for the story and step IDs, then retry code_story_patch."),
         )))
         if (!StoryFolder.isValidId(storyId)) return rejected(ErrorCode.INVALID_STORY_ID, "The story ID is not valid.")
-        val matches = storyFolders().filter { repositoryPath == null || it.root.toString() == repositoryPath }.mapNotNull { it.get(storyId) }
-        if (matches.size > 1) return rejected(ErrorCode.REPOSITORY_REQUIRED, "That story ID exists in several repositories. Pass repositoryPath from code_story_list.")
-        val stored = matches.singleOrNull() ?: return rejected(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.")
+        val selection = StoryRepositories(project).find(storyId, repositoryPath)
+        selection.error?.let { return patchReport(ShowReport.rejected(listOf(it))) }
+        val stored = checkNotNull(selection.stored)
         val folder = StoryFolder(stored.root)
         val live = AnchorTracker.getInstance(project).snapshot()
         val files = readAction { ideFiles(stored.root, live) }
@@ -176,6 +180,7 @@ class CodeStoryService(private val project: Project) : Disposable {
             StoryRevisions.record(previous, StoryThreads.carryOver(previous, revised), patched.updatedIds, patched.confirmedIds)
         }
         when (result) {
+            is StoryFolder.UpdateResult.Ambiguous -> return patchReport(ShowReport.rejected(listOf(ReportItem.ambiguousStory(result.id))))
             StoryFolder.UpdateResult.NotFound -> return rejected(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.")
             is StoryFolder.UpdateResult.TooLarge -> return patchReport(ShowReport.rejected(
                 listOf(ReportItem.storyTooLarge(result.bytes)), report?.warnings.orEmpty(), report?.corrections.orEmpty(),
@@ -210,6 +215,8 @@ class CodeStoryService(private val project: Project) : Disposable {
     }
 
     fun storyDelivered(stored: StoredStory, replacing: Boolean) {
+        project.service<StoryAcceptanceState>().remember(stored)
+        prepareReader(stored)
         project.service<StoryReaderState>().opened(stored)
         lastShownStoryId = stored.id
         lastShownStoryKey = stored.key
@@ -226,18 +233,26 @@ class CodeStoryService(private val project: Project) : Disposable {
         val reader = project.service<StoryReaderState>()
         val rejected = StoryFileWatcher.getInstance(project).problems.keys
         return storyFolders().flatMap { folder ->
-            val stored = folder.list { file, reason -> LOG.warn("Code Story skipped $file: $reason") }.filter { it.file !in rejected }
+            val all = folder.list { file, reason -> LOG.warn("Code Story skipped $file: $reason") }
+            val idCounts = all.groupingBy { it.id }.eachCount()
+            val stored = all.filter { it.file !in rejected }
             val files = ideFiles(folder.root, live)
-            stored.map { resolve(folder, it, files, live).withNewMarker(reader.isNew(it)) }
+            stored.map {
+                reader.prepare(it, legacyIdentityUnique = idCounts[it.id] == 1)
+                resolve(folder, it, files, live).withNewMarker(reader.isNew(it))
+            }
         }.sortedWith(compareByDescending<StoredStory> { it.story.createdAt }.thenByDescending { it.id }.thenBy { it.root.toString() })
     }
 
     /** Full saved story, including plugin-owned metadata and stable step IDs, with its anchors checked. */
     fun get(storyId: String, repositoryPath: String? = null): JsonObject? {
-        val matches = storyFolders().filter { repositoryPath == null || it.root.toString() == repositoryPath }
-            .mapNotNull { it.get(storyId) }
-        if (matches.size > 1) throw IOException("That story ID exists in several repositories. Pass repositoryPath from code_story_list.")
-        val stored = matches.singleOrNull() ?: return null
+        val selection = StoryRepositories(project).find(storyId, repositoryPath)
+        selection.error?.let {
+            if (it.code == ErrorCode.STORY_NOT_FOUND.code) return null
+            throw IOException("${it.message} ${it.hint}")
+        }
+        val stored = checkNotNull(selection.stored)
+        project.service<StoryReaderState>().prepare(stored, legacyIdentityUnique = true)
         val folder = StoryFolder(stored.root)
         val live = AnchorTracker.getInstance(project).snapshot()
         val resolved = resolve(folder, stored, ideFiles(folder.root, live), live)
@@ -248,16 +263,21 @@ class CodeStoryService(private val project: Project) : Disposable {
 
     /** File operations run in the background; playback metadata is adjusted on the EDT. */
     fun setShared(stored: StoredStory, shared: Boolean) {
+        prepareReader(stored)
         val moved = StoryFileWatcher.getInstance(project).setShared(stored, shared)
+        project.service<StoryReaderState>().relocated(stored, moved)
         project.service<StoryReaderState>().opened(moved)
+        if (lastShownStoryKey == stored.key) lastShownStoryKey = moved.key
         ApplicationManager.getApplication().invokeLater({
-            StoryPlayer.getInstance(project).relocated(moved)
+            StoryPlayer.getInstance(project).relocated(stored, moved)
+            project.messageBus.syncPublisher(StoryListListener.TOPIC).storyRelocated(stored, moved)
+            project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(null)
         }, ModalityState.nonModal(), project.disposed)
-        project.messageBus.syncPublisher(StoryListListener.TOPIC).storiesChanged(null)
     }
 
     fun delete(stored: StoredStory) {
         if (!StoryFolder(stored.root).delete(stored)) throw IOException("The story has moved or was already deleted. Refresh the list.")
+        project.service<StoryAcceptanceState>().forget(stored.file)
         project.service<StoryReaderState>().deleteStoryDrafts(stored.key)
         ApplicationManager.getApplication().invokeLater({
             val player = StoryPlayer.getInstance(project)
@@ -277,10 +297,11 @@ class CodeStoryService(private val project: Project) : Disposable {
      * Returns the number of submitted comments. Reads and writes files, so call it in the background.
      */
     fun submitRound(stored: StoredStory): Int {
+        prepareReader(stored)
         val reader = project.service<StoryReaderState>()
         val drafts = reader.drafts(stored.key)
         if (drafts.isEmpty()) return 0
-        val result = StoryFolder(stored.root).update(stored.id) { StoryThreads.submit(it, drafts.map(StoryDraft::comment), Instant.now()) }
+        val result = StoryFolder(stored.root).update(stored) { StoryThreads.submit(it, drafts.map(StoryDraft::comment), Instant.now()) }
         val updated = changedStory(result, "The comments make the story file larger than ${StoryLimits.MAX_FILE_BYTES / 1024} KB. Shorten them.")
             ?: return 0
         reader.deleteDrafts(drafts.map { it.id })
@@ -295,7 +316,7 @@ class CodeStoryService(private val project: Project) : Disposable {
      */
     fun withdraw(stored: StoredStory, threadId: String): Boolean {
         var draft: DraftComment? = null
-        val result = StoryFolder(stored.root).update(stored.id) { story ->
+        val result = StoryFolder(stored.root).update(stored) { story ->
             StoryThreads.withdraw(story, threadId)?.let { (updated, comment) -> draft = comment; updated } ?: story
         }
         val updated = changedStory(result, null) ?: return false
@@ -306,14 +327,14 @@ class CodeStoryService(private val project: Project) : Disposable {
 
     /** Closes a thread that an agent replied to. Returns `false` when the thread waits for an agent. Call in the background. */
     fun resolve(stored: StoredStory, threadId: String): Boolean {
-        val result = StoryFolder(stored.root).update(stored.id) { StoryThreads.resolve(it, threadId) ?: it }
+        val result = StoryFolder(stored.root).update(stored) { StoryThreads.resolve(it, threadId) ?: it }
         threadsChanged(listOf(changedStory(result, null) ?: return false))
         return true
     }
 
     /** Adds a refresh item immediately, including when there are no reader drafts. */
     fun requestRefresh(stored: StoredStory, stepId: String? = null): Boolean {
-        val result = StoryFolder(stored.root).update(stored.id) { story ->
+        val result = StoryFolder(stored.root).update(stored) { story ->
             StoryThreads.requestRefresh(story, stepId?.takeIf { id -> story.steps.any { it.id == id } }, Instant.now())
         }
         threadsChanged(listOf(changedStory(result, null) ?: return false))
@@ -325,10 +346,22 @@ class CodeStoryService(private val project: Project) : Disposable {
     private fun feedbackStories(storyId: String?, repositoryPath: String?): List<StoredStory>? {
         val rejected = StoryFileWatcher.getInstance(project).problems.keys
         val folders = storyFolders().filter { repositoryPath == null || it.root.toString() == repositoryPath }
-        return if (storyId == null) folders.flatMap { folder -> folder.list().filter { it.file !in rejected } }
-            else folders.mapNotNull { it.get(storyId) }.also {
-                if (it.size > 1) throw IOException("That story ID exists in several repositories. Pass repositoryPath from code_story_list.")
-            }.ifEmpty { return null }
+        if (storyId != null) {
+            val selection = StoryRepositories(project).find(storyId, repositoryPath)
+            selection.error?.let {
+                if (it.code == ErrorCode.STORY_NOT_FOUND.code) return null
+                throw IOException("${it.message} ${it.hint}")
+            }
+            return listOf(checkNotNull(selection.stored))
+        }
+        return folders.flatMap { folder ->
+            val stories = folder.list()
+            stories.groupBy { it.id }.entries.firstOrNull { it.value.size > 1 }?.let {
+                val issue = ReportItem.ambiguousStory(it.key)
+                throw IOException("${issue.message} ${issue.hint}")
+            }
+            stories.filter { it.file !in rejected }
+        }
     }
 
     /** Wait off the EDT without holding a thread or changing drafts. Client cancellation propagates. */
@@ -377,6 +410,10 @@ class CodeStoryService(private val project: Project) : Disposable {
                 is StoryFolder.UpdateResult.Updated -> result.stored.also(marked::add)
                 is StoryFolder.UpdateResult.Unchanged -> result.stored
                 StoryFolder.UpdateResult.NotFound, is StoryFolder.UpdateResult.TooLarge -> null
+                is StoryFolder.UpdateResult.Ambiguous -> {
+                    val issue = ReportItem.ambiguousStory(result.id)
+                    throw IOException("${issue.message} ${issue.hint}")
+                }
             }
         }
         threadsChanged(marked)
@@ -392,10 +429,11 @@ class CodeStoryService(private val project: Project) : Disposable {
         fun failed(code: ErrorCode, message: String, hint: String) = ReplyReport.failed(ReplyIssue(null, null, code.code, message, hint))
         if (!StoryFolder.isValidId(storyId)) return failed(ErrorCode.INVALID_STORY_ID, "The story ID is not valid.", "Use a storyId from code_story_feedback.")
         if (replies.isEmpty()) return failed(ErrorCode.MISSING_FIELD, "The call has no replies.", "Send one reply for each comment from code_story_feedback.")
-        val matches = storyFolders().filter { repositoryPath == null || it.root.toString() == repositoryPath }.mapNotNull { it.get(storyId) }
-        if (matches.size > 1) return failed(ErrorCode.REPOSITORY_REQUIRED, "That story ID exists in several repositories.", "Pass repositoryPath from code_story_feedback.")
-        val stored = matches.singleOrNull()
-            ?: return failed(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.", "Call code_story_feedback for the current comments and story IDs.")
+        val selection = StoryRepositories(project).find(storyId, repositoryPath)
+        selection.error?.let { issue ->
+            return ReplyReport.failed(ReplyIssue(null, null, issue.code, issue.message, issue.hint))
+        }
+        val stored = checkNotNull(selection.stored)
         val (parsed, inputErrors) = ReplyInput.parse(replies)
         var replied: StoryThreads.ReplyResult? = null
         val live = AnchorTracker.getInstance(project).snapshot()
@@ -411,6 +449,10 @@ class CodeStoryService(private val project: Project) : Disposable {
             ReplyIssue(index + 1, reply.threadId, ErrorCode.STORY_TOO_LARGE.code, ReportItem.storyTooLarge(result.bytes).message, "Shorten the replies.")
         }).sortedBy { it.reply }, emptyList())
         if (result == StoryFolder.UpdateResult.NotFound) return failed(ErrorCode.STORY_NOT_FOUND, "The story `$storyId` was not found.", "Call code_story_feedback for the current comments and story IDs.")
+        if (result is StoryFolder.UpdateResult.Ambiguous) {
+            val issue = ReportItem.ambiguousStory(result.id)
+            return ReplyReport.failed(ReplyIssue(null, null, issue.code, issue.message, issue.hint))
+        }
         val outcome = checkNotNull(replied)
         val checks = StoryWritingChecks(CodeStorySettings.getInstance().state.optionalStyleHints)
         // The first reply to a thread is the saved one.
@@ -437,6 +479,7 @@ class CodeStoryService(private val project: Project) : Disposable {
         is StoryFolder.UpdateResult.Unchanged -> null
         is StoryFolder.UpdateResult.TooLarge -> throw IOException(tooLarge ?: "The story file is larger than ${StoryLimits.MAX_FILE_BYTES / 1024} KB.")
         StoryFolder.UpdateResult.NotFound -> throw IOException("The story has moved or was deleted. Refresh the list.")
+        is StoryFolder.UpdateResult.Ambiguous -> throw IOException(ReportItem.ambiguousStory(result.id).message)
     }
 
     /** The tool window and the playing story show the new threads; the player stays at its step. */
@@ -518,7 +561,9 @@ class CodeStoryService(private val project: Project) : Disposable {
 
     private fun saveAnchors(folder: StoryFolder, stored: StoredStory, resolved: StoredStory) {
         try {
-            folder.updateAnchors(stored.id, stored.story, resolved.story)
+            if (folder.updateAnchors(stored, stored.story, resolved.story)) {
+                project.service<StoryAcceptanceState>().anchorsUpdated(stored, resolved)
+            }
         } catch (e: IOException) {
             LOG.warn("Code Story cannot save the moved anchors of ${stored.id}", e)
         }
@@ -542,12 +587,27 @@ class CodeStoryService(private val project: Project) : Disposable {
 
     private fun realPath(path: Path): Path = AnchorTracker.realPath(path)
 
+    /** Called on background storage paths, before reader state reaches the UI. */
+    private fun prepareReader(stored: StoredStory) {
+        val unique = (StoryFolder(stored.root).lookup(stored.id) as? StoryFolder.LookupResult.Found)?.stored?.file == stored.file
+        project.service<StoryReaderState>().prepare(stored, legacyIdentityUnique = unique)
+    }
+
     private fun startPlayback(stored: StoredStory, replacing: Boolean) {
         ApplicationManager.getApplication().invokeLater(
             {
                 val player = StoryPlayer.getInstance(project)
-                if (replacing && player.currentStory?.key == stored.key) player.reload(stored)
-                else player.restart(stored)
+                val current = player.currentStory
+                if (replacing && current?.root == stored.root && current.id == stored.id) {
+                    // Replacement succeeded only for a unique ID. A file moved externally between
+                    // Local and Shared still keeps its playing position and reader state.
+                    if (current.key != stored.key) {
+                        project.service<StoryReaderState>().relocated(current, stored)
+                        player.relocated(current, stored)
+                        project.messageBus.syncPublisher(StoryListListener.TOPIC).storyRelocated(current, stored)
+                    }
+                    player.reload(stored)
+                } else player.restart(stored)
                 ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.show()
                 if (CodeStorySettings.getInstance().state.bringToFront) {
                     WindowManager.getInstance().getFrame(project)?.let { IdeFocusManager.getInstance(project).toFront(it.rootPane) }

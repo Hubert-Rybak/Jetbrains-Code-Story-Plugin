@@ -45,7 +45,9 @@ object AnchorPolicy {
     fun verify(lines: List<String>, startLine: Int, anchorText: String): Verification {
         val anchor = clean(anchorText)
         if (startLine in 1..lines.size && clean(lines[startLine - 1]) == anchor) return Verification.InPlace
-        val hits = (maxOf(1, startLine - NEARBY_LINES)..minOf(lines.size, startLine + NEARBY_LINES))
+        val first = maxOf(1L, startLine.toLong() - NEARBY_LINES).toInt()
+        val last = minOf(lines.size.toLong(), startLine.toLong() + NEARBY_LINES).toInt()
+        val hits = (first..last)
             .filter { clean(lines[it - 1]) == anchor }
         if (hits.isEmpty()) return Verification.NotFound
         val distance = hits.minOf { abs(it - startLine) }
@@ -65,8 +67,8 @@ object AnchorPolicy {
         // Without an anchor, only the lines can be checked.
         val anchor = location.anchorText?.let(::clean)
             ?: return Resolved(location, if (location.endLine <= lines.size) StepStatus.OK else StepStatus.LOST)
-        val length = location.endLine - location.startLine
-        fun at(start: Int) = location.copy(startLine = start, endLine = minOf(start + length, lines.size))
+        val length = location.endLine.toLong() - location.startLine
+        fun at(start: Int) = location.copy(startLine = start, endLine = minOf(start + length, lines.size.toLong()).toInt())
         val hits = (1..lines.size).filter { clean(lines[it - 1]) == anchor }
         if (hits.isEmpty()) return Resolved(location, StepStatus.LOST)
         val start = location.startLine

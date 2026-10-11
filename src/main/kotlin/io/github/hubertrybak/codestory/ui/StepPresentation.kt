@@ -56,7 +56,7 @@ import javax.swing.Icon
 class StepPresentation(
     private val project: Project,
     val editor: Editor,
-    private val stored: StoredStory,
+    private var stored: StoredStory,
     private val index: Int,
     private val player: StoryPlayer,
 ) : Disposable {
@@ -118,6 +118,16 @@ class StepPresentation(
     fun showCard() {
         updatePlacement()
         FileEditorManager.getInstance(project).runWhenLoaded(editor) { queueUpdate() }
+    }
+
+    /** Sharing changes the story's file identity while its editor and partially typed comment stay open. */
+    fun relocated(previous: StoredStory, current: StoredStory) {
+        if (stored.key != previous.key) return
+        stored = current
+        badges.forEach { highlighter ->
+            (highlighter.gutterIconRenderer as? StepBadge)?.let { highlighter.gutterIconRenderer = it.relocated(current) }
+        }
+        card.relocated(previous, current)
     }
 
     fun dismissCard() {
@@ -262,7 +272,7 @@ class StepPresentation(
             badges += editor.markupModel.addRangeHighlighter(
                 editor.document.getLineStartOffset(line), editor.document.getLineStartOffset(line),
                 HighlighterLayer.ADDITIONAL_SYNTAX, null, HighlighterTargetArea.LINES_IN_RANGE,
-            ).apply { gutterIconRenderer = StepBadge(stored, stepIndex, stepIndex == index, player) }
+            ).apply { gutterIconRenderer = StepBadge(stored, stepIndex, stepIndex == index, player) { card.currentStory } }
         }
     }
 
@@ -277,7 +287,13 @@ class StepPresentation(
     }
 }
 
-private class StepBadge(private val stored: StoredStory, private val index: Int, private val current: Boolean, private val player: StoryPlayer) : GutterIconRenderer() {
+private class StepBadge(
+    private val stored: StoredStory,
+    private val index: Int,
+    private val current: Boolean,
+    private val player: StoryPlayer,
+    private val presentedStory: () -> StoredStory,
+) : GutterIconRenderer() {
     override fun getIcon(): Icon = object : Icon {
         override fun getIconWidth() = JBUI.scale(18)
         override fun getIconHeight() = JBUI.scale(18)
@@ -299,8 +315,16 @@ private class StepBadge(private val stored: StoredStory, private val index: Int,
     override fun isNavigateAction() = true
     override fun isDumbAware() = true
     override fun getClickAction() = object : DumbAwareAction() {
-        override fun actionPerformed(e: AnActionEvent) = player.play(stored, index)
+        override fun actionPerformed(e: AnActionEvent) {
+            // Answers arrive without replacing the presentation, so its original snapshot can be stale.
+            val latest = player.currentStory?.takeIf { it.key == stored.key }
+                ?: presentedStory().takeIf { it.key == stored.key } ?: stored
+            val stepId = stored.story.steps[index].id
+            val target = if (stepId == null) index else latest.story.steps.indexOfFirst { it.id == stepId }
+            if (target in latest.story.steps.indices) player.play(latest, target)
+        }
     }
+    fun relocated(stored: StoredStory) = StepBadge(stored, index, current, player, presentedStory)
     override fun equals(other: Any?) = other is StepBadge && other.stored.key == stored.key && other.index == index && other.current == current
     override fun hashCode() = 31 * stored.key.hashCode() + index + if (current) 1 else 0
 }

@@ -53,6 +53,7 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
     private val seen = HashMap<Path, String>()
     private val accepted = HashMap<Path, Story>()
     private val scanLock = Mutex()
+    private val acceptance get() = project.service<StoryAcceptanceState>()
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
@@ -110,6 +111,8 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
             accepted.remove(stored.file)
             seen[moved.file] = hash(Files.readString(moved.file))
             accepted[moved.file] = moved.story
+            acceptance.forget(stored.file)
+            acceptance.remember(moved)
             setProblems(stored.file, emptyList())
             setProblems(moved.file, emptyList())
             moved
@@ -186,6 +189,7 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
         for (file in removed) {
             seen.remove(file)
             accepted.remove(file)
+            acceptance.forget(file)
             setProblems(file, emptyList())
         }
         if (removed.isNotEmpty()) changed()
@@ -210,6 +214,12 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
             previous?.let { threadsChanged(folder, file, it, decoded) }
             return setProblems(file, emptyList())
         }
+        // A previously accepted file is saved history, even when its code changed while the IDE
+        // was closed. Preserve its reference code and let normal anchor resolution show drift.
+        if (previous == null && file !in problems && acceptance.contains(file, decoded)) {
+            accepted[file] = decoded
+            return setProblems(file, emptyList())
+        }
         // Comment threads change in an accepted story without a new delivery, even after its code moved on.
         if (file !in problems && previous != null && StoryThreads.strip(previous) == StoryThreads.strip(decoded)) {
             accepted[file] = decoded
@@ -221,8 +231,9 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
             is ValidationResult.Valid -> result.story
         }
         // Validate even anchor-only changes, but do not restart playback for the plugin's rewrites.
-        if (file !in problems && accepted[file]?.let { sameDelivery(it, decoded) } == true) {
+        if (file !in problems && previous != null && sameDelivery(previous, decoded)) {
             accepted[file] = decoded
+            acceptance.anchorsUpdated(file, previous, decoded)
             return
         }
         val (resolved, _) = StoryChangeInfo.getInstance(project).resolveBase(folder.root, checked)
@@ -233,6 +244,7 @@ class StoryFileWatcher(private val project: Project, private val scope: Coroutin
         val stored = folder.acceptDrop(file, text, normalized) ?: return
         seen[file] = hash(encoded)
         val replacing = accepted.put(file, normalized) != null
+        acceptance.remember(stored)
         setProblems(file, emptyList())
         service.storyDelivered(stored, replacing)
     }

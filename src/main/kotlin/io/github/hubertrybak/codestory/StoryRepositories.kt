@@ -8,6 +8,7 @@ import io.github.hubertrybak.codestory.core.ErrorCode
 import io.github.hubertrybak.codestory.core.ReportItem
 import io.github.hubertrybak.codestory.core.Story
 import io.github.hubertrybak.codestory.core.StoryFolder
+import io.github.hubertrybak.codestory.core.StoredStory
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -24,7 +25,29 @@ class StoryRepositories(private val project: Project) {
         return if (roots.isEmpty()) listOf(fallback) else roots.map(::StoryFolder)
     }
 
-    class Selection(val folder: StoryFolder? = null, val error: ReportItem? = null)
+    class Selection(val folder: StoryFolder? = null, val error: ReportItem? = null, val stored: StoredStory? = null)
+
+    /** ID-only agent calls must never choose between local and shared copies. */
+    fun find(id: String, repositoryPath: String?): Selection {
+        val folders = folders()
+        val requested = repositoryPath?.let { path ->
+            val root = try { Path.of(path).toAbsolutePath().normalize() } catch (_: InvalidPathException) { null }
+            folders.singleOrNull { it.root == root }
+                ?: return failure(ErrorCode.INVALID_REPOSITORY, "The repository is not part of this project.")
+        }
+        val matches = (requested?.let(::listOf) ?: folders).mapNotNull { folder ->
+            when (val result = folder.lookup(id)) {
+                is StoryFolder.LookupResult.Found -> Selection(folder, stored = result.stored)
+                is StoryFolder.LookupResult.Ambiguous -> return Selection(error = ReportItem.ambiguousStory(id))
+                StoryFolder.LookupResult.NotFound -> null
+            }
+        }
+        return when (matches.size) {
+            0 -> failure(ErrorCode.STORY_NOT_FOUND, "The story `$id` was not found.")
+            1 -> matches.single()
+            else -> failure(ErrorCode.REPOSITORY_REQUIRED, "That story ID exists in several repositories.")
+        }
+    }
 
     fun select(story: Story, id: String?, repositoryPath: String?): Selection {
         val folders = folders()
@@ -34,10 +57,9 @@ class StoryRepositories(private val project: Project) {
                 ?: return failure(ErrorCode.INVALID_REPOSITORY, "The repository is not part of this project.")
         }
         if (id != null) {
-            val matches = (requested?.let(::listOf) ?: folders).filter { it.get(id) != null }
-            if (matches.isEmpty()) return failure(ErrorCode.STORY_NOT_FOUND, "The story `$id` was not found.")
-            if (matches.size > 1) return failure(ErrorCode.REPOSITORY_REQUIRED, "That story ID exists in several repositories.")
-            return checkBoundary(matches.single(), story, folders)
+            val found = find(id, repositoryPath)
+            if (found.error != null) return found
+            return checkBoundary(checkNotNull(found.folder), story, folders)
         }
         if (requested != null) return checkBoundary(requested, story, folders)
         if (folders.size == 1) return checkBoundary(folders.single(), story, folders)

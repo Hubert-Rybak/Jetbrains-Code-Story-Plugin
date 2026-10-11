@@ -123,13 +123,15 @@ class StoryChangeInfo(private val project: Project) {
         val git = git() ?: return
         AppExecutorUtil.getAppExecutorService().execute {
             val commit = git.resolveCommit(project, stored.root, baseRef)
-            val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(stored.root.resolve(location.file))?.takeUnless { it.isDirectory }
+            val file = StoryNavigationFiles.find(stored.root, location.file)
             val base = if (commit == null || file == null) null else BaseFiles(git, stored.root, commit).get(location.file)
             val baseText = base?.let { text(it, file) }
             ApplicationManager.getApplication().invokeLater(
                 {
-                    if (commit == null || file == null) notify("Code Story cannot show the diff of ${location.file}: ${if (commit == null) "Git does not know the commit $baseRef" else "the file does not exist"}.")
-                    else DiffManager.getInstance().showDiff(project, diffRequest(location, file, commit, base?.path, baseText))
+                    // Git ran in the background; a link may have changed before the viewer opens.
+                    val currentFile = file?.let { StoryNavigationFiles.find(stored.root, location.file) }
+                    if (commit == null || currentFile == null) notify("Code Story cannot show the diff of ${location.file}: ${if (commit == null) "Git does not know the commit $baseRef" else "the file is missing or outside the repository"}.")
+                    else DiffManager.getInstance().showDiff(project, diffRequest(location, currentFile, commit, base?.path, baseText))
                 },
                 ModalityState.nonModal(),
                 project.disposed,

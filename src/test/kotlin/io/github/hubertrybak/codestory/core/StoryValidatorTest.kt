@@ -115,6 +115,8 @@ object ValidationCases {
         invalid("negative end line", story(step(start = "1", end = "-1")), 1 to ErrorCode.INVALID_LINE),
         invalid("end before start", story(step(start = "5", end = "3")), 1 to ErrorCode.REVERSED_RANGE),
         invalid("end after the last line", story(step(start = "8", end = "11")), 1 to ErrorCode.LINES_OUTSIDE_FILE),
+        invalid("largest end line in place", story(step(start = "1", end = Int.MAX_VALUE.toString())), 1 to ErrorCode.LINES_OUTSIDE_FILE),
+        invalid("largest end line shifted up", story(step(start = "3", end = Int.MAX_VALUE.toString(), anchor = quoted("line 2"))), 1 to ErrorCode.LINES_OUTSIDE_FILE),
         invalid("range after the last line", story(step(start = "40", end = "45")), 1 to ErrorCode.LINES_OUTSIDE_FILE),
         invalid("final line break is not a line", story(step(file = quoted("src/Windows.kt"), start = "4", end = "4")), 1 to ErrorCode.LINES_OUTSIDE_FILE),
         invalid("empty file", story(step(file = quoted("src/empty.txt"), start = "1", end = "1")), 1 to ErrorCode.LINES_OUTSIDE_FILE),
@@ -258,6 +260,19 @@ class StoryValidatorAnchorTest {
         val result = validate(story(step(start = "5", end = "7", anchor = quoted("line 2")), step(file = quoted("src/Missing.kt")))) as ValidationResult.Invalid
         assertEquals(listOf(2 to ErrorCode.FILE_NOT_FOUND.code), result.errors.map { it.step to it.code })
         assertEquals(listOf(1), result.corrections.map { it.step })
+    }
+
+    @Test
+    fun `a shifted end beyond the largest line number is rejected without overflowing`() {
+        val result = validate(story(
+            step(start = "1", end = Int.MAX_VALUE.toString(), anchor = quoted("line 2")),
+            step(start = "5", end = "7", anchor = quoted("line 2")),
+        )) as ValidationResult.Invalid
+
+        val error = result.errors.single()
+        assertEquals(1 to ErrorCode.LINES_OUTSIDE_FILE.code, error.step to error.code)
+        assertTrue(error.message, error.message.contains("the range ends at line 2147483648"))
+        assertEquals(listOf(2), result.corrections.map { it.step })
     }
 
     @Test

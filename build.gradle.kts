@@ -73,7 +73,10 @@ val testWithoutMcp = intellijPlatformTesting.testIde.register("testWithoutMcp") 
     testFramework(TestFrameworkType.Platform)
     plugins { disablePlugin("com.intellij.mcpServer") }
     task {
-        filter { includeTestsMatching("*StoryFileDropTest") }
+        filter {
+            includeTestsMatching("*StoryFileDropTest")
+            includeTestsMatching("*StoryFileWatcherReopenTest")
+        }
         systemProperty("codeStory.testWithoutMcp", "true")
     }
 }

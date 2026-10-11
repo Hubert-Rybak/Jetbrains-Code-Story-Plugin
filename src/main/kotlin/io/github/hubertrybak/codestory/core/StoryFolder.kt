@@ -33,8 +33,10 @@ class StoredStory(
 ) {
     val date: String get() = checkNotNull(story.createdAt).atOffset(ZoneOffset.UTC).toLocalDate().toString()
     val folder: String get() = file.parent.fileName.toString()
-    /** Reader state belongs to a repository and an ID, independently of Local / Shared. */
-    val key: String get() = root.resolve(id).toString()
+    /** Reader state identifies the selected file; local and shared copies can have the same ID. */
+    val key: String get() = file.toString()
+    /** Workspace state written before file identities were introduced is migrated from this key. */
+    val legacyKey: String get() = root.resolve(id).toString()
 
     /** Steps are ok until their anchors are checked. */
     fun status(index: Int): StepStatus = statuses.getOrElse(index) { StepStatus.OK }
@@ -56,6 +58,7 @@ class StoryFolder(val root: Path) {
         class Saved(val id: String, val file: Path, val story: Story) : SaveResult
         class TooLarge(val bytes: Int) : SaveResult
         class NotFound(val id: String) : SaveResult
+        class Ambiguous(val id: String) : SaveResult
     }
 
     sealed interface UpdateResult {
@@ -64,16 +67,27 @@ class StoryFolder(val root: Path) {
         class Unchanged(val stored: StoredStory) : UpdateResult
         class TooLarge(val bytes: Int) : UpdateResult
         data object NotFound : UpdateResult
+        class Ambiguous(val id: String) : UpdateResult
+    }
+
+    sealed interface LookupResult {
+        class Found(val stored: StoredStory) : LookupResult
+        data object NotFound : LookupResult
+        class Ambiguous(val id: String) : LookupResult
     }
 
     /**
      * Saves a new story as `<yyyy-MM-dd>-<slug>.story.json`, with a number suffix when the name
      * exists. The file is written to a temporary file first and then renamed, so a reader never
      * sees a partial story. With [storyId], replaces that story in its current folder while
-     * preserving its ID, creation metadata and comment threads. An unknown ID saves nothing.
+     * preserving its ID, creation metadata and comment threads. Unknown or ambiguous IDs save nothing.
      */
     fun save(story: Story, createdAt: Instant, git: StoryGit = StoryGit(), storyId: String? = null): SaveResult = synchronized(saveLock) {
-        val existing = if (storyId == null) null else get(storyId) ?: return SaveResult.NotFound(storyId)
+        val existing = if (storyId == null) null else when (val found = lookup(storyId)) {
+            is LookupResult.Found -> found.stored
+            LookupResult.NotFound -> return SaveResult.NotFound(storyId)
+            is LookupResult.Ambiguous -> return SaveResult.Ambiguous(storyId)
+        }
         val date = createdAt.atOffset(ZoneOffset.UTC).toLocalDate()
         val baseId = "$date-${slug(story.title)}"
         val id = existing?.id ?: generateSequence(1) { it + 1 }
@@ -110,14 +124,29 @@ class StoryFolder(val root: Path) {
      * purpose: the threads travel with them.
      */
     fun update(id: String, change: (Story) -> Story): UpdateResult = synchronized(saveLock) {
-        val current = get(id) ?: return UpdateResult.NotFound
+        val current = when (val found = lookup(id)) {
+            is LookupResult.Found -> found.stored
+            LookupResult.NotFound -> return UpdateResult.NotFound
+            is LookupResult.Ambiguous -> return UpdateResult.Ambiguous(id)
+        }
+        updateCurrent(current, change)
+    }
+
+    /** Reader actions target the selected file, even when another story has the same ID. */
+    fun update(stored: StoredStory, change: (Story) -> Story): UpdateResult = synchronized(saveLock) {
+        val current = selectedFile(stored) ?: return UpdateResult.NotFound
+        updateCurrent(current, change)
+    }
+
+    /** Called with [saveLock] held after the target file has been selected. */
+    private fun updateCurrent(current: StoredStory, change: (Story) -> Story): UpdateResult {
         val updated = change(current.story)
         if (updated == current.story) return UpdateResult.Unchanged(current)
-        val bytes = StoryFormat.encode(updated, id).toByteArray(Charsets.UTF_8)
+        val bytes = StoryFormat.encode(updated, current.id).toByteArray(Charsets.UTF_8)
         if (bytes.size > StoryLimits.MAX_FILE_BYTES) return UpdateResult.TooLarge(bytes.size)
         writeAtomically(current.file, bytes)
         refreshPendingIndex()
-        UpdateResult.Updated(StoredStory(id, root, current.file, updated, Files.getLastModifiedTime(current.file)))
+        return UpdateResult.Updated(StoredStory(current.id, root, current.file, updated, Files.getLastModifiedTime(current.file)))
     }
 
     /**
@@ -127,11 +156,21 @@ class StoryFolder(val root: Path) {
      */
     fun updateAnchors(id: String, expected: Story, updated: Story): Boolean = synchronized(saveLock) {
         val current = get(id) ?: return false
+        updateCurrentAnchors(current, expected, updated)
+    }
+
+    /** Anchor checks retain the selected file identity when local and shared IDs collide. */
+    fun updateAnchors(stored: StoredStory, expected: Story, updated: Story): Boolean = synchronized(saveLock) {
+        val current = selectedFile(stored) ?: return false
+        updateCurrentAnchors(current, expected, updated)
+    }
+
+    private fun updateCurrentAnchors(current: StoredStory, expected: Story, updated: Story): Boolean {
         if (current.file.parent != localDir || current.story != expected) return false
-        val bytes = StoryFormat.encode(updated, id).toByteArray(Charsets.UTF_8)
+        val bytes = StoryFormat.encode(updated, current.id).toByteArray(Charsets.UTF_8)
         if (bytes.size > StoryLimits.MAX_FILE_BYTES) return false
         writeAtomically(current.file, bytes)
-        true
+        return true
     }
 
     /** Normalize a validated drop in its original file, without overwriting a newer agent edit. */
@@ -222,13 +261,24 @@ class StoryFolder(val root: Path) {
             .sortedWith(compareByDescending<StoredStory> { it.story.createdAt }.thenByDescending { it.id })
     }
 
-    /** Finds an existing ID without interpreting agent input as a path. */
-    fun get(id: String): StoredStory? {
-        if (!isValidId(id)) return null
-        return listOf(localDir, sharedDir).firstNotNullOfOrNull { dir ->
+    /** Finds an ID without guessing between local and shared files or treating input as a path. */
+    fun lookup(id: String): LookupResult {
+        if (!isValidId(id)) return LookupResult.NotFound
+        val matches = listOf(localDir, sharedDir).mapNotNull { dir ->
             read(dir.resolve(id + StoryFormat.FILE_SUFFIX)) { _, _ -> }
         }
+        return when (matches.size) {
+            0 -> LookupResult.NotFound
+            1 -> LookupResult.Found(matches.single())
+            else -> LookupResult.Ambiguous(id)
+        }
     }
+
+    /** Returns only an unambiguous ID; use [lookup] to distinguish collisions from missing files. */
+    fun get(id: String): StoredStory? = (lookup(id) as? LookupResult.Found)?.stored
+
+    /** Re-reads the selected file without redirecting a stale selection to another story. */
+    fun get(stored: StoredStory): StoredStory? = selectedFile(stored)
 
     /** [file] relative to the root, with `/` between folders. */
     fun relativePath(file: Path): String = root.relativize(file).joinToString("/")
@@ -267,7 +317,7 @@ class StoryFolder(val root: Path) {
     private fun hasStorageSymlink(file: Path): Boolean =
         listOf(root.resolve(CODESTORY_DIR), file.parent, file).any { Files.isSymbolicLink(it) }
 
-    /** Story IDs stay unique in both story folders, so sharing a story never changes its ID. */
+    /** New IDs avoid both folders; externally arriving shared files can still introduce collisions. */
     private fun exists(id: String): Boolean = listOf(LOCAL_DIR, SHARED_DIR).any {
         Files.exists(root.resolve(CODESTORY_DIR).resolve(it).resolve(id + StoryFormat.FILE_SUFFIX))
     }

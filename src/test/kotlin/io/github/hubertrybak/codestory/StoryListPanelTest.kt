@@ -15,6 +15,7 @@ import io.github.hubertrybak.codestory.core.StoryType
 import io.github.hubertrybak.codestory.ui.StepNavigator
 import io.github.hubertrybak.codestory.ui.StoryItem
 import io.github.hubertrybak.codestory.ui.StoryListPanel
+import io.github.hubertrybak.codestory.ui.StoryPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -39,6 +40,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
 
     override fun tearDown() {
         try {
+            StoryPlayer.getInstance(project).stop()
             FileEditorManagerEx.getInstanceEx(project).closeAllFiles()
             panel?.let { Disposer.dispose(it) }
         } catch (e: Throwable) {
@@ -131,6 +133,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         assertTrue(panel!!.details.displayedText.contains("The app starts here."))
         val event = KeyEvent(panel!!.tree, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, KeyEvent.VK_ENTER, '\n')
         panel!!.tree.keyListeners.forEach { it.keyPressed(event) }
+        StoryPlayer.getInstance(project).awaitPlayback()
         assertTrue(event.isConsumed)
         assertSame(editor, manager.selectedTextEditor)
         assertEquals(files, manager.openFiles.toList())
@@ -187,6 +190,10 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         // Like the MCP tool: off the EDT.
         val report = runBlocking { withContext(Dispatchers.IO) { CodeStoryService.getInstance(project).show(Json.parseToJsonElement(json)) } }
         assertEquals(report.errors.toString(), ShowStatus.ACCEPTED, report.status)
+        val player = StoryPlayer.getInstance(project)
+        PlatformTestUtil.waitWithEventsDispatching("the story does not play", {
+            player.currentStory?.id == report.storyId && !player.isResolving
+        }, TIMEOUT_SECONDS)
         return report.storyId!!
     }
 
@@ -227,6 +234,7 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
             if (id == MouseEvent.MOUSE_PRESSED) event.consume()
             tree.dispatchEvent(event)
         }
+        StoryPlayer.getInstance(project).awaitPlayback()
     }
 
     private fun write(path: String, text: String) {

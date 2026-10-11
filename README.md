@@ -179,6 +179,11 @@ appear in the tool window and clear when the file is fixed or removed. Valid dro
 in every IDE that has the project open. MCP-delivered stories carry `"delivery": "mcp"`,
 so other IDEs list them without auto-playing them.
 
+After this version accepts a file drop, the IDE remembers it across project restarts.
+Reopening an unchanged story preserves its saved code and does not play it again. Later
+code edits show as **code changed** or **lost**. Files accepted only by an older version
+still need one arrival check because that version did not save an acceptance record.
+
 ## Use
 
 ### Ask for a story
@@ -310,6 +315,11 @@ without changing the shared file.
 
 With several Git repositories mapped in one project, the tree groups by repository and
 each repository has its own `.codestory/`. A story must stay inside one repository.
+
+If a shared arrival has the same ID as a local story, both files remain separate: comments
+and drafts belong to the selected file. Agent tools report `ambiguous-story-id` until the
+two files have different IDs. Change both the filename and the JSON `id` when resolving
+such a collision.
 
 ### Questions and change requests
 

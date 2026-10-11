@@ -16,6 +16,7 @@ enum class ErrorCode(val code: String) {
     STORY_TOO_LARGE("story-too-large"),
     STORY_NOT_FOUND("story-not-found"),
     INVALID_STORY_ID("invalid-story-id"),
+    AMBIGUOUS_STORY_ID("ambiguous-story-id"),
     INVALID_REPOSITORY("invalid-repository"),
     REPOSITORY_REQUIRED("repository-required"),
     CROSS_REPOSITORY("cross-repository"),
@@ -56,6 +57,12 @@ data class ReportItem(
     constructor(step: Int?, code: ErrorCode, message: String, hint: String) : this(step, code.code, message, hint)
 
     companion object {
+        fun ambiguousStory(id: String) = ReportItem(
+            null, ErrorCode.AMBIGUOUS_STORY_ID,
+            "Story `$id` exists in both the local and shared folders.",
+            "Give the two story files different IDs (in both the filename and JSON) before using agent tools with this ID.",
+        )
+
         fun storyTooLarge(bytes: Int) = ReportItem(
             null, ErrorCode.STORY_TOO_LARGE,
             "The story is ${(bytes + 1023) / 1024} KB. The limit is ${StoryLimits.MAX_FILE_BYTES / 1024} KB.",
