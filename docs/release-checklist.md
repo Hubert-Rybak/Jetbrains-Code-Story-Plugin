@@ -1,8 +1,12 @@
 # Manual release checklist
 
 Before tagging a version, install `build/distributions/*.zip` from disk in
-Rider (a C# solution) and IntelliJ IDEA (a Java or Kotlin project). Repeat
-the UI checks in light and dark themes. Record the IDE versions used.
+the current Rider pinned by `riderVersion` / `riderBuild` in `gradle.properties`
+(currently 2026.2.3.1, RD-262.10968.170), with a real C# solution. The compilation
+baseline is Rider 2026.1 (RD-261.22158.335), not an additional behavioral-test target.
+Repeat the UI checks in light and dark themes. Record the exact build and ZIP hash.
+The historical [v1 verification record](v1-verification.md) is not evidence that
+this Rider-only migration passes. Do not mark a billing-blocked CI run as passed.
 
 - [ ] The plugin installs and enables without errors.
 - [ ] **View | Tool Windows | Code Story** opens the window. Without stories,
@@ -14,12 +18,24 @@ the UI checks in light and dark themes. Record the IDE versions used.
 - [ ] With MCP Server and Git plugins disabled in a test profile, Code Story
       still loads and the window opens.
 - [ ] The IDE log has no Code Story loading or runtime errors.
-- [ ] CI build, checks and all eight Plugin Verifier jobs pass.
+- [ ] The 11 lightweight Python build-policy contracts pass.
+- [ ] The complete core/IDE suite runs through `testCurrentRider` on the pinned current
+      Rider and Java 25, with the expected test count and no failures or skipped coverage.
+- [ ] `testWithoutMcp` runs the existing file-drop smoke filter on that same Rider,
+      with MCP Server genuinely disabled.
+- [ ] `RiderRuntimeTest` proves the actual RD build and Java version in both scenarios;
+      the test JVM uses the current Rider's bundled JBR 25, not a baseline launcher.
+- [ ] The current test framework and IDE/plugin runtime classpaths resolve from the
+      current Rider build, not from the compilation baseline. The pinned stable
+      Platform test-framework 262.10968.136 passes against RD-262.10968.170.
+- [ ] CI's single build job passes `check buildPlugin verifyPluginStructure verifyPlugin`.
+      The one verifier target is the pinned current Rider, and its input is the exact
+      `buildPlugin` ZIP uploaded for release. Keep the test and verifier reports.
 - [ ] The release tag matches `version` in `gradle.properties` and
       `skills/code-story/version.txt`.
 - [ ] CHANGELOG.md has an entry for the version, with the release date.
-- [ ] For 1.0.0, every v1 done criterion in [v1-verification.md](v1-verification.md)
-      has a result.
+- [ ] Release publication is gated on that successful build and a matching existing
+      tag; the ZIP downloaded by the release job is the verified build artifact.
 
 ## Agents
 
@@ -98,7 +114,7 @@ that these checks also test its setup instructions.
 - [ ] With two repositories, each story saves in its own repository. A story with
       steps in both is rejected. Identical story IDs keep separate reading positions.
 
-Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light
+Repeat these checks in the pinned current Rider (C#), in light
 and dark themes, including narrow and split editors.
 
 - [ ] A step shows a floating card with a pointer to its code range, the step
@@ -153,7 +169,7 @@ and dark themes, including narrow and split editors.
 
 ## Anchoring
 
-Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).
+Repeat these checks in the pinned current Rider (C#).
 
 - [ ] A story whose start line is a few lines off is accepted. The report lists
       the correction, and the step opens at the right code.
@@ -178,12 +194,12 @@ Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).
 
 ## Questions and answers
 
-Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark
+Repeat these checks in the pinned current Rider (C#), in light and dark
 themes, including a narrow tool window.
 
 - [ ] The card’s **💬** button opens a small input below the step text. **Save Draft**
       and Ctrl+Enter save it; **Cancel** and Escape close it without saving. Repeat in
-      Rider and IntelliJ IDEA, light/dark themes, and floating and tool-window cards.
+      current Rider, light/dark themes, and floating and tool-window cards.
 - [ ] **Ctrl+Alt+Shift+Z**, then **C**, opens **Comment on Current Step**, including a
       dismissed card and a text-only step. The shortcut can be changed in Keymap.
 - [ ] The collapsed **💬 N threads · N drafts** line expands inside the card. Drafts can
@@ -227,7 +243,7 @@ themes, including a narrow tool window.
 
 ## Change information
 
-Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light
+Repeat these checks in the pinned current Rider (C#), in light
 and dark themes.
 
 - [ ] With uncommitted work, ask the agent for a story about the change. The

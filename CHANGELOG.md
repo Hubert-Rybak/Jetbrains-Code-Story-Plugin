@@ -12,6 +12,19 @@ All notable changes to Code Story are listed here. The format follows
   pick up Submit Round, answer, and listen again without another chat prompt.
 - A setting to disable automatic listening, with cancellation and manual feedback fallback.
 
+### Changed
+
+- Restrict the plugin to Rider, with Rider 2026.1 (RD-261.22158.335) as the compilation
+  baseline and descriptor minimum; compile Java 21 bytecode with Kotlin language/API 2.3.
+- Pin all core/IDE behavioral tests and the single Plugin Verifier target to Rider
+  2026.2.3.1 (RD-262.10968.170), running on Java 25. Keep the MCP-disabled file-drop
+  smoke suite on the same current runtime, without repeating the full baseline suite.
+- Replace the IDEA/older-Rider/EAP CI matrix with one verified build and a dependent,
+  tag-only release of the same ZIP. Add lightweight policy contracts, job timeouts
+  and bounded report/artifact retention.
+- Allow exact-version/build-validated local Rider distributions for the compilation
+  SDK and current tests, development sandbox and verifier, avoiding duplicate downloads.
+
 ## [1.0.0] - 2026-10-10
 
 The first release. Install the zip from disk in Rider or IntelliJ IDEA 2025.3 or newer.
