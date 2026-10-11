@@ -1,5 +1,12 @@
 # Code Story v1 verification
 
+> Historical record from before the Rider-only SDK/CI migration. Versions, criteria
+> and executed results below describe that earlier configuration and are preserved,
+> not evidence of a successful current-Rider test run. Current support and release
+> gates are in the [README](../README.md#develop) and
+> [release checklist](release-checklist.md); the migrated JVM build, behavioral tests
+> and single verifier still require real execution. Billing-blocked CI is not green.
+
 This record checks Code Story 1.0.0 against the nine "v1 is done when" criteria at the
 end of [spec.md](../spec.md#further-notes). Automated results come from the test suite and
 CI. The other checks need the IDEs, the agents and their accounts: do the steps, then

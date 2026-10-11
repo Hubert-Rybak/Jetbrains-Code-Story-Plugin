@@ -1,7 +1,7 @@
 # Code Story
 
-Code Story is a JetBrains IDE plugin for guided code walkthroughs, with Rider as the
-primary target. Ask your AI coding agent for a story, for example
+Code Story is a Rider plugin for guided code walkthroughs. Ask your AI coding agent
+for a story, for example
 `/code-story "Explain the main change for this ticket"`. The agent writes a short story
 of ordered steps and sends it to your running IDE. Each step opens its file, highlights
 the code that it explains and shows a floating card with a short comment. Stories stay on
@@ -10,8 +10,9 @@ your questions and change requests back to the agent.
 
 Code Story works with Claude Code, Codex CLI, GitHub Copilot in Rider and GitHub Copilot
 CLI. See [CHANGELOG.md](CHANGELOG.md) for the release notes, [spec.md](spec.md) for the
-product specification and [docs/v1-verification.md](docs/v1-verification.md) for the v1
-release checks.
+product specification and [docs/v1-verification.md](docs/v1-verification.md) for the
+historical v1 verification record. The current release checks are in
+[docs/release-checklist.md](docs/release-checklist.md).
 
 <p align="center">
   <picture>
@@ -36,8 +37,9 @@ release checks.
 
 ## Requirements
 
-- Rider or IntelliJ IDEA 2025.3 or newer, running on your machine. Other IntelliJ-based
-  IDEs from 2025.3 also load the plugin; v1 is tested in Rider and IntelliJ IDEA.
+- Rider 2026.1 or newer, running on your machine (minimum build RD-261.22158.335).
+  Only Rider is supported. The current automated validation target is pinned to
+  Rider 2026.2.3.1 (RD-262.10968.170); newer versions are not implicitly verified.
 - An AI coding agent on the same machine: Claude Code, Codex CLI, GitHub Copilot in Rider
   (agent mode) or GitHub Copilot CLI.
 - Optional: the bundled MCP Server plugin, so that agents send stories directly and get
@@ -84,11 +86,11 @@ Open **Settings | Tools | MCP Server**, select **Enable MCP Server**, confirm wi
 to your open projects. Code Story never changes this setting itself.
 
 **Auto-Configure**, in the **Clients Auto-Configuration** list on the same page, writes
-the configuration of a detected agent for you. The list depends on the IDE version: 2025.3
-lists Claude Code, and 2026.2 also lists Codex and GitHub Copilot CLI. Restart the agent
-after you configure it. For an agent that is not in the list, **Manual Client
-Configuration** copies the server address: **Copy SSE Config**, **Copy Stdio Config**, and
-**Copy HTTP Stream Config** in newer versions.
+the configuration of a detected agent for you. The available clients depend on your
+installed Rider version. Restart the agent after you configure it. For an agent that
+is not in the list, use **Manual Client Configuration**: **Copy SSE Config**,
+**Copy Stdio Config**, or **Copy HTTP Stream Config**. Use the copied address rather
+than a hard-coded port.
 
 ### 3. Connect your agent
 
@@ -123,9 +125,8 @@ Start the agent in the folder of a project that is open in the IDE.
    url = "<the URL from Copy HTTP Stream Config>"
    ```
 
-   IDE 2025.3 has no HTTP stream configuration: put the `command`, `args` and `env` values
-   from **Copy Stdio Config** into the same table instead. Restart Codex; `/mcp` lists the
-   server.
+   To use stdio instead, put the `command`, `args` and `env` values from
+   **Copy Stdio Config** into the same table. Restart Codex; `/mcp` lists the server.
 3. Type `$code-story "Explain the main change for this ticket"`.
 
 #### GitHub Copilot in Rider
@@ -556,8 +557,9 @@ comment was received.
   supported.
 - **Install from disk.** The plugin is not on JetBrains Marketplace yet, and the IDE does
   not update it automatically.
-- **Tested IDEs.** v1 is tested in Rider and IntelliJ IDEA. Other IntelliJ-based IDEs from
-  2025.3 load the plugin without such tests.
+- **Rider only.** The compilation baseline is Rider 2026.1. Tests and binary verification
+  target the single current Rider version pinned by `riderVersion` in `gradle.properties`.
+  There is no IDEA, older-version or EAP compatibility matrix.
 - **The MCP server is off by default.** Only you can switch it on. Without it, agents
   deliver stories as files and get no validation report.
 - **One IDE per agent connection.** An agent talks to the MCP server of the IDE that it
@@ -597,26 +599,56 @@ comment was received.
 
 This single-module Kotlin project is based on the
 [official IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template/tree/b7b700870b23e1323353a0350a1acd9cc6d2b225).
-It compiles against IntelliJ IDEA 2025.3 with a Java 21 toolchain. Kotlin's
-language and API versions match the 2.2 standard library in that IDE;
-the plugin does not bundle its own standard library.
+It compiles against Rider 2026.1 (RD-261.22158.335), using a Java 21 toolchain,
+Java 21 bytecode and Kotlin language/API 2.3. The Kotlin compiler plugin remains
+2.4.20; the plugin does not bundle its own Kotlin standard library or serialization
+library. The SDK's bundled JBR is not the compilation target: the baseline's
+relevant platform and MCP classes use Java 21 bytecode even though its JBR is 25.
 
-Use JDK 21 or newer to run Gradle, with a UTF-8 locale (some test names contain
-typographic apostrophes). The toolchain resolver downloads JDK 21 if it is missing.
-Import the repository as a Gradle project, or run:
+`riderBaselineVersion` and `riderBaselineBuild` in `gradle.properties` pin the
+compilation SDK and descriptor minimum. Independently, `riderVersion` and `riderBuild`
+pin the current test and verification target: Rider 2026.2.3.1 (RD-262.10968.170).
+Update both current-target properties together when validating a newer stable release;
+do not raise the compilation baseline just to update the test runtime.
+
+Use JDK 25 to run Gradle and the current Rider tests/verifier, with a UTF-8 locale
+(some test names contain typographic apostrophes). The existing Foojay toolchain
+resolver provisions the Java 21 compiler if it is missing. The Gradle wrapper is
+9.8.0 and the IntelliJ Platform Gradle Plugin is 2.19.0. Import the repository as a
+Gradle project, or run:
 
 ```sh
-./gradlew check buildPlugin verifyPluginStructure
-# File-drop and setup smoke checks with the MCP Server plugin disabled.
+# Fast, stdlib-only policy contracts (no IDE download or JVM build).
+python3 .github/scripts/test_rider_target.py
+# Full suite on current Rider, ZIP build, structure check and single binary verifier.
+./gradlew check buildPlugin verifyPluginStructure verifyPlugin
+# Full core and IDE suite on the pinned current Rider only.
+./gradlew testCurrentRider
+# File-drop and setup smoke checks on current Rider with MCP Server disabled.
 ./gradlew testWithoutMcp
-# Use your installed Rider in a separate development sandbox.
+# Use the pinned current Rider installation in a separate development sandbox.
 ./gradlew runLocalIde -PlocalIdePath="/path/to/Rider.app"
 ```
 
-The installable zip is in `build/distributions/`. `check` runs the story-core
-unit tests (plain JUnit, no IDE) and the IDE-level tests (IntelliJ Platform
-test framework), which call `code_story_show` the way the IDE's MCP server
-does and check the report, the saved files and the tool window.
+The installable zip is in `build/distributions/`. `check` runs the complete,
+unfiltered test source set through `testCurrentRider`: the story-core unit tests
+(plain JUnit, no IDE fixture) and the IDE-level tests (IntelliJ Platform test
+framework). Both run in the current Rider environment on Java 25. The default
+baseline `test` execution is disabled to avoid repeating the suite on an older IDE;
+invoking `test` still depends on `testCurrentRider`, so it is not a silent no-op.
+Each custom test task resolves its own current-SDK classpath and uses Rider's bundled
+JBR 25 through `TestIdeTask`'s runtime resolver, not a manually selected Temurin launcher
+or the baseline test classpath. The Platform test framework is pinned to the published
+stable 262.10968.136 artifact: Rider's exact build 262.10968.170 has no matching
+framework artifact, and the default closest-version constraint can select a snapshot.
+This pin is a candidate for real runtime validation, not proof that the suites pass.
+`RiderRuntimeTest` checks the actual RD build and Java version in both test scenarios
+against `codeStory.expectedRiderBuild`. Real Gradle results, including test counts and
+the resolved runtime classpath, must be checked before claiming compatibility with an
+updated target.
+
+IDE-level tests call `code_story_show` the way the IDE's MCP server does and check
+the report, the saved files and the tool window.
 They also cover guide/list/get, replacement in local and shared folders, writing
 reports, auto-play, playback controls, resume/restart, card dismissal,
 gutter navigation, presentation cleanup and the absence of code-line inlays.
@@ -626,8 +658,9 @@ information tests build a fixture Git history and check the A/M badges, the save
 base commit, **Show diff** and the unknown-base warning.
 File-drop tests create and replace real files and check playback, visible problems,
 corrections and delivery markers. `check` also runs these tests in a separate IDE
-sandbox with MCP Server disabled. Skill tests install and update both agent copies
-in temporary user and project folders; setup tests cover status and first-run guidance.
+sandbox with MCP Server disabled, alongside the runtime-proof test. Skill tests install
+and update both agent copies in temporary user and project folders; setup tests cover
+status and first-run guidance.
 Management tests cover share/unshare, deletion confirmation, shared arrivals without
 playback, repository grouping and separate reader state for duplicate story IDs.
 Core tests also cover Markdown export, including text-only steps and escaped paths.
@@ -644,35 +677,52 @@ plugin and uses the kotlinx.serialization library that ships with the IDE; it do
 not bundle its own copy.
 
 ```sh
-# Full compatibility matrix: Rider and IDEA, three releases and latest EAP.
+# One binary-verification target: the same pinned current Rider as the test runtime.
 ./gradlew verifyPlugin
-# One target, useful during development.
-./gradlew verifyPlugin -PverificationType=RD -PverificationVersion=2025.3
-# Verify against an installed IDE without downloading another copy.
+# Reuse the pinned current Rider installation for tests, runLocalIde and verification.
 ./gradlew verifyPlugin -PlocalIdePath="/path/to/Rider.app"
+# Reuse both downloaded SDKs without changing either pinned target.
+./gradlew check buildPlugin verifyPluginStructure verifyPlugin \
+  -PlocalRiderBaselinePath="/path/to/Rider-2026.1" \
+  -PlocalIdePath="/path/to/Rider-2026.2.3.1"
 ```
 
-`localIdePath` changes the launch and verification targets only. Compilation
-keeps using the 2025.3 SDK, so local development does not raise the minimum
-supported IDE version. `./gradlew runIde` launches the baseline IDEA sandbox.
+`localIdePath` supplies the current test, `runLocalIde` and verification distribution;
+`localRiderBaselinePath` supplies the compilation SDK only. Each override validates
+`product-info.json`: it must be a stable RD product with the exact version and build
+from its corresponding properties. An IDEA installation, an arbitrary older Rider,
+or an EAP is rejected. On macOS, the IDE bundle path is also accepted. Without
+overrides, Gradle resolves both pinned distributions. `./gradlew runIde` launches
+the baseline Rider sandbox for development; it is not a release test gate.
+
+Build DSL references: JetBrains' [testing extension](https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-testing-extension.html),
+[verification extension](https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html#pluginverification),
+and the tagged 2.19.0 sources for [custom testing configurations](https://github.com/JetBrains/intellij-platform-gradle-plugin/blob/2.19.0/src/main/kotlin/org/jetbrains/intellij/platform/gradle/extensions/IntelliJPlatformTestingExtension.kt)
+and [test classpath setup](https://github.com/JetBrains/intellij-platform-gradle-plugin/blob/2.19.0/src/main/kotlin/org/jetbrains/intellij/platform/gradle/tasks/TestIdeTask.kt).
 
 ## Release
 
-CI builds the zip, runs `check`, checks the plugin structure, and runs the
-Plugin Verifier in eight jobs: Rider and IDEA 2025.3, 2026.1, 2026.2 and the
-latest EAP for each product. Reports and the zip are workflow artifacts.
+CI has only `build` and `release` jobs. The build job first checks the Python policy
+contracts, then runs `./gradlew check buildPlugin verifyPluginStructure verifyPlugin`
+on Java 25. All core and IDE tests run on the pinned current Rider, plus the current
+Rider file-drop smoke suite with MCP disabled. One Plugin Verifier target checks the
+exact ZIP from `buildPlugin` against that same current Rider. No matrix, separate
+verifier build or EAP resolution is used. The distribution artifact is retained for
+14 days; test and verifier reports are retained for 7 days.
 
 1. Set `version` in `gradle.properties` and in
    [`skills/code-story/version.txt`](skills/code-story/version.txt).
 2. Add an entry for the version, with the release date, to [CHANGELOG.md](CHANGELOG.md).
-3. Complete the [manual checklist](docs/release-checklist.md). For 1.0.0, also record the
-   v1 done criteria in [docs/v1-verification.md](docs/v1-verification.md).
+3. Complete the [current manual checklist](docs/release-checklist.md) on the pinned
+   current Rider. The [v1 verification record](docs/v1-verification.md) preserves
+   historical results; it does not prove the current Rider migration is validated.
 4. Push a matching tag, for example `v1.0.0`.
 
 The tag build fails when the tag does not match `version` or when CHANGELOG.md has no
-entry for the version. After every build and verifier job passes, the workflow publishes
-the verified build's zip to GitHub Releases, with the CHANGELOG entry above the generated
-notes. Release publication uses the workflow's `GITHUB_TOKEN`; no Marketplace
-credentials are needed.
+entry for the version. After the verified build job passes, the tag-only release job
+publishes that build's uploaded ZIP to GitHub Releases, with the CHANGELOG entry above
+the generated notes. Release publication uses the workflow's `GITHUB_TOKEN`; no
+Marketplace credentials are needed. CI is currently billing-blocked; a policy-only
+pass or a blocked workflow is not a successful JVM build or release verification.
 
 Licensed under [Apache-2.0](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).
