@@ -48,12 +48,66 @@ class StoryReaderState : PersistentStateComponent<StoryReaderState.ReadStories> 
     }
 
     private var data = ReadStories()
+    /** A background inventory authorizes legacy migration only for the unique file of an ID. */
+    private val uniqueLegacyFiles = mutableMapOf<String, String>()
     @Synchronized override fun getState() = ReadStories().also {
         it.opened.addAll(data.opened)
         it.drafts.addAll(data.drafts.map(StoryDraft::copy))
         it.readAnswers.putAll(data.readAnswers)
     }
-    @Synchronized override fun loadState(state: ReadStories) { data = state }
+    @Synchronized override fun loadState(state: ReadStories) {
+        data = state
+        uniqueLegacyFiles.clear()
+    }
+
+    /**
+     * Migrates workspace state written before reader identities included the story file.
+     * The caller checks uniqueness against the available files, away from the reader UI.
+     * Ambiguous legacy state stays unassigned rather than appearing on either copy.
+     */
+    @Synchronized fun prepare(stored: StoredStory, legacyIdentityUnique: Boolean): Boolean {
+        if (legacyIdentityUnique) uniqueLegacyFiles[stored.legacyKey] = stored.key
+        else uniqueLegacyFiles.remove(stored.legacyKey)
+        return legacyIdentityUnique && moveState(stored.legacyKey, stored.key)
+    }
+
+    /** Other workspace state may migrate on the EDT only after an unambiguous background lookup. */
+    @Synchronized fun canMigrateLegacy(stored: StoredStory): Boolean = uniqueLegacyFiles[stored.legacyKey] == stored.key
+
+    /** Sharing and unsharing move the same story, including its workspace-only reader state. */
+    @Synchronized fun relocated(previous: StoredStory, moved: StoredStory): Boolean {
+        if (uniqueLegacyFiles[previous.legacyKey] == previous.key) {
+            uniqueLegacyFiles.remove(previous.legacyKey)
+            uniqueLegacyFiles[moved.legacyKey] = moved.key
+        }
+        return moveState(previous.key, moved.key)
+    }
+
+    private fun moveState(previousKey: String, currentKey: String): Boolean {
+        if (previousKey == currentKey) return false
+        var changed = false
+        if (data.opened.remove(previousKey)) {
+            data.opened.add(currentKey)
+            changed = true
+        }
+        data.drafts.indices.forEach { index ->
+            val draft = data.drafts[index]
+            if (draft.story == previousKey) {
+                data.drafts[index] = draft.copy(story = currentKey)
+                changed = true
+            }
+        }
+        val prefix = "$previousKey/"
+        val answers = data.readAnswers.filterKeys { it.startsWith(prefix) }
+        answers.forEach { (key, round) ->
+            data.readAnswers.remove(key)
+            val target = "$currentKey/" + key.removePrefix(prefix)
+            data.readAnswers[target] = maxOf(round, data.readAnswers[target] ?: 0)
+            changed = true
+        }
+        return changed
+    }
+
     @Synchronized fun isNew(stored: StoredStory) = stored.folder == StoryFolder.SHARED_DIR && stored.key !in data.opened
     @Synchronized fun opened(stored: StoredStory): Boolean = data.opened.add(stored.key)
 

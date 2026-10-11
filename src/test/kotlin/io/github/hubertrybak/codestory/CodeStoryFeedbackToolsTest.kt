@@ -333,15 +333,16 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
 
     fun `test answers reach a playing story without moving it`() {
         val stored = show(story(step(id = quoted("entry")), step(start = "10", end = "12", id = quoted("core"))))
-        PlatformTestUtil.waitWithEventsDispatching("the story does not play", { player.currentStory?.key == stored.key }, 10)
+        PlatformTestUtil.waitWithEventsDispatching("the story does not play", { player.currentStory?.key == stored.key && !player.isResolving }, 10)
         player.next()
+        player.awaitPlayback()
         val presentation = player.presentation!!
         draft(stored, "Why is this the core?", step = "core")
         submit(stored)
         val comment = feedback().getValue("comments").jsonArray.single().jsonObject
         reply(stored.id, listOf(reply(comment, "answered", "It charges the card.")))
         PlatformTestUtil.waitWithEventsDispatching("the playing story has no answer", {
-            player.currentStory?.story?.steps?.get(1)?.threads?.singleOrNull()?.state == ThreadState.ANSWERED
+            player.currentStory?.story?.steps?.get(1)?.threads?.singleOrNull()?.state == ThreadState.ANSWERED && !player.isResolving
         }, 10)
         assertEquals(1, player.stepIndex)
         assertSame(presentation, player.presentation)

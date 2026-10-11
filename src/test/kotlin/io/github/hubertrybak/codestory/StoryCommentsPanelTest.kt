@@ -207,7 +207,7 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
     fun `test card comments save drafts with Ctrl Enter cancel and expand threads inside the card`() {
         val stored = show(story(step(id = quoted("entry"))))
         val player = StoryPlayer.getInstance(project)
-        await { player.currentStory?.id == stored.id }
+        await { player.currentStory?.id == stored.id && !player.isResolving }
         val card = player.presentation!!.card
         assertEquals("💬 0 threads", card.threadLine.text)
         assertFalse(card.comments.expanded)
@@ -240,18 +240,18 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
     fun `test collapsed card leaves new replies unread until threads open and shows story changes`() {
         val stored = show(story(step(id = quoted("entry")), step(id = quoted("core"), start = "5", end = "6")))
         val player = StoryPlayer.getInstance(project)
-        await { player.currentStory?.id == stored.id }
+        await { player.currentStory?.id == stored.id && !player.isResolving }
         reader.saveDraft(StoryDraft(story = stored.key, step = "entry", text = "Explain this?"))
         background { service.submitRound(stored) }
         val comment = background { service.feedback(stored.id, null)!! }.comments.single()
         background { service.patch(stored.id, listOf(Json.parseToJsonElement("""{"op":"update","stepId":"entry","comment":"The controller receives the request."}"""))) }
-        await { player.currentStory?.story?.steps?.first()?.comment == "The controller receives the request." }
+        await { player.currentStory?.story?.steps?.first()?.comment == "The controller receives the request." && !player.isResolving }
         background {
             service.reply(stored.id, listOf(buildJsonObject {
                 put("threadId", comment.threadId); put("round", comment.round); put("outcome", "answered"); put("text", "The controller receives the request first.")
             }))
         }
-        await { player.currentStory!!.story.steps[0].threads.single().messages.size == 2 }
+        await { player.currentStory!!.story.steps[0].threads.single().messages.size == 2 && !player.isResolving }
         val card = player.presentation!!.card
         assertFalse(card.comments.expanded)
         assertTrue(reader.hasUnread(stored, saved(stored).steps[0].threads))
@@ -270,11 +270,11 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
     fun `test an unsaved card input survives a story revision`() {
         val stored = show(story(step(id = quoted("entry"))))
         val player = StoryPlayer.getInstance(project)
-        await { player.currentStory?.id == stored.id }
+        await { player.currentStory?.id == stored.id && !player.isResolving }
         player.presentation!!.card.commentButton.doClick()
         player.presentation!!.card.comments.input!!.text.text = "Half written question"
         background { service.patch(stored.id, listOf(Json.parseToJsonElement("""{"op":"update","stepId":"entry","comment":"A clearer explanation."}"""))) }
-        await { player.currentStory!!.story.steps[0].comment == "A clearer explanation." }
+        await { player.currentStory!!.story.steps[0].comment == "A clearer explanation." && !player.isResolving }
         assertEquals("Half written question", player.presentation!!.card.comments.shownInput()!!.text.text)
         assertEmpty(reader.drafts(stored.key))
     }
@@ -288,7 +288,7 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
     fun `test change request toggles in card and details preserve draft kind and refresh is in the context menu`() {
         val stored = show(story(step(id = quoted("entry"))))
         val player = StoryPlayer.getInstance(project)
-        await { player.currentStory?.id == stored.id }
+        await { player.currentStory?.id == stored.id && !player.isResolving }
         val card = player.presentation!!.card
         card.commentButton.doClick()
         val input = card.comments.shownInput()!!

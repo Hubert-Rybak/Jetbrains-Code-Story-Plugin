@@ -121,6 +121,8 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
 
     @Volatile
     private var disposed = false
+    @Volatile
+    private var relocationVersion = 0L
     private var loaded = false
 
     init {
@@ -141,7 +143,10 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         })
         toolbar = createToolbar()
         PopupHandler.installPopupMenu(tree, contextActions, "CodeStory.StoryMenu")
-        project.messageBus.connect(this).subscribe(StoryListListener.TOPIC, StoryListListener { reload(it) })
+        project.messageBus.connect(this).subscribe(StoryListListener.TOPIC, object : StoryListListener {
+            override fun storiesChanged(shownStoryKey: String?) = reload(shownStoryKey)
+            override fun storyRelocated(previous: StoredStory, moved: StoredStory) = relocateStory(previous, moved)
+        })
         project.messageBus.connect(this).subscribe(StoryPlaybackListener.TOPIC, StoryPlaybackListener { updatePlayback() })
         project.messageBus.connect(this).subscribe(StoryReaderListener.TOPIC, StoryReaderListener { onEdt { draftsChanged() } })
         project.messageBus.connect(this).subscribe(StoryCommentListener.TOPIC, StoryCommentListener {
@@ -160,6 +165,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
      */
     fun reload(selectStoryId: String? = null) {
         if (disposed) return
+        val version = relocationVersion
         loader.execute {
             val stories = try {
                 CodeStoryService.getInstance(project).stories()
@@ -171,6 +177,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
             val roots = CodeStoryService.getInstance(project).storyFolders().map { it.root }
             val problems = StoryFileWatcher.getInstance(project).problems
             onEdt {
+                if (version != relocationVersion) return@onEdt
                 fileProblems.text = problems.entries.joinToString("\n\n") { (file, errors) ->
                     file.fileName.toString() + "\n" + errors.joinToString("\n") { error ->
                         "${error.step?.let { "Step $it: " }.orEmpty()}${error.message} ${error.hint}"
@@ -182,9 +189,34 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
                 showStories(stories, selectStoryId, roots)
                 revalidate()
             }
+            if (version != relocationVersion) return@execute
             val changes = stories.mapNotNull { stored -> changesOf(stored)?.let { stored.key to it } }.toMap()
-            onEdt { showChanges(changes) }
+            onEdt { if (version == relocationVersion) showChanges(changes) }
         }
+    }
+
+    /** Move tree and input identities together before the background reload arrives. */
+    private fun relocateStory(previous: StoredStory, moved: StoredStory) {
+        ApplicationManager.getApplication().assertIsDispatchThread()
+        if (disposed) return
+        relocationVersion++
+        details.comments?.relocated(previous, moved)
+        changes[previous.key]?.let { changes = changes - previous.key + (moved.key to it) }
+        val nodes = storyNodes()
+        for (node in nodes) {
+            val old = (node.userObject as StoryItem).stored
+            if (old.key != previous.key) continue
+            val current = StoredStory(old.id, old.root, moved.file, old.story, moved.modified, old.statuses, old.isNew)
+            val change = changesFor(current)
+            node.userObject = StoryItem(current, change)
+            for (child in node.children().toList().filterIsInstance<DefaultMutableTreeNode>()) {
+                child.userObject = StepItem(current, (child.userObject as StepItem).index, change)
+            }
+        }
+        val stories = nodes.map { (it.userObject as StoryItem).stored }
+        val roots = rootNode.children().toList().filterIsInstance<DefaultMutableTreeNode>()
+            .mapNotNull { (it.userObject as? RepositoryItem)?.root }.ifEmpty { stories.map { it.root }.distinct() }
+        showStories(stories, roots = roots)
     }
 
     /** Completes when the stories that were requested before are shown, with their change information. */

@@ -4,17 +4,15 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
-import com.intellij.openapi.vfs.LocalFileSystem
 import io.github.hubertrybak.codestory.core.LiveRange
 import io.github.hubertrybak.codestory.core.Location
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
-import io.github.hubertrybak.codestory.core.StoryAnchors
-import io.github.hubertrybak.codestory.core.StoryFiles
 import java.io.IOException
 import java.nio.file.Path
 
@@ -29,16 +27,31 @@ class LiveSnapshot(val storyKey: String, val ranges: Map<String, LiveRange>, val
 @Service(Service.Level.PROJECT)
 class AnchorTracker : Disposable {
     private class Marker(val stepId: String, val file: String, val rangeText: String?, val path: Path, val marker: RangeMarker)
+    internal class SourceDocument(val path: Path, val document: Document)
 
     /** Replaced as a whole on the EDT; background reads see one consistent list. */
     @Volatile
     private var tracked: Pair<String, List<Marker>>? = null
 
-    /**
-     * Finds the code of each step of [stored] in [files], using live markers where they exist, and
-     * adds markers for steps whose code was found. Call on the EDT.
-     */
-    fun track(stored: StoredStory, files: StoryFiles): StoredStory {
+    /** Loads every found source document off the EDT, so unopened files also get live markers. */
+    internal fun prepare(stored: StoredStory): Map<String, SourceDocument> {
+        val application = ApplicationManager.getApplication()
+        check(!application.isDispatchThread)
+        val files = stored.story.steps.withIndex().mapNotNull { (index, step) ->
+            step.location?.file?.takeUnless { stored.status(index) == StepStatus.LOST }
+        }.distinct()
+        return files.mapNotNull { path ->
+            // Recheck canonical containment before reading a file that may have changed since resolution.
+            val file = StoryNavigationFiles.find(stored.root, path) ?: return@mapNotNull null
+            val document = application.runReadAction(Computable { FileDocumentManager.getInstance().getDocument(file) })
+                ?: return@mapNotNull null
+            path to SourceDocument(Path.of(file.path), document)
+        }.toMap()
+    }
+
+    /** Installs an already resolved story. File reads and anchor searches happen in the background. */
+    @Synchronized
+    internal fun install(stored: StoredStory, documents: Map<String, SourceDocument>) {
         ApplicationManager.getApplication().assertIsDispatchThread()
         val previous = tracked?.takeIf { it.first == stored.key }?.second.orEmpty()
         if (tracked?.first != stored.key) release()
@@ -49,25 +62,31 @@ class AnchorTracker : Disposable {
             marker.marker.isValid && location != null && location.file == marker.file && location.rangeText == marker.rangeText
         }
         stale.forEach { it.marker.dispose() }
-        val resolution = StoryAnchors.resolve(stored.story, files, ranges(kept))
         val keptIds = kept.map { it.stepId }.toSet()
-        val created = resolution.story.steps.withIndex().mapNotNull { (index, step) ->
+        val created = stored.story.steps.withIndex().mapNotNull { (index, step) ->
             val id = step.id ?: return@mapNotNull null
             val location = step.location ?: return@mapNotNull null
-            if (id in keptIds || resolution.statuses[index] == StepStatus.LOST) null else marker(stored.root, id, location)
+            if (id in keptIds || stored.status(index) == StepStatus.LOST) null else documents[location.file]?.let { marker(id, location, it) }
         }
         tracked = stored.key to kept + created
-        return stored.resolved(resolution)
     }
 
     /** The lines that the markers followed and the texts of their documents, read together. */
     fun snapshot(): LiveSnapshot? = ApplicationManager.getApplication().runReadAction(Computable {
-        val (storyKey, markers) = tracked ?: return@Computable null
-        val valid = markers.filter { it.marker.isValid }
-        LiveSnapshot(storyKey, ranges(valid), valid.associate { it.path to it.marker.document.immutableCharSequence })
+        synchronized(this) {
+            val (storyKey, markers) = tracked ?: return@Computable null
+            val valid = markers.filter { it.marker.isValid }
+            LiveSnapshot(storyKey, ranges(valid), valid.associate { it.path to it.marker.document.immutableCharSequence })
+        }
     })
 
+    @Synchronized
+    fun relocated(previous: StoredStory, current: StoredStory) {
+        tracked?.takeIf { it.first == previous.key }?.let { tracked = current.key to it.second }
+    }
+
     /** Removes the markers. Call on the EDT. */
+    @Synchronized
     fun release() {
         val old = tracked
         tracked = null
@@ -85,13 +104,11 @@ class AnchorTracker : Disposable {
     }
 
     /** A marker over the whole lines of [location]. It survives a reload of the file from disk. */
-    private fun marker(root: Path, stepId: String, location: Location): Marker? {
-        val path = root.resolve(location.file)
-        val file = LocalFileSystem.getInstance().findFileByNioFile(path)?.takeUnless { it.isDirectory } ?: return null
-        val document = FileDocumentManager.getInstance().getDocument(file) ?: return null
-        if (location.endLine > document.lineCount) return null
+    private fun marker(stepId: String, location: Location, source: SourceDocument): Marker? {
+        val document = source.document
+        if (location.startLine < 1 || location.endLine < location.startLine || location.endLine > document.lineCount) return null
         val marker = document.createRangeMarker(document.getLineStartOffset(location.startLine - 1), document.getLineEndOffset(location.endLine - 1), true)
-        return Marker(stepId, location.file, location.rangeText, realPath(path), marker)
+        return Marker(stepId, location.file, location.rangeText, source.path, marker)
     }
 
     companion object {

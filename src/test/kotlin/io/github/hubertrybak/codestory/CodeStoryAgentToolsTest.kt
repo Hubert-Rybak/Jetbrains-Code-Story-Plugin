@@ -166,6 +166,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         val id = first.string("storyId")
         awaitTitle("Payment flow")
         player.next()
+        player.awaitPlayback()
         val previous = player.presentation!!
         val before = get(id)
         val replacement = show(story(step(id = quoted("entry")), step(start = "20", end = "22", id = quoted("core"), comment = quoted("The revised code saves the result.")), title = quoted("Revised flow")), id)
@@ -189,7 +190,9 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         val first = show(story(step(), step(start = "10", end = "12"), step(start = "20", end = "22")))
         awaitTitle("Payment flow")
         player.next()
+        player.awaitPlayback()
         player.next()
+        player.awaitPlayback()
         assertEquals(2, player.stepIndex)
         show(story(step(), step(start = "30", end = "32"), title = quoted("Shorter flow")), first.string("storyId"))
         awaitTitle("Shorter flow")
@@ -203,6 +206,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
         val id = first.string("storyId")
         awaitTitle("Payment flow")
         player.next()
+        player.awaitPlayback()
         val old = player.presentation!!
         val shared = Files.createDirectories(root.resolve(".codestory/shared")).resolve("$id.story.json")
         Files.move(root.resolve(first.string("file")), shared)
@@ -332,7 +336,7 @@ class CodeStoryAgentToolsTest : HeavyPlatformTestCase() {
     }
 
     private fun awaitTitle(title: String) = PlatformTestUtil.waitWithEventsDispatching("Story did not reload: $title",
-        { player.currentStory?.story?.title == title }, 10)
+        { player.currentStory?.story?.title == title && !player.isResolving }, 10)
 
     private fun JsonObject.string(name: String) = getValue(name).jsonPrimitive.content
 

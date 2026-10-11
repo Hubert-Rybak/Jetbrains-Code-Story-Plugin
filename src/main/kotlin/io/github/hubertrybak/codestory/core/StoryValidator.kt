@@ -278,14 +278,16 @@ class StoryValidator(
             }
             // A story file without anchors keeps its lines.
             val first = if (anchorText == null) start else anchoredStart(owner, file, lines, start, end, anchorText) ?: return null
-            val last = first + (end - start)
-            if (last > lines.size) {
+            // A nearby anchor can push even a valid Int end line past Int.MAX_VALUE.
+            val shiftedEnd = first.toLong() + (end.toLong() - start)
+            if (shiftedEnd > lines.size) {
                 return if (first == start) outside(owner, file, start, end, lines.size) else error(
                     owner, ErrorCode.LINES_OUTSIDE_FILE,
-                    "${owner.where}, `location.anchorText` is at line $first, so the range ends at line $last. `${quote(file)}` has ${lines.size} lines.",
+                    "${owner.where}, `location.anchorText` is at line $first, so the range ends at line $shiftedEnd. `${quote(file)}` has ${lines.size} lines.",
                     "Read the file again. Then set `location.startLine` and `location.endLine` to the first and the last line of the range.",
                 )
             }
+            val last = shiftedEnd.toInt()
             if (first != start) {
                 corrections += ReportItem(
                     owner.step, CorrectionCode.LINES_SHIFTED.code,

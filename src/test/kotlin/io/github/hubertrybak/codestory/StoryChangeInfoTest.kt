@@ -267,7 +267,12 @@ class StoryChangeInfoTest : HeavyPlatformTestCase() {
 
     private fun JsonObject.string(name: String) = getValue(name).jsonPrimitive.content
 
-    private fun show(json: String): JsonObject = call("code_story_show", mapOf("story" to Json.parseToJsonElement(json)))
+    private fun show(json: String): JsonObject = call("code_story_show", mapOf("story" to Json.parseToJsonElement(json))).also { report ->
+        val player = StoryPlayer.getInstance(project)
+        PlatformTestUtil.waitWithEventsDispatching("the story does not play", {
+            player.currentStory?.id == report.string("storyId") && !player.isResolving
+        }, TIMEOUT_SECONDS)
+    }
 
     private fun get(id: String): JsonObject = call("code_story_get", mapOf("storyId" to JsonPrimitive(id)))
 

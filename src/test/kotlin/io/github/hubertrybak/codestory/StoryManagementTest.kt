@@ -67,18 +67,19 @@ class StoryManagementTest : HeavyPlatformTestCase() {
         val stored = show(story(step(), step(start = "5", end = "6")))
         await { player.currentStory?.key == stored.key }
         player.next()
+        player.awaitPlayback()
         val original = Files.readString(stored.file)
         openPanel()
         select(stored)
         perform(panel!!.toolbarActions, "Share")
         val shared = StoryFolder(root).sharedDir.resolve(stored.file.fileName)
-        await { Files.exists(shared) && item(stored.key)?.stored?.folder == "shared" && player.currentStory?.file == shared }
+        await { Files.exists(shared) && item(shared.toString())?.stored?.folder == "shared" && player.currentStory?.file == shared }
         assertFalse(Files.exists(stored.file))
         assertEquals(original, Files.readString(shared))
         assertEquals(stored.id, player.currentStory!!.id)
         assertEquals(1, player.stepIndex)
-        assertFalse(item(stored.key)!!.stored.isNew)
-        assertEquals(stored.key, ((panel!!.tree.lastSelectedPathComponent as DefaultMutableTreeNode).userObject as StoryItem).stored.key)
+        assertFalse(item(shared.toString())!!.stored.isNew)
+        assertEquals(shared.toString(), ((panel!!.tree.lastSelectedPathComponent as DefaultMutableTreeNode).userObject as StoryItem).stored.key)
 
         // The same action becomes Unshare in the context menu.
         perform(panel!!.contextActions, "Share", "Unshare")
@@ -172,17 +173,22 @@ class StoryManagementTest : HeavyPlatformTestCase() {
         assertFalse(Files.exists(root.resolve(".codestory/shared")))
         select(a)
         perform(panel!!.toolbarActions, "Share")
-        await { item(a.key)?.stored?.folder == "shared" }
+        val sharedPath = StoryFolder(first).sharedDir.resolve(a.file.fileName)
+        await { item(sharedPath.toString())?.stored?.folder == "shared" }
+        val sharedA = item(sharedPath.toString())!!.stored
         assertTrue(Files.exists(b.file))
         assertEquals(setOf(first.toString(), second.toString()), service.list().map { it.repositoryPath }.toSet())
         assertNotNull(service.get(a.id, first.toString()))
         assertNotNull(service.get(b.id, second.toString()))
 
-        player.play(a, 1)
+        player.play(sharedA, 1)
+        player.awaitPlayback()
         player.play(b)
+        player.awaitPlayback()
         assertEquals(0, player.stepIndex)
         assertFalse(player.wasVisited(b, 1))
-        player.play(a)
+        player.play(sharedA)
+        player.awaitPlayback()
         assertEquals(1, player.stepIndex)
     }
 
@@ -261,7 +267,7 @@ class StoryManagementTest : HeavyPlatformTestCase() {
         action.actionPerformed(event)
     }
 
-    private fun await(condition: () -> Boolean) = PlatformTestUtil.waitWithEventsDispatching("story state did not update", condition, 20)
+    private fun await(condition: () -> Boolean) = PlatformTestUtil.waitWithEventsDispatching("story state did not update", { !player.isResolving && condition() }, 20)
     private fun repository(name: String, file: String = "App.kt"): Path = root.resolve(name).also {
         write(it.resolve("src/$file"), (1..10).joinToString("\n", postfix = "\n") { "line $it" })
         GitFixture(it).init()

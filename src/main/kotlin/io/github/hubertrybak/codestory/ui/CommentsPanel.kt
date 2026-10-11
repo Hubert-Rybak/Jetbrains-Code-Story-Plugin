@@ -130,6 +130,23 @@ class CommentsPanel(private val comments: StoryComments, private val compact: Bo
         rebuild()
     }
 
+    /** Move unsaved input with the story when Share changes its file identity. */
+    fun relocated(previous: StoredStory, current: StoredStory) {
+        val old = input?.takeIf { it.draft.story == previous.key }
+        val shown = stored?.key == previous.key
+        if (!shown && old == null) return
+        val focused = old?.text?.isFocusOwner == true
+        if (shown) stored = current
+        if (old != null) {
+            input = Input(
+                current.key + old.target.removePrefix(previous.key),
+                old.draft.copy(story = current.key, text = old.text.text, kind = old.kind), old.title,
+            )
+        }
+        rebuild()
+        if (focused) shownInput()?.text?.requestFocusInWindow()
+    }
+
     /** The input of the shown story or step, if the reader started one. */
     fun shownInput(): Input? = stored?.let { stored -> input?.takeIf { it.target == target(stored) } }
 

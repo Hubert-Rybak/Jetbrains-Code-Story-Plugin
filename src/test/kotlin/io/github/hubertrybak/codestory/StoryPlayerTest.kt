@@ -53,20 +53,25 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
     fun `test next previous and finish across files`() {
         val stored = story()
         player.play(stored)
+        player.awaitPlayback()
         val first = player.presentation!!
         assertEquals(0, player.stepIndex)
         assertFalse(first.card.previous.isEnabled)
         first.card.next.doClick()
+        player.awaitPlayback()
         assertEquals(1, player.stepIndex)
         assertTrue(first.disposed)
         assertFalse(first.range.isValid)
         assertEquals("second.txt", player.presentation!!.editor.virtualFile!!.name)
         assertEquals("Finish", player.presentation!!.card.next.text)
         player.presentation!!.card.previous.doClick()
+        player.awaitPlayback()
         assertEquals(0, player.stepIndex)
         player.next()
+        player.awaitPlayback()
         val last = player.presentation!!
         last.card.next.doClick()
+        player.awaitPlayback()
         assertFalse(player.isPlaying)
         assertTrue(last.disposed)
         assertFalse(last.range.isValid)
@@ -77,15 +82,18 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
 
     fun `test only one story plays and stop removes all presentation`() {
         player.play(story())
+        player.awaitPlayback()
         val earlier = player.presentation!!
         val badges = earlier.badges.toList()
         player.play(story("other"))
+        player.awaitPlayback()
         assertEquals("other", player.currentStory!!.id)
         assertTrue(earlier.disposed)
         assertTrue(badges.all { !it.isValid })
         val current = player.presentation!!
         val currentBadges = current.badges.toList()
         current.card.stop.doClick()
+        player.awaitPlayback()
         assertTrue(current.disposed)
         assertFalse(current.range.isValid)
         assertTrue(currentBadges.all { !it.isValid })
@@ -98,8 +106,10 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
         val stored = story(steps = listOf(step("first.txt", 2), Step("Overview", "Keep the current code in view."), step("second.txt", 1)))
         val panel = StoryListPanel(project)
         try {
+            awaitInitialLoad(panel)
             panel.showStories(listOf(stored))
             player.play(stored)
+            player.awaitPlayback()
             val current = player.presentation!!
             val manager = FileEditorManager.getInstance(project)
             val files = manager.openFiles.toList()
@@ -109,6 +119,7 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
             assertEquals(1, badges.size)
 
             player.next()
+            player.awaitPlayback()
 
             assertEquals(1, player.stepIndex)
             assertTrue(player.wasVisited(stored, 1))
@@ -126,14 +137,17 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
             panel.tree.setSelectionRow(1)
             assertTrue(panel.details.displayedText.contains("Written by Test Agent"))
             player.play(stored, 1)
+            player.awaitPlayback()
             assertTrue(panel.details.displayedText.contains("Step 2 of 3: Overview"))
 
             player.next()
+            player.awaitPlayback()
             assertEquals("second.txt", manager.selectedTextEditor!!.virtualFile!!.name)
             assertTrue(current.disposed)
             assertFalse(current.range.isValid)
             val next = player.presentation!!
             player.previous()
+            player.awaitPlayback()
             assertEquals(1, player.stepIndex)
             assertSame(next.range, StepNavigator.getInstance(project).currentHighlighter)
             assertTrue(panel.details.displayedText.contains("Step 2 of 3: Overview"))
@@ -145,17 +159,21 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
     fun `test a text-only story can play and finish without opening an editor`() {
         val stored = story(steps = listOf(Step("Overview", "Start here."), Step("Checks", "Check the result.")))
         player.play(stored)
+        player.awaitPlayback()
         val panel = StoryListPanel(project)
         try {
-            panel.showStories(listOf(stored))
+            awaitInitialLoad(panel)
+            panel.showStories(listOf(stored), stored.key)
             assertTrue(panel.details.displayedText.contains("Step 1 of 2: Overview"))
             assertTrue(player.isPlaying)
             assertNull(player.presentation)
             assertEmpty(FileEditorManager.getInstance(project).openFiles.toList())
             player.next()
+            player.awaitPlayback()
             assertTrue(panel.details.displayedText.contains("Step 2 of 2: Checks"))
             assertEquals(1, player.stepIndex)
             player.next()
+            player.awaitPlayback()
             assertFalse(player.isPlaying)
             assertNull(StepNavigator.getInstance(project).currentHighlighter)
             assertEmpty(FileEditorManager.getInstance(project).openFiles.toList())
@@ -167,14 +185,17 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
         Files.writeString(stored.file, StoryFormat.encode(stored.story, stored.id))
         val before = Files.readString(stored.file)
         player.play(stored, 1)
+        player.awaitPlayback()
         player.stop()
         val positions = project.service<StoryReadingPosition>()
         // Round-trip the exact persistent bean, as IDE workspace storage does.
         val saved = XmlSerializer.serialize(positions.state)
         positions.loadState(XmlSerializer.deserialize(saved, StoryReadingPosition.Positions::class.java))
         player.play(stored)
+        player.awaitPlayback()
         assertEquals(1, player.stepIndex)
         player.restart(stored)
+        player.awaitPlayback()
         assertEquals(0, player.stepIndex)
         assertEquals(before, Files.readString(stored.file))
         assertTrue(player.wasVisited(stored, 1))
@@ -182,9 +203,11 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
 
     fun `test existing workspace reading position survives repository grouping`() {
         val stored = story()
+        project.service<StoryReaderState>().prepare(stored, legacyIdentityUnique = true)
         val positions = project.service<StoryReadingPosition>().state.steps
         positions[stored.id] = 1
         player.play(stored)
+        player.awaitPlayback()
         assertEquals(1, player.stepIndex)
         assertEquals(1, positions[stored.key])
         assertFalse(positions.containsKey(stored.id))
@@ -192,12 +215,14 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
 
     fun `test closing and reopening card keeps range badges and position`() {
         player.play(story())
+        player.awaitPlayback()
         val current = player.presentation!!
         val panel = StoryListPanel(project)
         try {
             current.updatePlacement()
             assertSame(current.card, panel.cardContainer.components.single())
             current.card.close.doClick()
+            player.awaitPlayback()
             assertTrue(current.cardDismissed)
             assertTrue(player.isPlaying)
             assertTrue(current.range.isValid)
@@ -207,11 +232,13 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
             current.updatePlacement()
             assertTrue(current.cardDismissed)
             player.play(player.currentStory!!, player.stepIndex)
+            player.awaitPlayback()
             assertTrue(current.disposed)
             val reopened = player.presentation!!
             assertFalse(reopened.cardDismissed)
             assertSame(reopened.card, panel.cardContainer.components.single())
             player.next()
+            player.awaitPlayback()
             assertFalse(player.presentation!!.cardDismissed)
             player.stop()
             assertEmpty(panel.cardContainer.components.toList())
@@ -221,15 +248,18 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
     fun `test badges navigate other steps in the current file and reopen the current card`() {
         val stored = story(steps = listOf(step("first.txt", 2), step("first.txt", 30), step("second.txt", 1)))
         player.play(stored)
+        player.awaitPlayback()
         val first = player.presentation!!
         assertEquals(2, first.badges.size)
         first.dismissCard()
         val event = AnActionEvent.createFromAnAction(first.badges[0].gutterIconRenderer!!.clickAction!!, null, "test", DataContext.EMPTY_CONTEXT)
         first.badges[0].gutterIconRenderer!!.clickAction!!.actionPerformed(event)
+        player.awaitPlayback()
         assertTrue(first.disposed)
         val reopened = player.presentation!!
         assertFalse(reopened.cardDismissed)
         reopened.badges[1].gutterIconRenderer!!.clickAction!!.actionPerformed(event)
+        player.awaitPlayback()
         assertEquals(1, player.stepIndex)
         assertTrue(first.disposed)
         assertEquals(2, player.presentation!!.badges.size)
@@ -237,6 +267,7 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
 
     fun `test presentation adds no code line inlays and browsing does not navigate`() {
         player.play(story())
+        player.awaitPlayback()
         val current = player.presentation!!
         val editor = current.editor
         val end = editor.document.textLength
@@ -255,6 +286,7 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
 
     fun `test closing the target editor disposes the card and listeners`() {
         player.play(story())
+        player.awaitPlayback()
         val current = player.presentation!!
         val badges = current.badges.toList()
         FileEditorManager.getInstance(project).closeFile(current.editor.virtualFile!!)
@@ -274,6 +306,7 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
             settings.loadState(XmlSerializer.deserialize(XmlSerializer.serialize(options), CodeStorySettings.Options::class.java))
             assertFalse(settings.state.bringToFront)
             player.play(story())
+            player.awaitPlayback()
             val current = player.presentation!!
             assertEquals(settings.rangeBackground, current.range.getTextAttributes(current.editor.colorsScheme)!!.backgroundColor)
         } finally { settings.loadState(original) }
@@ -287,8 +320,10 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
             action.update(event)
             assertTrue(id, event.presentation.isEnabled)
             action.actionPerformed(event)
+            player.awaitPlayback()
         }
         player.play(story())
+        player.awaitPlayback()
         runAction("CodeStory.NextStep")
         assertEquals(1, player.stepIndex)
         runAction("CodeStory.PreviousStep")
@@ -300,6 +335,7 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
     fun `test project links open only on activation and cannot follow an outside symlink`() {
         val stored = story(steps = listOf(Step("Read", "[other](second.txt#L2)", Location("first.txt", 2, 2))))
         player.play(stored)
+        player.awaitPlayback()
         val current = player.presentation!!
         assertEquals("first.txt", FileEditorManager.getInstance(project).selectedTextEditor!!.virtualFile!!.name)
         val outside = Files.createTempFile("code-story-link", ".txt")
@@ -319,11 +355,13 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
     fun `test selecting the current step returns from a different file and reopens the card`() {
         val stored = story()
         player.play(stored)
+        player.awaitPlayback()
         val current = player.presentation!!
         current.card.openLink("second.txt")
         current.dismissCard()
         assertEquals("second.txt", FileEditorManager.getInstance(project).selectedTextEditor!!.virtualFile!!.name)
         player.play(stored, 0)
+        player.awaitPlayback()
         assertEquals("first.txt", FileEditorManager.getInstance(project).selectedTextEditor!!.virtualFile!!.name)
         assertFalse(player.presentation!!.cardDismissed)
         assertEquals(0, player.stepIndex)
@@ -342,6 +380,12 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
                 assertEquals(name, setOf("CodeStory.NextStep", "CodeStory.PreviousStep", "CodeStory.StopStory", "CodeStory.CommentOnCurrentStep"), keymap.getActionIds(shortcut.firstKeyStroke).toSet())
             }
         }
+    }
+
+    private fun awaitInitialLoad(panel: StoryListPanel) {
+        val loaded = panel.loaded()
+        PlatformTestUtil.waitWithEventsDispatching("the initial story list did not load", { loaded.isDone }, 20)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
     }
 
     private fun step(file: String, line: Int) = Step("Read $file", "Read `line` and **continue**.", Location(file, line, line))

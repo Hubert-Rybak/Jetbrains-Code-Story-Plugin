@@ -325,7 +325,7 @@ class StoryFileDropTest : HeavyPlatformTestCase() {
     }
 
     private fun start() = runBlocking { CodeStoryStartup().execute(project) }
-    private fun await(condition: () -> Boolean) = PlatformTestUtil.waitWithEventsDispatching("File-drop state did not arrive", condition, 15)
+    private fun await(condition: () -> Boolean) = PlatformTestUtil.waitWithEventsDispatching("File-drop state did not arrive", { !player.isResolving && condition() }, 15)
 
     private fun drop(id: String = ID, contents: String = contents(id), directory: String = ".codestory/local"): Path {
         val dir = root.resolve(directory)
