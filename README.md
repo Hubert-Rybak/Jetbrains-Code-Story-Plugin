@@ -77,6 +77,16 @@ root (the project folder without Git). After a plugin update, the plugin offers 
 older copies. You can also copy [`skills/code-story`](skills/code-story) into these
 folders by hand.
 
+Without the IDE action, you can install the skill from this repository with
+[`npx skills`](https://github.com/vercel-labs/skills):
+
+```bash
+npx skills add Hubert-Rybak/Jetbrains-Code-Story-Plugin --skill code-story
+```
+
+The command asks which agents to install for. Add `-g` to install into your user folder
+instead of the current project.
+
 ### 2. Switch on the MCP server
 
 Open **Settings | Tools | MCP Server**, select **Enable MCP Server**, confirm with
