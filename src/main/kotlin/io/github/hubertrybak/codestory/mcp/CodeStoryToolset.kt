@@ -95,7 +95,7 @@ class CodeStoryToolset : McpToolset {
     @McpDescription(
         description = """
         |Returns the reader's comments that wait for an agent, oldest round first. Use it for /code-story feedback.
-        |The reader writes comments on steps or on the whole story in the IDE and submits them as a numbered round.
+        |The reader posts comments on steps or on the whole story in the IDE. Comments that wait together share a numbered round.
         |Each comment has storyId, round, threadId, kind, target (story or step), the step (ID, number, title, comment, current lines and status),
         |the comment text and the earlier messages of its thread. staleSteps lists steps whose code changed or is lost, including stories without comments when no comments wait.
         |Fetched comments become "received" (the reader sees that an agent works on them) and stay available until an agent replies.
@@ -114,7 +114,7 @@ class CodeStoryToolset : McpToolset {
     }
 
     @McpTool(name = "code_story_listen")
-    @McpDescription(description = "Listens for submitted feedback by default after showing a story and after replying. Waits up to 25 seconds without blocking the IDE. Returns status feedback with fetched comments, timeout (call again), or stopped (end listening). Process returned comments with the feedback workflow, then listen again. Submit Round authorizes processing the submitted requests; never change code for a question. Stop when the developer cancels or gives a new task. Automatic listening can be disabled in Settings | Tools | Code Story. This requires an active agent tool call; it cannot restart an ended agent turn. Always pass projectPath.")
+    @McpDescription(description = "Listens for submitted feedback by default after showing a story and after replying. Waits up to 25 seconds without blocking the IDE. Returns status feedback with fetched comments, timeout (call again), or stopped (end listening). Process returned comments with the feedback workflow, then listen again. A posted comment authorizes processing that request; never change code for a question. Stop when the developer cancels or gives a new task. Automatic listening can be disabled in Settings | Tools | Code Story. This requires an active agent tool call; it cannot restart an ended agent turn. Always pass projectPath.")
     suspend fun listenForFeedback(
         @McpDescription(description = "Optional story ID. Omit to listen to all stories in the project.")
         storyId: String? = null,

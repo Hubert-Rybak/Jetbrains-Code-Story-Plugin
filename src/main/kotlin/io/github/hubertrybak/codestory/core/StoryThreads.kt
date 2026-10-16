@@ -88,8 +88,8 @@ data class ThreadMessage(
 )
 
 /**
- * A comment that the reader did not submit yet: on the story, on the step [stepId], or a reply in
- * the thread [threadId]. Drafts stay in IDE storage, never in story files.
+ * A reader comment that is not in the story file yet: on the story, on the step [stepId], or a reply
+ * in the thread [threadId]. Until it is posted, it stays in IDE storage, never in story files.
  */
 data class DraftComment(
     val text: String,
@@ -121,13 +121,17 @@ object StoryThreads {
     /** Rounds are numbered per story: one more than the highest round in it. */
     fun nextRound(story: Story): Int = (all(story).flatMap { it.second.messages }.maxOfOrNull { it.round } ?: 0) + 1
 
+    /** The latest round that no agent fetched yet, or a new round. New comments join it. */
+    fun openRound(story: Story): Int =
+        pending(story).filter { it.thread.state == ThreadState.SUBMITTED }.maxOfOrNull { it.round } ?: nextRound(story)
+
     /**
-     * Writes [drafts] into the story as one new round. A draft in a thread adds a comment to that
-     * thread and opens it again. Other drafts start threads on their step, or on the story when the
-     * step is gone.
+     * Writes [drafts] into the story. They join the comments that no agent fetched yet, so an agent
+     * fetches them together as one round. A draft in a thread adds a comment to that thread and
+     * opens it again. Other drafts start threads on their step, or on the story when the step is gone.
      */
     fun submit(story: Story, drafts: List<DraftComment>, time: Instant, newId: () -> String = { UUID.randomUUID().toString() }): Story {
-        val round = nextRound(story)
+        val round = openRound(story)
         return drafts.fold(story) { result, draft ->
             val comment = ThreadMessage(MessageAuthor.READER, round, time, draft.text)
             val thread = draft.threadId?.let { find(result, it) }
@@ -177,9 +181,8 @@ object StoryThreads {
     /** Refresh joins the latest unfetched round; repeated requests for the same target are idempotent. */
     fun requestRefresh(story: Story, stepId: String?, time: Instant): Story {
         if (pending(story).any { it.thread.kind == ThreadKind.REFRESH && it.stepIndex?.let { index -> story.steps[index].id } == stepId }) return story
-        val round = pending(story).filter { it.thread.state == ThreadState.SUBMITTED }.maxOfOrNull { it.round } ?: nextRound(story)
         return add(story, stepId, StoryThread(UUID.randomUUID().toString(), ThreadKind.REFRESH, ThreadState.SUBMITTED,
-            listOf(ThreadMessage(MessageAuthor.READER, round, time, "Refresh the steps whose code changed or was lost."))))
+            listOf(ThreadMessage(MessageAuthor.READER, openRound(story), time, "Refresh the steps whose code changed or was lost."))))
     }
 
     class ReplyResult(val story: Story, val saved: List<String>, val errors: List<ReplyIssue>)

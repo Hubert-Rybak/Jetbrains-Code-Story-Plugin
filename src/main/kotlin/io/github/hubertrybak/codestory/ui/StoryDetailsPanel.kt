@@ -1,5 +1,6 @@
 package io.github.hubertrybak.codestory.ui
 
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.panels.VerticalLayout
@@ -7,6 +8,7 @@ import com.intellij.util.ui.JBUI
 import io.github.hubertrybak.codestory.StoryChanges
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryGit
+import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -14,6 +16,7 @@ import java.awt.Rectangle
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JViewport
 import javax.swing.Scrollable
@@ -45,6 +48,19 @@ class StoryDetailsPanel(comments: StoryComments? = null, private val showDiff: (
     val comments: CommentsPanel? = comments?.let { CommentsPanel(it) }?.apply {
         isOpaque = false
         border = JBUI.Borders.empty(4, 8, 12, 8)
+    }
+
+    /** The comment input, for the host to show below the scrolling details. */
+    val footer: JComponent? = this.comments?.let { panel ->
+        object : JPanel(BorderLayout()) {
+            override fun getBackground(): Color? = this@StoryDetailsPanel.background
+
+            // Nothing is selected: no input, and no empty strip below the details.
+            override fun getPreferredSize(): Dimension = if (panel.composer.componentCount == 0) Dimension() else super.getPreferredSize()
+        }.apply {
+            border = JBUI.Borders.compound(JBUI.Borders.customLineTop(JBColor.border()), JBUI.Borders.empty(8))
+            add(panel.composer, BorderLayout.CENTER)
+        }
     }
 
     val displayedText: String get() = text.text

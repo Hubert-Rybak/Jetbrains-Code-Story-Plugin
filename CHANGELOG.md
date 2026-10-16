@@ -9,7 +9,7 @@ All notable changes to Code Story are listed here. The format follows
 ### Added
 
 - Default-on automatic feedback listening through `code_story_listen`. Connected agents
-  pick up Submit Round, answer, and listen again without another chat prompt.
+  pick up posted comments, answer, and listen again without another chat prompt.
 - A setting to disable automatic listening, with cancellation and manual feedback fallback.
 
 ### Fixed
@@ -21,13 +21,28 @@ All notable changes to Code Story are listed here. The format follows
 - Reject source paths that escape the repository through symlinks during playback and
   diff viewing, including paths that changed after story validation.
 - Return validation errors for overflowing line ranges without stopping file watching.
-- Keep newly received answers when navigating with gutter badges, and retain drafts,
-  selection and reading position when sharing or unsharing a story.
+- Keep newly received answers when navigating with gutter badges, and retain unposted
+  comments, selection and reading position when sharing or unsharing a story.
 
 ### Changed
 
 - Resolve playback anchors and read source files in the background. Stopping or changing
   stories cancels obsolete work, and edits made during a search trigger a fresh check.
+- Post comments at once: **Post** (Ctrl+Enter) writes a question or change request into
+  the story, and a listening agent picks it up immediately. Drafts and **Submit Round**
+  are gone; comments posted before an agent fetches them still reach it together.
+  **Withdraw** opens a waiting comment for editing. A withdrawn comment, or one that could
+  not be written, stays in the IDE workspace as an unsent comment with **Post**, **Edit**
+  and **Delete**.
+- The step card is larger. Its comment input and playback buttons stay in view while the
+  step text and the comments scroll, and it shows the threads of its step directly. The
+  details pane also keeps its comment input below the scrolling details.
+- Resize the floating card by its right edge, its bottom edge or its corner grip. Every
+  card keeps that size; a double-click on the grip restores the default size. Without
+  room for that size beside the code, the card gets narrower before it moves to the tool
+  window.
+- Smaller, smoother gutter step badges that match the gutter. The current step is filled
+  with the accent color, and other steps are outlined in the line number color.
 
 ## [1.0.0] - 2026-10-10
 

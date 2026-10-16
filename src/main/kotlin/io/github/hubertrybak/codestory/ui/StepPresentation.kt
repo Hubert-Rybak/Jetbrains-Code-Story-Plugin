@@ -1,12 +1,14 @@
 package io.github.hubertrybak.codestory.ui
 
 import com.intellij.ide.ui.LafManagerListener
+import com.intellij.ide.ui.UISettings
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.editor.colors.EditorColors
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.DocumentEvent
@@ -31,9 +33,13 @@ import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.awt.RelativePoint
+import com.intellij.ui.scale.JBUIScale
+import com.intellij.util.ui.GraphicsUtil
+import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.PositionTracker
 import com.intellij.util.ui.UIUtil
@@ -42,14 +48,20 @@ import io.github.hubertrybak.codestory.CodeStorySettings
 import io.github.hubertrybak.codestory.StorySettingsListener
 import io.github.hubertrybak.codestory.StoryReaderListener
 import io.github.hubertrybak.codestory.core.StoredStory
+import java.awt.BasicStroke
+import java.awt.Color
 import java.awt.Component
+import java.awt.Dimension
+import java.awt.Font
 import java.awt.Graphics
+import java.awt.Graphics2D
 import java.awt.Point
 import java.awt.Rectangle
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.HierarchyEvent
 import java.awt.event.HierarchyListener
+import java.awt.geom.RoundRectangle2D
 import javax.swing.Icon
 
 /** Owns everything installed in an editor for one step. No editor inlays are used. */
@@ -60,7 +72,7 @@ class StepPresentation(
     private val index: Int,
     private val player: StoryPlayer,
 ) : Disposable {
-    val card = StepCardPanel(project, stored, index, player, ::dismissCard, ::queueUpdate)
+    val card = StepCardPanel(project, stored, index, player, ::dismissCard, ::queueUpdate, ::focusCode)
     val range = checkNotNull(StepNavigator.getInstance(project).currentHighlighter)
     val badges = mutableListOf<RangeHighlighter>()
     var balloon: Balloon? = null
@@ -142,7 +154,12 @@ class StepPresentation(
         card.startComment()
         updatePlacement()
         if (balloon == null && !inToolWindow) setToolWindow(true)
-        card.comments.shownInput()?.text?.requestFocusInWindow()
+        card.comments.startComment()
+    }
+
+    /** Escape in the card's comment input returns to the code. */
+    private fun focusCode() {
+        if (!disposed && !editor.isDisposed) IdeFocusManager.getInstance(project).requestFocus(editor.contentComponent, true)
     }
 
     private fun queueUpdate() {
@@ -154,7 +171,7 @@ class StepPresentation(
         }, ModalityState.nonModal(), Condition<Any?> { disposed || project.isDisposed })
     }
 
-    /** Repositions without navigating, scrolling or requesting focus. */
+    /** Repositions without navigating, scrolling or taking focus; a comment input that had the focus keeps it. */
     internal fun updatePlacement() {
         if (disposed || editor.isDisposed || !range.isValid) return
         if (cardDismissed) return
@@ -162,61 +179,73 @@ class StepPresentation(
         val start = editor.offsetToXY(range.startOffset)
         val end = editor.offsetToXY(range.endOffset)
         val active = FileEditorManager.getInstance(project).selectedEditors.filterIsInstance<TextEditor>().any { it.editor == editor }
-        if (!active) {
+        // While the reader writes a comment, the card stays in view in the tool window, with the keyboard focus.
+        val writing = card.comments.isWriting()
+        val focusedInput = card.comments.shownInput()?.text?.takeIf { it.isFocusOwner }
+        fun dock(show: Boolean) {
             hideBalloon()
-            setToolWindow(card.comments.shownInput() != null)
-            return
+            setToolWindow(show)
+            focusedInput?.requestFocusInWindow()
         }
+        if (!active) return dock(writing)
         // Until the editor has a viewport, keep its explanation available in the tool window.
-        if (visible.width <= 0 || visible.height <= 0) {
-            hideBalloon()
-            setToolWindow(true)
-            return
-        }
+        if (visible.width <= 0 || visible.height <= 0) return dock(true)
         if (!editor.contentComponent.isShowing || end.y + editor.lineHeight <= visible.y || start.y >= visible.y + visible.height) {
-            hideBalloon()
-            setToolWindow(card.comments.shownInput() != null)
-            return
+            return dock(writing)
         }
         val document = editor.document
         val firstLine = maxOf(document.getLineNumber(range.startOffset), editor.xyToLogicalPosition(Point(visible.x, visible.y)).line)
         val lastLine = minOf(document.getLineNumber(range.endOffset), editor.xyToLogicalPosition(Point(visible.x, visible.y + visible.height)).line)
-        val padding = JBUI.scale(40)
-        val width = card.preferredSize.width + padding
-        val height = card.preferredSize.height + padding
-        val targetY = maxOf(start.y, visible.y) + editor.lineHeight / 2
-        val cardY = (targetY - height / 2).coerceIn(visible.y, maxOf(visible.y, visible.y + visible.height - height))
-        var codeRight = start.x
+        var rangeRight = start.x
         var wrapped = false
         for (line in firstLine..lastLine) {
             val lineStart = document.getLineStartOffset(line)
             val lineEnd = document.getLineEndOffset(line)
             val from = editor.offsetToXY(lineStart)
             val to = editor.offsetToXY(lineEnd)
-            codeRight = maxOf(codeRight, from.x, to.x)
+            rangeRight = maxOf(rangeRight, from.x, to.x)
             if (from.y != to.y) wrapped = true
         }
-        // The card is taller than the range, so it must also clear the longer lines next to the range.
-        val coveredFirst = editor.xyToLogicalPosition(Point(visible.x, cardY)).line.coerceIn(0, document.lineCount - 1)
-        val coveredLast = editor.xyToLogicalPosition(Point(visible.x, cardY + height)).line.coerceIn(0, document.lineCount - 1)
-        for (line in coveredFirst..coveredLast) {
-            if (editor.foldingModel.isOffsetCollapsed(document.getLineStartOffset(line))) continue
-            codeRight = maxOf(codeRight, editor.offsetToXY(document.getLineEndOffset(line)).x)
+        val margin = JBUI.scale(8)
+        // The balloon's own border around the card.
+        val frame = JBUI.scale(BALLOON_INSET + 1)
+        val maxHeight = visible.height - 2 * margin - 2 * frame
+        val rangeTop = maxOf(start.y, visible.y)
+
+        /** The card's top sits at the range; a card that is taller than the room below moves up. */
+        fun boundsFor(size: Dimension): Rectangle {
+            val height = size.height + 2 * frame
+            val top = (rangeTop - margin).coerceIn(visible.y + margin, maxOf(visible.y + margin, visible.y + visible.height - margin - height))
+            // The card is taller than the range, so it must also clear the longer lines next to the range.
+            var codeRight = rangeRight
+            val coveredFirst = editor.xyToLogicalPosition(Point(visible.x, top)).line.coerceIn(0, document.lineCount - 1)
+            val coveredLast = editor.xyToLogicalPosition(Point(visible.x, top + height)).line.coerceIn(0, document.lineCount - 1)
+            for (line in coveredFirst..coveredLast) {
+                if (editor.foldingModel.isOffsetCollapsed(document.getLineStartOffset(line))) continue
+                codeRight = maxOf(codeRight, editor.offsetToXY(document.getLineEndOffset(line)).x)
+            }
+            return Rectangle(maxOf(codeRight, visible.x) + JBUI.scale(16), top, size.width + 2 * frame, height)
         }
-        anchor = Point(maxOf(codeRight, visible.x) + JBUI.scale(8), targetY)
-        val bounds = Rectangle(anchor.x, cardY, width, height)
+        var size = card.fittedSize(Int.MAX_VALUE, maxHeight)
+        var bounds = boundsFor(size)
+        // Without room for the reader's width, a narrower card can still fit beside the code.
+        val room = visible.x + visible.width - margin - bounds.x - 2 * frame
+        card.room = Dimension(room, maxHeight)
+        if (room < size.width && room >= card.minimumWidth) {
+            size = card.fittedSize(room, maxHeight)
+            bounds = boundsFor(size)
+        }
         val caret = editor.visualPositionToXY(editor.caretModel.visualPosition)
         val caretBounds = Rectangle(caret.x, caret.y, JBUI.scale(8), editor.lineHeight)
         val fits = !wrapped && visible.contains(bounds) && !bounds.intersects(caretBounds)
-        val focusedInput = card.comments.shownInput()?.text?.takeIf { it.isFocusOwner }
-        if (!fits) {
-            hideBalloon()
-            setToolWindow(true)
-        } else {
-            setToolWindow(false)
-            val existing = balloon
-            if (existing != null && !existing.isDisposed) existing.revalidate() else showBalloon()
-        }
+        if (!fits) return dock(true)
+        setToolWindow(false)
+        card.floating = true
+        card.preferredSize = size
+        // Without a pointer, the balloon centers on the anchor, so the card's top-left stays where it was put.
+        anchor = Point(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+        val existing = balloon
+        if (existing != null && !existing.isDisposed) existing.revalidate() else showBalloon()
         focusedInput?.requestFocusInWindow()
     }
 
@@ -224,9 +253,10 @@ class StepPresentation(
         card.parent?.remove(card)
         val created = JBPopupFactory.getInstance().createBalloonBuilder(card)
             .setFillColor(UIUtil.getPanelBackground()).setBorderColor(JBColor.border())
+            .setBorderInsets(JBUI.insets(BALLOON_INSET))
             .setHideOnClickOutside(false).setHideOnKeyOutside(false).setHideOnAction(false)
             .setHideOnFrameResize(false).setHideOnLinkClick(false).setCloseButtonEnabled(false)
-            .setRequestFocus(false).setShowCallout(true).setAnimationCycle(0).setDisposable(this)
+            .setRequestFocus(false).setShowCallout(false).setAnimationCycle(0).setDisposable(this)
             .createBalloon()
         balloon = created
         created.addListener(object : JBPopupListener {
@@ -246,6 +276,7 @@ class StepPresentation(
     }
 
     private fun setToolWindow(show: Boolean) {
+        if (show) card.floating = false
         if (inToolWindow == show) return
         inToolWindow = show
         player.changed()
@@ -272,7 +303,7 @@ class StepPresentation(
             badges += editor.markupModel.addRangeHighlighter(
                 editor.document.getLineStartOffset(line), editor.document.getLineStartOffset(line),
                 HighlighterLayer.ADDITIONAL_SYNTAX, null, HighlighterTargetArea.LINES_IN_RANGE,
-            ).apply { gutterIconRenderer = StepBadge(stored, stepIndex, stepIndex == index, player) { card.currentStory } }
+            ).apply { gutterIconRenderer = StepBadge(stored, stepIndex, stepIndex == index, player, editor) { card.currentStory } }
         }
     }
 
@@ -285,6 +316,56 @@ class StepPresentation(
         badges.clear()
         range.dispose()
     }
+
+    private companion object {
+        /** The space between the balloon's border and the card, which has its own padding. */
+        const val BALLOON_INSET = 4
+    }
+}
+
+/**
+ * The number of a step in the gutter, as large as other gutter icons. The current step is filled
+ * with the accent color; other steps are outlined in the color of the line numbers.
+ */
+internal class StepNumberIcon(number: Int, private val current: Boolean, private val lineNumbers: () -> Color?) : Icon {
+    private val label = number.toString()
+
+    override fun getIconWidth() = JBUI.scale(if (label.length > 1) 18 else 14)
+    override fun getIconHeight() = JBUI.scale(14)
+
+    override fun paintIcon(component: Component?, graphics: Graphics, x: Int, y: Int) {
+        val g = graphics.create() as Graphics2D
+        try {
+            GraphicsUtil.setupAAPainting(g)
+            UISettings.setupAntialiasing(g)
+            val width = iconWidth.toFloat()
+            val height = iconHeight.toFloat()
+            val arc = JBUI.scale(6).toFloat()
+            val muted = lineNumbers() ?: UIUtil.getContextHelpForeground()
+            if (current) {
+                g.color = ACCENT
+                g.fill(RoundRectangle2D.Float(x.toFloat(), y.toFloat(), width, height, arc, arc))
+                // Not JBColor.WHITE, which turns black in dark themes.
+                g.color = Color.WHITE
+            } else {
+                val line = JBUIScale.scale(1f)
+                g.color = muted
+                g.stroke = BasicStroke(line)
+                g.draw(RoundRectangle2D.Float(x + line / 2, y + line / 2, width - line, height - line, arc, arc))
+            }
+            g.font = JBFont.label().deriveFont(Font.BOLD, JBUIScale.scale(9.5f))
+            // Center the digits themselves; font metrics leave room for accents and descenders.
+            val glyphs = g.font.createGlyphVector(g.fontRenderContext, label).visualBounds
+            g.drawString(label, (x + (width - glyphs.width) / 2 - glyphs.x).toFloat(), (y + (height - glyphs.height) / 2 - glyphs.y).toFloat())
+        } finally {
+            g.dispose()
+        }
+    }
+
+    private companion object {
+        /** The accent of default buttons: white text stays readable on it in light and dark themes. */
+        val ACCENT = JBColor.namedColor("CodeStory.stepBadgeBackground", JBColor(0x3574F0, 0x3574F0))
+    }
 }
 
 private class StepBadge(
@@ -292,23 +373,12 @@ private class StepBadge(
     private val index: Int,
     private val current: Boolean,
     private val player: StoryPlayer,
+    private val editor: Editor,
     private val presentedStory: () -> StoredStory,
 ) : GutterIconRenderer() {
-    override fun getIcon(): Icon = object : Icon {
-        override fun getIconWidth() = JBUI.scale(18)
-        override fun getIconHeight() = JBUI.scale(18)
-        override fun paintIcon(component: Component?, graphics: Graphics, x: Int, y: Int) {
-            val g = graphics.create()
-            try {
-                g.font = UIUtil.getLabelFont().deriveFont(JBUI.scale(11).toFloat())
-                val accent = JBUI.CurrentTheme.Link.Foreground.ENABLED
-                g.color = if (current) accent else UIUtil.getPanelBackground()
-                g.fillOval(x, y, iconWidth, iconHeight)
-                g.color = if (current) UIUtil.getPanelBackground() else UIUtil.getLabelForeground()
-                val text = "${index + 1}"
-                g.drawString(text, x + (iconWidth - g.fontMetrics.stringWidth(text)) / 2, y + (iconHeight - g.fontMetrics.height) / 2 + g.fontMetrics.ascent)
-            } finally { g.dispose() }
-        }
+    // The line number color of the caret row is the stronger one, so other steps stay easy to find.
+    override fun getIcon(): Icon = StepNumberIcon(index + 1, current) {
+        editor.colorsScheme.getColor(EditorColors.LINE_NUMBER_ON_CARET_ROW_COLOR) ?: editor.colorsScheme.getColor(EditorColors.LINE_NUMBERS_COLOR)
     }
     override fun getTooltipText() = "Step ${index + 1}: ${stored.story.steps[index].title}"
     override fun getAccessibleName() = tooltipText
@@ -324,7 +394,7 @@ private class StepBadge(
             if (target in latest.story.steps.indices) player.play(latest, target)
         }
     }
-    fun relocated(stored: StoredStory) = StepBadge(stored, index, current, player, presentedStory)
+    fun relocated(stored: StoredStory) = StepBadge(stored, index, current, player, editor, presentedStory)
     override fun equals(other: Any?) = other is StepBadge && other.stored.key == stored.key && other.index == index && other.current == current
     override fun hashCode() = 31 * stored.key.hashCode() + index + if (current) 1 else 0
 }

@@ -59,12 +59,12 @@ class StoryIdentityCollisionTest : HeavyPlatformTestCase() {
         finally { super.tearDown() }
     }
 
-    fun `test submitting a shared draft leaves the matching local story and draft untouched`() {
+    fun `test posting a shared comment leaves the matching local story and its unsent comment untouched`() {
         reader.saveDraft(StoryDraft(story = local.key, text = "Question about the local story"))
         reader.saveDraft(StoryDraft(story = shared.key, text = "Question about the shared story"))
         val localBefore = Files.readString(local.file)
 
-        assertEquals(1, background { service.submitRound(shared) })
+        assertEquals(1, background { service.post(shared, reader.drafts(shared.key)) })
 
         assertEquals(localBefore, Files.readString(local.file))
         assertEquals("Question about the shared story", folder.get(shared)!!.story.threads.single().messages.single().text)
@@ -72,7 +72,7 @@ class StoryIdentityCollisionTest : HeavyPlatformTestCase() {
         assertEmpty(reader.drafts(shared.key))
         val sharedAfter = Files.readString(shared.file)
 
-        assertEquals(1, background { service.submitRound(local) })
+        assertEquals(1, background { service.post(local, reader.drafts(local.key)) })
         assertEquals("Question about the local story", folder.get(local)!!.story.threads.single().messages.single().text)
         assertEquals(sharedAfter, Files.readString(shared.file))
         assertEmpty(reader.drafts(local.key))
@@ -101,7 +101,7 @@ class StoryIdentityCollisionTest : HeavyPlatformTestCase() {
 
     fun `test get feedback and listen reject ambiguous IDs without fetching comments`() {
         reader.saveDraft(StoryDraft(story = shared.key, text = "A pending shared question"))
-        background { service.submitRound(shared) }
+        background { service.post(shared, reader.drafts(shared.key)) }
         val before = mapOf(local.file to Files.readString(local.file), shared.file to Files.readString(shared.file))
         val settings = CodeStorySettings.getInstance().state
         val automaticFeedback = settings.automaticFeedback

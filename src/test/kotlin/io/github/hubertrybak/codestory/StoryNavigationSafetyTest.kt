@@ -12,6 +12,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.project.Project
@@ -37,11 +38,13 @@ import io.github.hubertrybak.codestory.ui.StepItem
 import io.github.hubertrybak.codestory.ui.StoryItem
 import io.github.hubertrybak.codestory.ui.StoryListPanel
 import io.github.hubertrybak.codestory.ui.StoryPlayer
+import java.awt.Container
 import java.awt.Window
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.time.Instant
+import javax.swing.JLabel
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.TreePath
 
@@ -81,7 +84,7 @@ class StoryNavigationSafetyTest : HeavyPlatformTestCase() {
         clickBadge()
 
         assertEquals("A gutter click must not restore the pre-answer snapshot", updated.story.steps[0].threads, player.currentStory!!.story.steps[0].threads)
-        assertEquals("💬 1 thread", player.presentation!!.card.threadLine.text)
+        assertTrue(labels(player.presentation!!.card.comments).contains("Question · Answered"))
     }
 
     fun `test a retained gutter badge keeps answers after another text-only story plays`() {
@@ -115,7 +118,12 @@ class StoryNavigationSafetyTest : HeavyPlatformTestCase() {
         assertEquals(moved.key, input.draft.story)
         val updated = withAnswer(moved)
         player.threadsChanged(updated)
-        input.save()
+        input.post()
+        val reader = project.service<StoryReaderState>()
+        val posted = reader.drafts(moved.key).single()
+        assertEquals("Half written question", posted.text)
+        // This fixture story has no file, so the comment stays unsent after the write fails.
+        PlatformTestUtil.waitWithEventsDispatching("The comment was not posted", { !reader.isSending(posted) }, 10)
         clickBadge()
         assertEquals(moved.key, player.currentStory!!.key)
         assertEquals(updated.story.steps[0].threads, player.currentStory!!.story.steps[0].threads)
@@ -223,6 +231,10 @@ class StoryNavigationSafetyTest : HeavyPlatformTestCase() {
     }
 
     private fun awaitPlayback() = PlatformTestUtil.waitWithEventsDispatching("Story navigation did not finish", { !player.isResolving }, 10)
+
+    private fun labels(container: Container): List<String> = container.components.flatMap { component ->
+        listOfNotNull((component as? JLabel)?.text) + if (component is Container) labels(component) else emptyList()
+    }
 
     private fun awaitLoaded(panel: StoryListPanel) {
         val loaded = panel.loaded()
