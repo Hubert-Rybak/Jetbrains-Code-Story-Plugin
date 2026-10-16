@@ -6,28 +6,10 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- Default-on automatic feedback listening through `code_story_listen`. Connected agents
-  pick up posted comments, answer, and listen again without another chat prompt.
-- A setting to disable automatic listening, with cancellation and manual feedback fallback.
-
-### Fixed
-
-- Remember accepted file drops across project restarts, preserving saved code baselines
-  and showing changed or missing source as stale instead of rejecting the story.
-- Keep local and shared files with the same ID separate in reader state and comment
-  updates; reject ambiguous agent requests instead of choosing a file.
-- Reject source paths that escape the repository through symlinks during playback and
-  diff viewing, including paths that changed after story validation.
-- Return validation errors for overflowing line ranges without stopping file watching.
-- Keep newly received answers when navigating with gutter badges, and retain unposted
-  comments, selection and reading position when sharing or unsharing a story.
+## [1.1.0] - 2026-10-16
 
 ### Changed
 
-- Resolve playback anchors and read source files in the background. Stopping or changing
-  stories cancels obsolete work, and edits made during a search trigger a fresh check.
 - Post comments at once: **Post** (Ctrl+Enter) writes a question or change request into
   the story, and a listening agent picks it up immediately. Drafts and **Submit Round**
   are gone; comments posted before an agent fetches them still reach it together.
@@ -43,6 +25,7 @@ All notable changes to Code Story are listed here. The format follows
   window.
 - Smaller, smoother gutter step badges that match the gutter. The current step is filled
   with the accent color, and other steps are outlined in the line number color.
+- The README describes one setup that works for every agent.
 
 ## [1.0.0] - 2026-10-10
 
@@ -87,5 +70,26 @@ Copilot CLI.
   **Check setup**, and **Settings | Tools | Code Story**.
 - CI runs the tests and the Plugin Verifier for Rider and IntelliJ IDEA 2025.3, 2026.1,
   2026.2 and the latest EAP; a version tag publishes the zip to GitHub Releases.
+- Default-on automatic feedback listening through `code_story_listen`. Connected agents
+  pick up Submit Round, answer, and listen again without another chat prompt.
+- A setting to disable automatic listening, with cancellation and manual feedback fallback.
 
+### Fixed
+
+- Remember accepted file drops across project restarts, preserving saved code baselines
+  and showing changed or missing source as stale instead of rejecting the story.
+- Keep local and shared files with the same ID separate in reader state and comment
+  updates; reject ambiguous agent requests instead of choosing a file.
+- Reject source paths that escape the repository through symlinks during playback and
+  diff viewing, including paths that changed after story validation.
+- Return validation errors for overflowing line ranges without stopping file watching.
+- Keep newly received answers when navigating with gutter badges, and retain drafts,
+  selection and reading position when sharing or unsharing a story.
+
+### Changed
+
+- Resolve playback anchors and read source files in the background. Stopping or changing
+  stories cancels obsolete work, and edits made during a search trigger a fresh check.
+
+[1.1.0]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.0.0
