@@ -2,7 +2,6 @@ package io.github.hubertrybak.codestory
 
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.application.WriteAction
-import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.util.Disposer
@@ -269,8 +268,8 @@ class StoryFileDropTest : HeavyPlatformTestCase() {
         Files.writeString(root.resolve("src/App.kt"), "other\n")
         val stored = service.stories().single()
         assertEquals(StepStatus.LOST, stored.status(0))
-        project.service<StoryReaderState>().saveDraft(StoryDraft(story = stored.key, step = "entry", text = "Is this step still right?"))
-        assertEquals(1, runBlocking { withContext(Dispatchers.IO) { service.submitRound(stored) } })
+        val comment = StoryDraft(story = stored.key, step = "entry", text = "Is this step still right?")
+        assertEquals(1, runBlocking { withContext(Dispatchers.IO) { service.post(stored, listOf(comment)) } })
         // The watcher reads files in name order, so a problem in this later file shows that it handled the comment.
         val sentinel = drop(id = "2026-10-08-zz-sentinel", contents = "{ broken")
         await { watcher.problems.containsKey(sentinel) }

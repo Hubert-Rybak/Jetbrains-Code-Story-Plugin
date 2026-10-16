@@ -59,7 +59,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 
-/** The reader feedback loop at the agent API seam: drafts and rounds in the IDE, and the feedback and reply tools. */
+/** The reader feedback loop at the agent API seam: posted comments and rounds in the IDE, and the feedback and reply tools. */
 class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
     private lateinit var root: Path
     private val service get() = CodeStoryService.getInstance(project)
@@ -88,7 +88,7 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         finally { super.tearDown() }
     }
 
-    fun `test a submitted round is fetched answered and closed`() {
+    fun `test posted comments are fetched answered and closed`() {
         val stored = show(story(step(id = quoted("entry")), step(start = "10", end = "12", id = quoted("core"), title = quoted("Core logic"))))
         draft(stored, "Why does it start here?", step = "entry")
         draft(stored, "What is missing?")
@@ -100,8 +100,8 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         assertEquals("What is missing?", submitted.threads.single().messages.single().text)
         assertEquals(setOf(1), StoryThreads.all(submitted).flatMap { it.second.messages }.map { it.round }.toSet())
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-        assertEquals("Waiting for your agent", notifications.last().title)
-        assertTrue(notifications.last().content.contains("/code-story feedback"))
+        // Posted comments show in the story itself; only a refresh request from a menu is confirmed.
+        assertEmpty(notifications)
         assertEquals("2", list().single().string("pendingComments"))
 
         val fetched = feedback()
@@ -154,7 +154,7 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
             assertFalse(waiting.isCompleted)
             assertTrue(StoryThreads.all(saved(stored)).isEmpty()) // Drafts never wake it.
             submit(stored)
-            PlatformTestUtil.waitWithEventsDispatching("Listener did not receive Submit Round", { waiting.isCompleted }, 5)
+            PlatformTestUtil.waitWithEventsDispatching("Listener did not receive the posted comment", { waiting.isCompleted }, 5)
             val result = runBlocking { waiting.await() }!!
             assertEquals("feedback", result.status)
             assertEquals("Explain the entry", result.feedback!!.comments.single().text)
@@ -231,7 +231,7 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         draft(stored, "Why does it start here?", step = "entry")
         submit(stored)
         val threadId = saved(stored).steps[0].threads.single().id
-        assertTrue(background { service.withdraw(stored, threadId) })
+        assertEquals("Why does it start here?", background { service.withdraw(stored, threadId) }!!.text)
         assertEquals(StoryThreads.strip(saved(stored)), saved(stored))
         assertEquals(listOf(Triple("Why does it start here?", "entry", null)), reader.drafts(stored.key).map { Triple(it.text, it.step, it.thread) })
 
@@ -240,7 +240,7 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         val received = saved(stored)
         val thread = received.steps[0].threads.single()
         assertEquals(ThreadState.RECEIVED, thread.state)
-        assertFalse(background { service.withdraw(stored, thread.id) })
+        assertNull(background { service.withdraw(stored, thread.id) })
         assertEquals(received, saved(stored))
         assertEmpty(reader.drafts(stored.key))
     }
@@ -584,6 +584,9 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         assertFalse(Files.exists(service.storyFolder().localDir.resolve(StoryFolder.PENDING_INDEX)))
         submit(stored)
         assertTrue(background { service.requestRefresh(stored) })
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals("Waiting for your agent", notifications.single().title)
+        assertTrue(notifications.single().content.startsWith("The refresh request is in the story."))
         assertFalse(background { service.requestRefresh(stored) })
         assertEquals(setOf(1), StoryThreads.pending(saved(stored)).map { it.round }.toSet())
         assertEquals("2", index().string("pendingComments"))
@@ -608,7 +611,7 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         assertTrue(background { service.requestRefresh(shared, "entry") })
         val thread = StoryThreads.pending(saved(shared)).single().thread
         assertEquals(2, thread.messages.last().round)
-        assertTrue(background { service.withdraw(shared, thread.id) })
+        assertNotNull(background { service.withdraw(shared, thread.id) })
         assertEquals(ThreadKind.REFRESH, reader.drafts(shared.key).single().kind)
         assertEquals("0", index().string("pendingComments"))
         submit(shared)
@@ -678,7 +681,8 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
     private fun draft(stored: StoredStory, text: String, step: String? = null, thread: String? = null, kind: ThreadKind = ThreadKind.QUESTION) =
         reader.saveDraft(StoryDraft(story = stored.key, step = step, thread = thread, text = text, kind = kind))
 
-    private fun submit(stored: StoredStory) = background { service.submitRound(stored) }
+    /** Posts the unsent comments of [stored], as the reader posts each of them. */
+    private fun submit(stored: StoredStory) = background { service.post(stored, reader.drafts(stored.key)) }
 
     private fun saved(stored: StoredStory): Story = (StoryFormat.decode(Files.readString(stored.file)) as StoryFormat.Decoded.Valid).story
 

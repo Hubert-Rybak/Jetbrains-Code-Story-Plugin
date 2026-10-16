@@ -101,15 +101,21 @@ that these checks also test its setup instructions.
 Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light
 and dark themes, including narrow and split editors.
 
-- [ ] A step shows a floating card with a pointer to its code range, the step
-      number and title, the Markdown comment and the navigation buttons.
-      Showing and closing the card adds no space between code lines.
-- [ ] The card leaves the target code and caret visible. When it cannot fit
-      beside the code, the same comment and controls appear in the tool window.
+- [ ] A step shows a floating card beside its code range, with its top at the
+      range: the step number and title, the Markdown comment, the comment input
+      and the navigation buttons. Showing and closing the card adds no space
+      between code lines.
+- [ ] The card leaves the target code and caret visible. With too little room for
+      its width, it gets narrower; when it cannot fit beside the code even then,
+      the same comment and controls appear in the tool window.
+- [ ] Dragging the card's right edge, bottom edge or corner grip resizes it, and
+      the next step's card has the same size, also after an IDE restart. A
+      double-click on the grip restores the default size. The resize cursor
+      appears only at the edges and on the grip.
 - [ ] Showing or repositioning the card leaves keyboard focus in the editor.
       Typing, code selection and clicks in the editor keep playback and the
       card available. Card controls also work from the keyboard.
-- [ ] Scrolling and resizing keep the pointer at the current range without
+- [ ] Scrolling and resizing keep the card at the current range without
       scrolling back automatically. The floating card hides when its target
       is offscreen or its tab is inactive, and returns when the target is
       visible again unless it was explicitly dismissed.
@@ -120,7 +126,9 @@ and dark themes, including narrow and split editors.
       actions. Next becomes Finish on the last step. Stop and Finish remove
       the card in either location, the highlight and all story badges.
 - [ ] Other steps in the same file have numbered gutter badges; clicking a
-      badge plays that step. Playing another story clears the previous one.
+      badge plays that step. The current step's badge is filled with the accent
+      color, and the badges stay sharp at editor zoom levels and in both themes.
+      Playing another story clears the previous one.
 - [ ] An accepted MCP story opens the tool window and plays step 1 in the
       receiving IDE. The bring-to-front setting works both on and off; the
       card does not take keyboard focus from the editor.
@@ -181,14 +189,15 @@ Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).
 Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark
 themes, including a narrow tool window.
 
-- [ ] The card’s **💬** button opens a small input below the step text. **Save Draft**
-      and Ctrl+Enter save it; **Cancel** and Escape close it without saving. Repeat in
+- [ ] The card’s comment input stays in view below the step text while the text and
+      the threads scroll. **Post** and Ctrl+Enter post the comment at once; **Cancel**
+      discards the text; Escape returns to the code and keeps the text. Repeat in
       Rider and IntelliJ IDEA, light/dark themes, and floating and tool-window cards.
 - [ ] **Ctrl+Alt+Shift+Z**, then **C**, opens **Comment on Current Step**, including a
       dismissed card and a text-only step. The shortcut can be changed in Keymap.
-- [ ] The collapsed **💬 N threads · N drafts** line expands inside the card. Drafts can
-      be edited, deleted and submitted there. Long threads scroll, and expanding the
-      card preserves code layout and keeps the input usable in narrow/split editors.
+- [ ] The card shows the threads of its step. Long threads scroll, the input stays
+      usable in narrow and split editors, and a growing comment resizes the card
+      without moving the code.
 - [ ] Open-thread counts and unread dots appear in step rows when answers arrive.
       Open the threads to clear the dot; restart the IDE to check read state persists.
       Another IDE user has independent unread state; shared story files do not change.
@@ -196,20 +205,21 @@ themes, including a narrow tool window.
       `code_story_reply`. The answer shows the plugin’s **Story changes** line.
       Replacing the full story keeps threads by step ID; removed-step threads appear
       at story level with “step removed”.
-- [ ] **Comment on step**, **Comment on story** and the context-menu **Comment** open an
-      input with keyboard focus. Ctrl+Enter and **Save Draft** save a draft; Escape and
-      **Cancel** discard the input. Drafts can be edited and deleted.
-- [ ] The story row shows the draft count, and **Submit Round (N)** in the toolbar and the
-      details pane counts all drafts of the story. Both are disabled without drafts.
-- [ ] Drafts survive an IDE restart and are never written to the story file. An unsaved
-      input stays while the story reloads and returns after looking at another step.
-- [ ] After Submit, the notification and details pane explain automatic pickup by a
-      listening agent and show `/code-story feedback` as a fallback for a stopped agent.
-      Both copy buttons put the right command on the clipboard. **Withdraw** returns
-      the comment to drafts before an agent fetches it.
+- [ ] The details pane keeps its comment input below the scrolling details, for the
+      selected step or story. The context-menu **Comment** moves the keyboard focus to it.
+      **Post** is disabled while the input is empty.
+- [ ] A posted comment shows "Waiting for agent" at once, with a note about automatic
+      pickup by a listening agent and `/code-story feedback` as a fallback for a stopped
+      agent. Both copy buttons put the right command on the clipboard. No notification
+      appears for a posted comment; **Request refresh** still shows one.
+- [ ] **Withdraw** opens the comment in the input before an agent fetches it. **Cancel**
+      keeps it as an unsent comment with **Post**, **Edit** and **Delete**; the story row
+      shows the unsent count. Unsent comments survive an IDE restart and are never
+      written to the story file. An unposted input stays while the story reloads and
+      returns after looking at another step.
 - [ ] With the current skill installed, the agent calls `code_story_listen` after showing
-      a story, picks up Submit Round without a chat prompt, replies, and listens again.
-      Idle timeouts reconnect; drafts never trigger processing.
+      a story, picks up each posted comment without a chat prompt, replies, and listens
+      again. Idle timeouts reconnect; unsent comments never trigger processing.
 - [ ] Automatic listening is enabled by default. Disable it in Settings | Tools | Code
       Story while a call is waiting: the call returns stopped. Manual feedback still works.
       Cancelling the agent stops the loop; closing the project ends its waiting call.
@@ -219,8 +229,9 @@ themes, including a narrow tool window.
       and can no longer be withdrawn. The agent answers without code changes, and a
       notification with **Open** shows the story with the answers.
 - [ ] With a story playing, answers arrive without moving the editor, the card or the step.
-- [ ] **Reply** opens the thread again in the next round, and `/code-story feedback`
-      answers only the new comment. **Resolve** hides the thread until **Show resolved**.
+- [ ] **Reply** turns the input into a reply; posting it opens the thread again, and
+      `/code-story feedback` answers only the new comment. **Resolve** hides the thread
+      until **Show resolved**.
 - [ ] Comments on a shared story change that shared file; `git diff` shows only the threads.
 - [ ] Long comments and answers wrap to the width of the tool window, and comment text
       shows as plain text: HTML in a comment stays visible as text.

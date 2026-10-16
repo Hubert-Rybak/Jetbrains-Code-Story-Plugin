@@ -12,6 +12,7 @@ import com.intellij.openapi.keymap.KeymapManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.ui.scale.JBUIScale
 import com.intellij.util.xmlb.XmlSerializer
 import io.github.hubertrybak.codestory.core.Location
 import io.github.hubertrybak.codestory.core.Step
@@ -21,13 +22,23 @@ import io.github.hubertrybak.codestory.core.StoryAuthor
 import io.github.hubertrybak.codestory.core.StoryFormat
 import io.github.hubertrybak.codestory.core.StoryType
 import io.github.hubertrybak.codestory.ui.StepNavigator
+import io.github.hubertrybak.codestory.ui.StepNumberIcon
 import io.github.hubertrybak.codestory.ui.StoryListPanel
 import io.github.hubertrybak.codestory.ui.StoryPlayer
 import io.github.hubertrybak.codestory.ui.StoryReadingPosition
+import java.awt.Color
+import java.awt.Dimension
+import java.awt.Point
+import java.awt.event.InputEvent
+import java.awt.event.MouseEvent
+import java.awt.image.BufferedImage
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.time.Instant
+import javax.swing.JComponent
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class StoryPlayerTest : HeavyPlatformTestCase() {
     private lateinit var root: Path
@@ -243,6 +254,90 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
             player.stop()
             assertEmpty(panel.cardContainer.components.toList())
         } finally { Disposer.dispose(panel) }
+    }
+
+    fun `test dragging the card resizes every card and a double-click on the grip restores the default`() {
+        val settings = CodeStorySettings.getInstance().state
+        val saved = settings.cardWidth to settings.cardHeight
+        try {
+            settings.cardWidth = 0
+            settings.cardHeight = 0
+            player.play(story())
+            player.awaitPlayback()
+            val card = player.presentation!!.card
+            val start = card.fittedSize(Int.MAX_VALUE, Int.MAX_VALUE)
+            assertEquals(JBUIScale.scale(440), start.width)
+            card.floating = true
+            card.size = start
+            drag(card.resizeGrip, Point(4, 4), 60, 40)
+            val resized = Dimension(start.width + 60, start.height + 40)
+            assertEquals(resized, card.fittedSize(Int.MAX_VALUE, Int.MAX_VALUE))
+            assertEquals(unscaled(resized.width) to unscaled(resized.height), settings.cardWidth to settings.cardHeight)
+            // Beside the code, the card gets narrower and shorter instead of covering code.
+            assertEquals(Dimension(card.minimumWidth, resized.height - 20), card.fittedSize(card.minimumWidth, resized.height - 20))
+
+            // The next card has the same size.
+            player.next()
+            player.awaitPlayback()
+            val next = player.presentation!!.card
+            assertEquals(resized, next.fittedSize(Int.MAX_VALUE, Int.MAX_VALUE))
+            // The right edge changes the width only, and a drag stops at the room beside the code.
+            next.floating = true
+            next.size = resized
+            next.room = Dimension(resized.width + 20, resized.height)
+            drag(next, Point(resized.width - 2, resized.height / 2), 100, 50)
+            assertEquals(Dimension(resized.width + 20, resized.height), next.fittedSize(Int.MAX_VALUE, Int.MAX_VALUE))
+            // Away from the edges, a drag changes nothing.
+            drag(next, Point(resized.width / 2, 2), 100, 50)
+            assertEquals(Dimension(resized.width + 20, resized.height), next.fittedSize(Int.MAX_VALUE, Int.MAX_VALUE))
+
+            next.floating = true
+            next.resizeGrip.mouseListeners.forEach { it.mouseClicked(mouse(next.resizeGrip, MouseEvent.MOUSE_CLICKED, Point(4, 4), clicks = 2)) }
+            assertEquals(0 to 0, settings.cardWidth to settings.cardHeight)
+            assertEquals(start.width, next.fittedSize(Int.MAX_VALUE, Int.MAX_VALUE).width)
+        } finally {
+            settings.cardWidth = saved.first
+            settings.cardHeight = saved.second
+        }
+    }
+
+    fun `test step badges are gutter sized, filled for the current step and outlined for others`() {
+        val muted = Color(0x767A8A)
+        assertEquals(JBUIScale.scale(14) to JBUIScale.scale(14), StepNumberIcon(3, false) { muted }.let { it.iconWidth to it.iconHeight })
+        assertEquals(JBUIScale.scale(18), StepNumberIcon(12, false) { muted }.iconWidth)
+        fun paint(number: Int, current: Boolean): BufferedImage {
+            val icon = StepNumberIcon(number, current) { muted }
+            return BufferedImage(icon.iconWidth * 2, icon.iconHeight * 2, BufferedImage.TYPE_INT_ARGB).also { image ->
+                val g = image.createGraphics()
+                try { g.scale(2.0, 2.0); icon.paintIcon(null, g, 0, 0) } finally { g.dispose() }
+            }
+        }
+        fun rgb(image: BufferedImage, x: Int, y: Int) = image.getRGB(x, y) and 0xFFFFFF
+        fun nearWhite(pixel: Int) = listOf(16, 8, 0).all { (pixel shr it and 0xFF) >= 200 }
+        // Antialiasing may round a channel by one.
+        fun assertColor(expected: Int, actual: Int) =
+            assertTrue("%06x is not %06x".format(actual, expected), listOf(16, 8, 0).all { abs((expected shr it and 0xFF) - (actual shr it and 0xFF)) <= 2 })
+
+        val current = paint(2, true)
+        val middle = current.height / 2
+        assertColor(0x3574F0, rgb(current, 3, middle))
+        assertTrue("The current step's number is white", (0 until current.width).any { nearWhite(rgb(current, it, middle)) })
+        val other = paint(3, false)
+        assertColor(muted.rgb and 0xFFFFFF, rgb(other, 0, middle))
+        assertEquals("Other steps are outlined, not filled", 0, other.getRGB(4, middle) ushr 24)
+    }
+
+    private fun unscaled(value: Int) = (value / JBUIScale.scale(1f)).roundToInt()
+
+    private fun mouse(component: JComponent, id: Int, at: Point, clicks: Int = 1) = MouseEvent(
+        component, id, System.currentTimeMillis(), InputEvent.BUTTON1_DOWN_MASK, at.x, at.y, at.x + 100, at.y + 100, clicks, false, MouseEvent.BUTTON1,
+    )
+
+    private fun drag(component: JComponent, from: Point, dx: Int, dy: Int) {
+        val to = Point(from.x + dx, from.y + dy)
+        component.mouseListeners.forEach { it.mousePressed(mouse(component, MouseEvent.MOUSE_PRESSED, from)) }
+        component.mouseMotionListeners.forEach { it.mouseDragged(mouse(component, MouseEvent.MOUSE_DRAGGED, to)) }
+        component.mouseListeners.forEach { it.mouseReleased(mouse(component, MouseEvent.MOUSE_RELEASED, to)) }
     }
 
     fun `test badges navigate other steps in the current file and reopen the current card`() {

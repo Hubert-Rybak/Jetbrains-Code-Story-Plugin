@@ -16,12 +16,12 @@ description: Builds or revises a short, clickable code story in the developer's 
 
 After showing a story, and after answering each round, call `code_story_listen` with
 `projectPath` and `repositoryPath` for the current repository. Omit `storyId` to
-listen for rounds across that repository. No hook or extra chat command is needed
+listen for comments across that repository. No hook or extra chat command is needed
 while this call is active. Tell the developer you are listening before waiting.
 
 - `status: feedback`: process the returned `feedback` using steps 2–7 below. The tool
-  already fetched those comments. Submit Round is the developer's request to process
-  that round; do not ask for a second confirmation just to fetch or answer it. Keep
+  already fetched those comments. A posted comment is the developer's request to
+  process it; do not ask for a second confirmation just to fetch or answer it. Keep
   normal tool permissions for code changes, and never change code for a question.
 - `status: timeout`: immediately call `code_story_listen` again. Each call waits up to
   25 seconds; timeout is a heartbeat, not completion. Do not repeatedly post idle updates.
@@ -39,7 +39,7 @@ is enabled by default. When disabled, use feedback mode only on an explicit requ
 
 ## Feedback mode
 
-Use it for `/code-story feedback [storyId]` (`$code-story feedback` in Codex). The reader wrote comments on a story in the IDE and submitted them as a round.
+Use it for `/code-story feedback [storyId]` (`$code-story feedback` in Codex). The reader posted comments on a story in the IDE; comments that wait together share a numbered round.
 
 1. Call `code_story_feedback` with `projectPath`, and with `storyId` when the developer names a story. It returns the comments that wait for an agent, oldest round first, each with its story, step, thread history, `threadId` and `round`.
 2. Answer each question from the story, its thread and the code. Read the code before you answer. Never change code for a question. If the code needs a change, say so in the answer and suggest that the developer asks for it as a change request.

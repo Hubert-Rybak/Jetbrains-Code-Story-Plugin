@@ -16,8 +16,9 @@ import io.github.hubertrybak.codestory.core.StoryThread
 import java.awt.datatransfer.StringSelection
 
 /**
- * The reader's comment actions in the tool window. Drafts change at once, in IDE storage. Story
- * files change in [background]; the tool window reloads when a file changed.
+ * The reader's comment actions. A posted comment goes into the story file at once. Until the file
+ * has it, the comment stays in IDE storage, so a failed write keeps it as an unsent comment. Story
+ * files change in [background]; the comments reload when a file changed.
  */
 class StoryComments(
     private val project: Project,
@@ -27,17 +28,32 @@ class StoryComments(
     private val reader get() = project.service<StoryReaderState>()
     private val service get() = CodeStoryService.getInstance(project)
 
+    /** Comments that are not in the story file: withdrawn, failed, or still being written. */
     fun drafts(stored: StoredStory): List<StoryDraft> = reader.drafts(stored.key)
 
-    fun save(draft: StoryDraft) {
+    fun isSending(draft: StoryDraft) = reader.isSending(draft)
+
+    /** Writes [draft] into the story file now. Agents that listen pick it up at once. */
+    fun post(stored: StoredStory, draft: StoryDraft) {
         reader.saveDraft(draft)
-        draftsChanged()
+        reader.setSending(draft, true)
         changed()
+        background {
+            var posted = false
+            try {
+                posted = service.post(stored, listOf(draft)) > 0
+            } catch (e: java.io.IOException) {
+                notify("Code Story could not post the comment: ${e.message} It is kept as an unsent comment.")
+            } finally {
+                reader.setSending(draft, false)
+                // A posted comment shows when its story reloads; any other comment shows as unsent.
+                if (!posted) changed()
+            }
+        }
     }
 
     fun delete(draft: StoryDraft) {
         reader.deleteDrafts(listOf(draft.id))
-        draftsChanged()
         changed()
     }
 
@@ -45,14 +61,18 @@ class StoryComments(
         if (reader.markRead(stored, threads)) changed()
     }
 
-    private fun changed() = project.messageBus.syncPublisher(StoryReaderListener.TOPIC).readerChanged()
+    private fun changed() {
+        draftsChanged()
+        project.messageBus.syncPublisher(StoryReaderListener.TOPIC).readerChanged()
+    }
 
     fun requestRefresh(stored: StoredStory, stepId: String?) = changeFile { service.requestRefresh(stored, stepId) }
 
-    fun submit(stored: StoredStory) = changeFile { service.submitRound(stored) }
-
-    fun withdraw(stored: StoredStory, thread: StoryThread) = changeFile {
-        if (!service.withdraw(stored, thread.id)) notify("An agent already fetched this comment. It stays in the story until the agent replies.")
+    /** Takes back a comment that no agent fetched; [withdrawn] gets it on the EDT, to edit it. */
+    fun withdraw(stored: StoredStory, thread: StoryThread, withdrawn: (StoryDraft) -> Unit = {}) = changeFile {
+        val draft = service.withdraw(stored, thread.id)
+        if (draft == null) notify("An agent already fetched this comment. It stays in the story until the agent replies.")
+        else ApplicationManager.getApplication().invokeLater({ withdrawn(draft) }, ModalityState.nonModal(), project.disposed)
     }
 
     fun resolve(stored: StoredStory, thread: StoryThread) = changeFile { service.resolve(stored, thread.id) }

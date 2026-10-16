@@ -15,8 +15,9 @@ import com.intellij.util.messages.Topic
 import java.util.UUID
 
 /**
- * A comment that the reader did not submit, for the story with [story] key: on the story, on the
- * step [step], or a reply in the thread [thread]. Mutable only for workspace serialization.
+ * A comment that is not in the story file yet, for the story with [story] key: on the story, on the
+ * step [step], or a reply in the thread [thread]. Posting keeps it here until the story file has it,
+ * and a withdrawn or failed comment stays here as unsent. Mutable only for workspace serialization.
  */
 data class StoryDraft(
     var id: String = UUID.randomUUID().toString(),
@@ -37,7 +38,7 @@ fun interface StoryReaderListener {
     }
 }
 
-/** Shared arrivals remain new until opened. Drafts wait here until Submit. Reader state never changes the shared file. */
+/** Shared arrivals remain new until opened. Unsent comments wait here. Reader state never changes the shared file. */
 @Service(Service.Level.PROJECT)
 @State(name = "CodeStoryReaderState", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
 class StoryReaderState : PersistentStateComponent<StoryReaderState.ReadStories> {
@@ -48,6 +49,8 @@ class StoryReaderState : PersistentStateComponent<StoryReaderState.ReadStories> 
     }
 
     private var data = ReadStories()
+    /** Drafts that are being written into their story file. Not saved: after a restart, they are unsent. */
+    private val sending = mutableSetOf<String>()
     /** A background inventory authorizes legacy migration only for the unique file of an ID. */
     private val uniqueLegacyFiles = mutableMapOf<String, String>()
     @Synchronized override fun getState() = ReadStories().also {
@@ -142,6 +145,9 @@ class StoryReaderState : PersistentStateComponent<StoryReaderState.ReadStories> 
     }
 
     @Synchronized fun deleteDrafts(ids: Collection<String>) { data.drafts.removeAll { it.id in ids } }
+
+    @Synchronized fun isSending(draft: StoryDraft) = draft.id in sending
+    @Synchronized fun setSending(draft: StoryDraft, value: Boolean) { if (value) sending += draft.id else sending -= draft.id }
 
     @Synchronized fun deleteStoryDrafts(storyKey: String) {
         data.drafts.removeAll { it.story == storyKey }

@@ -37,6 +37,9 @@ class CodeStorySettings : PersistentStateComponent<CodeStorySettings.Options> {
         var projectSkillInstallation = false
         var setupNotificationShown = false
         @Volatile var automaticFeedback = true
+        /** The step card size that the reader chose by dragging, in unscaled pixels; 0 means the default size. */
+        var cardWidth = 0
+        var cardHeight = 0
     }
 
     private var options = Options()

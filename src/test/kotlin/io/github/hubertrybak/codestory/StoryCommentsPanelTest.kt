@@ -18,9 +18,11 @@ import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
 import io.github.hubertrybak.codestory.core.ThreadKind
+import io.github.hubertrybak.codestory.core.ThreadState
 import io.github.hubertrybak.codestory.core.StoryThreads
 import io.github.hubertrybak.codestory.ui.CommentsPanel
 import io.github.hubertrybak.codestory.ui.StepItem
+import io.github.hubertrybak.codestory.ui.StoryComments
 import io.github.hubertrybak.codestory.ui.StoryItem
 import io.github.hubertrybak.codestory.ui.StoryListPanel
 import io.github.hubertrybak.codestory.ui.StoryPlayer
@@ -41,11 +43,13 @@ import java.awt.datatransfer.DataFlavor
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.JLabel
+import javax.swing.JScrollPane
 import javax.swing.JTextArea
+import javax.swing.SwingUtilities
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.TreePath
 
-/** The comments in the details pane: drafts, rounds, waiting comments, answers and resolved threads. */
+/** The comments in the details pane and the card: posting, waiting comments, withdrawal, answers and resolved threads. */
 class StoryCommentsPanelTest : HeavyPlatformTestCase() {
     private lateinit var root: Path
     private var panel: StoryListPanel? = null
@@ -70,85 +74,79 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         finally { super.tearDown() }
     }
 
-    fun `test the reader writes edits and deletes drafts of a step`() {
+    fun `test a comment on a step is posted at once and stays on its step`() {
         val stored = show(story(step(id = quoted("entry")), step(start = "5", end = "6", id = quoted("core"))))
         openPanel()
         selectStep(stored, "entry")
-        assertTrue(notes().contains("No comments yet. Ask a question, then use Submit Round. Your listening agent picks it up automatically."))
-        assertFalse(comments.submit.isEnabled)
+        assertTrue(notes().contains("No comments yet. Post a question or a change request below. Your listening agent answers here."))
+        assertNull(panel!!.toolbarActions.getChildActionsOrStubs().firstOrNull { it.templatePresentation.text == "Submit Round" })
+        // The input stays below the scrolling details.
+        assertNull(SwingUtilities.getAncestorOfClass(JScrollPane::class.java, comments.composer))
+        assertTrue(SwingUtilities.isDescendingFrom(comments.composer, panel!!.details.footer))
 
-        link("Comment on step").doClick()
-        assertEquals("New comment about this step", comments.input!!.title)
-        comments.input!!.text.text = "  Why does it start here?  "
-        comments.input!!.save.doClick()
-        assertNull(comments.input)
-        val draft = reader.drafts(stored.key).single()
-        assertEquals("Why does it start here?" to "entry", draft.text to draft.step)
-        assertTrue(labels().contains("Draft question"))
+        val input = comments.shownInput()!!
+        assertEquals("New comment about this step", input.title)
+        assertEquals("Ask about this step, or request a change", input.text.placeholder)
+        assertFalse(input.post.isEnabled)
+        input.text.text = "  Why does it start here?  "
+        assertTrue(input.post.isEnabled)
+        input.post.doClick()
+        await { labels().contains("Question · Waiting for agent") && reader.drafts(stored.key).isEmpty() }
+        val thread = saved(stored).steps[0].threads.single()
+        assertEquals("Why does it start here?" to ThreadState.SUBMITTED, thread.messages.single().text to thread.state)
+        assertTrue(labels().contains("You"))
         assertTrue(notes().contains("Why does it start here?"))
-        assertTrue(storyRow(stored).endsWith("  1 draft"))
-        assertEquals("Submit Round (1)", comments.submit.text)
-        assertTrue(comments.submit.isEnabled)
-        assertEquals("Submit Round (1)", update(panel!!.toolbarActions, "Submit Round").text)
+        assertTrue(stepRow(stored, "entry").contains("1 open thread"))
+        // A fresh input waits for the next comment.
+        assertNotSame(input, comments.shownInput())
+        assertEquals("", comments.shownInput()!!.text.text)
 
-        link("Edit").doClick()
-        assertEquals("Why does it start here?", comments.input!!.text.text)
-        comments.input!!.text.text = "Why here?"
-        comments.input!!.save.doClick()
-        assertEquals(listOf(draft.id to "Why here?"), reader.drafts(stored.key).map { it.id to it.text })
-        link("Edit").doClick()
-        comments.input!!.text.text = "Changed my mind"
-        comments.input!!.cancel.doClick()
-        assertEquals(listOf("Why here?"), reader.drafts(stored.key).map { it.text })
-
-        // The draft belongs to its step only.
+        // The comment belongs to its step only.
         selectStep(stored, "core")
-        assertFalse(notes().contains("Why here?"))
-        assertEquals("Submit Round (1)", comments.submit.text)
-        selectStep(stored, "entry")
-        link("Delete").doClick()
-        assertEmpty(reader.drafts(stored.key))
-        assertFalse(storyRow(stored).contains("draft"))
-        assertFalse(update(panel!!.toolbarActions, "Submit Round").isEnabled)
-        assertFalse(Files.readString(stored.file).contains("Why here?"))
+        assertFalse(notes().contains("Why does it start here?"))
+        assertTrue(saved(stored).steps[1].threads.isEmpty())
     }
 
-    fun `test submit shows waiting comments and withdraw returns them to the drafts`() {
+    fun `test a posted comment waits for an agent and withdraw opens it for editing`() {
         val stored = show(story(step(id = quoted("entry"))))
         openPanel()
         selectStory(stored)
         perform(panel!!.contextActions, "Comment")
-        assertEquals("New comment about the story", comments.input!!.title)
-        comments.input!!.text.text = "What is missing?"
-        comments.input!!.save.doClick()
-        perform(panel!!.toolbarActions, "Submit Round", "Submit Round (1)")
+        val input = comments.shownInput()!!
+        assertEquals("New comment about the story", input.title)
+        input.text.text = "What is missing?"
+        ctrlEnter(input.text)
         await { labels().contains("Question · Waiting for agent") }
-        assertEmpty(reader.drafts(stored.key))
-        assertTrue(notes().contains("What is missing?"))
-        assertTrue(notes().contains("Listening agents pick up submitted feedback automatically."))
+        assertTrue(notes().contains("Listening agents pick up posted comments at once. If your agent is stopped, tell it /code-story feedback."))
         link("Copy").doClick()
         assertEquals("/code-story feedback", CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor))
         link("Copy for Codex").doClick()
         assertEquals("\$code-story feedback", CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor))
 
         link("Withdraw").doClick()
-        await { labels().contains("Draft question") && !labels().contains("Question · Waiting for agent") }
-        assertEquals(listOf("What is missing?"), reader.drafts(stored.key).map { it.text })
+        await { comments.shownInput()?.title == "Edit unsent comment" && !labels().contains("Question · Waiting for agent") }
+        assertEquals("What is missing?", comments.shownInput()!!.text.text)
         assertTrue(StoryThreads.all(saved(stored)).isEmpty())
-        comments.submit.doClick()
-        await { labels().contains("Question · Waiting for agent") }
+        assertEquals(listOf("What is missing?"), reader.drafts(stored.key).map { it.text })
+        // Leaving the edit keeps the comment as an unsent comment.
+        comments.shownInput()!!.cancel.doClick()
+        assertTrue(labels().contains("Unsent question"))
+        assertEquals("New comment about the story", comments.shownInput()!!.title)
+        link("Edit").doClick()
+        comments.shownInput()!!.post.doClick()
+        await { labels().contains("Question · Waiting for agent") && reader.drafts(stored.key).isEmpty() }
+        assertEquals(listOf("What is missing?"), StoryThreads.all(saved(stored)).map { it.second.messages.single().text })
 
         // An agent fetched the comment: it can no longer be withdrawn.
         background { service.feedback(null, null) }
         await { labels().contains("Question · Agent working") }
         assertNull(links().firstOrNull { it.text == "Withdraw" })
-        assertFalse(notes().contains("Listening agents pick up submitted feedback automatically."))
+        assertFalse(notes().any { it.startsWith("Listening agents pick up posted comments") })
     }
 
-    fun `test answers appear in their thread and resolved threads hide until shown`() {
+    fun `test answers appear in their thread and a reply reopens it`() {
         val stored = show(story(step(id = quoted("entry"))))
-        reader.saveDraft(StoryDraft(story = stored.key, step = "entry", text = "Why does it start here?"))
-        background { service.submitRound(stored) }
+        background { service.post(stored, listOf(StoryDraft(story = stored.key, step = "entry", text = "Why does it start here?"))) }
         val comment = background { service.feedback(stored.id, null)!! }.comments.single()
         openPanel()
         selectStep(stored, "entry")
@@ -159,16 +157,29 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
             }))
         }
         await { labels().contains("Question · Answered") }
-        assertTrue(labels().containsAll(listOf("Reader · round 1", "Agent · round 1 · answered")))
+        assertTrue(labels().containsAll(listOf("You", "Agent · answered")))
         assertTrue(notes().contains("The controller receives the request first."))
 
         link("Reply").doClick()
-        assertEquals("Reply in this thread", comments.input!!.title)
-        comments.input!!.text.text = "Why not in the service?"
-        comments.input!!.save.doClick()
-        assertTrue(labels().contains("Draft reply"))
+        assertEquals("Reply in this thread", comments.shownInput()!!.title)
+        assertTrue(components(comments.composer).filterIsInstance<JLabel>().any { it.text == "Reply to “Why does it start here?”" })
+        assertNull(links().firstOrNull { it.text == "Reply" })
+        comments.shownInput()!!.cancel.doClick()
+        assertEquals("New comment about this step", comments.shownInput()!!.title)
+
+        link("Reply").doClick()
+        comments.shownInput()!!.text.text = "Why not in the service?"
+        comments.shownInput()!!.post.doClick()
+        await { labels().contains("Question · Waiting for agent") }
+        assertEquals(listOf(1, 1, 2), saved(stored).steps[0].threads.single().messages.map { it.round })
+        link("Withdraw").doClick()
+        await { comments.shownInput()?.title == "Edit unsent reply" }
+        comments.shownInput()!!.cancel.doClick()
+        await { labels().contains("Question · Answered") && labels().contains("Unsent reply") }
         assertEquals(comment.threadId, reader.drafts(stored.key).single().thread)
         link("Delete").doClick()
+        assertEmpty(reader.drafts(stored.key))
+        assertFalse(labels().contains("Unsent reply"))
 
         link("Resolve").doClick()
         await { notes().contains("Resolved threads are hidden.") }
@@ -179,12 +190,15 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         assertNull(links().firstOrNull { it.text == "Resolve" })
     }
 
-    fun `test an unsaved comment survives reloads and waits while the reader looks elsewhere`() {
+    fun `test unposted input survives reloads and waits while the reader looks elsewhere`() {
         val stored = show(story(step(id = quoted("entry")), step(start = "5", end = "6", id = quoted("core"))))
         openPanel()
         selectStep(stored, "entry")
         comments.startComment()
-        val input = comments.input!!
+        val input = comments.shownInput()!!
+        // Showing the same step again, as any reload does, keeps even an empty input, and so its focus.
+        comments.show(service.stories().single { it.key == stored.key }, 0)
+        assertSame(input, comments.shownInput())
         input.text.text = "Half written"
         // Another IDE, or an agent, changes the story meanwhile.
         background { CodeStoryService.getInstance(project).show(Json.parseToJsonElement(story(step(id = quoted("entry"), comment = quoted("A revised entry.")), step(start = "5", end = "6", id = quoted("core")))), stored.id) }
@@ -193,56 +207,51 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         assertEquals("Half written", input.text.text)
         // The input waits while the reader looks at another step.
         selectStep(stored, "core")
-        assertNull(comments.shownInput())
-        assertFalse(input.text in components(comments))
-        assertTrue(links().any { it.text == "Comment on step" })
+        assertNotSame(input, comments.shownInput())
+        assertFalse(input.text in components(comments.composer))
+        assertEquals("", comments.shownInput()!!.text.text)
         selectStep(stored, "entry")
         assertSame(input, comments.shownInput())
-        assertTrue(input.text in components(comments))
+        assertTrue(input.text in components(comments.composer))
         input.cancel.doClick()
-        assertNull(comments.input)
+        assertEquals("", comments.shownInput()!!.text.text)
         assertEmpty(reader.drafts(stored.key))
+        assertFalse(Files.readString(stored.file).contains("Half written"))
     }
 
-    fun `test card comments save drafts with Ctrl Enter cancel and expand threads inside the card`() {
+    fun `test the card posts with Ctrl Enter and shows its threads without scrolling to the input`() {
         val stored = show(story(step(id = quoted("entry"))))
         val player = StoryPlayer.getInstance(project)
         await { player.currentStory?.id == stored.id && !player.isResolving }
         val card = player.presentation!!.card
-        assertEquals("💬 0 threads", card.threadLine.text)
-        assertFalse(card.comments.expanded)
-        card.commentButton.doClick()
+        assertFalse(card.comments.isVisible)
+        // The input is in the card's footer, outside the scrolling step text.
+        assertTrue(SwingUtilities.isDescendingFrom(card.comments.composer, card))
+        assertNull(SwingUtilities.getAncestorOfClass(JScrollPane::class.java, card.comments.composer))
+        player.presentation!!.startComment()
         val input = card.comments.shownInput()!!
+        assertEquals("New comment about this step", input.title)
         input.text.text = "Why does it start here?"
-        val saveShortcut = input.text.getActionForKeyStroke(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK))!!
-        saveShortcut.actionPerformed(ActionEvent(input.text, ActionEvent.ACTION_PERFORMED, "save"))
-        await { card.threadLine.text == "💬 0 threads · 1 draft" }
-        assertEquals("entry", reader.drafts(stored.key).single().step)
-        assertFalse(Files.readString(stored.file).contains("Why does it start here?"))
-        card.commentButton.doClick()
-        card.comments.input!!.text.text = "Discard this."
-        card.comments.input!!.cancel.doClick()
-        assertEquals(1, reader.drafts(stored.key).size)
-        card.threadLine.doClick()
-        assertTrue(card.comments.expanded)
-        assertTrue(components(card.comments).filterIsInstance<JTextArea>().any { it.text == "Why does it start here?" })
-        card.comments.submit.doClick()
-        await { card.threadLine.text == "💬 1 thread" }
-        assertTrue(components(card.comments).filterIsInstance<JLabel>().any { it.text == "Question · Waiting for agent" })
+        ctrlEnter(input.text)
+        await { labels(card.comments).contains("Question · Waiting for agent") }
+        assertTrue(card.comments.isVisible)
+        assertEquals("Why does it start here?", saved(stored).steps[0].threads.single().messages.single().text)
+        card.comments.shownInput()!!.text.text = "Discard this."
+        card.comments.shownInput()!!.cancel.doClick()
+        assertEquals("", card.comments.shownInput()!!.text.text)
+        assertEquals(1, saved(stored).steps[0].threads.size)
         // The current-step shortcut also reopens a dismissed card.
         player.presentation!!.dismissCard()
         player.commentOnCurrentStep()
         assertFalse(player.presentation!!.cardDismissed)
         assertNotNull(card.comments.shownInput())
-        card.comments.input!!.cancel.doClick()
     }
 
-    fun `test collapsed card leaves new replies unread until threads open and shows story changes`() {
+    fun `test the card shows story changes and answers stay unread until the card shows them`() {
         val stored = show(story(step(id = quoted("entry")), step(id = quoted("core"), start = "5", end = "6")))
         val player = StoryPlayer.getInstance(project)
         await { player.currentStory?.id == stored.id && !player.isResolving }
-        reader.saveDraft(StoryDraft(story = stored.key, step = "entry", text = "Explain this?"))
-        background { service.submitRound(stored) }
+        background { service.post(stored, listOf(StoryDraft(story = stored.key, step = "entry", text = "Explain this?"))) }
         val comment = background { service.feedback(stored.id, null)!! }.comments.single()
         background { service.patch(stored.id, listOf(Json.parseToJsonElement("""{"op":"update","stepId":"entry","comment":"The controller receives the request."}"""))) }
         await { player.currentStory?.story?.steps?.first()?.comment == "The controller receives the request." && !player.isResolving }
@@ -253,30 +262,51 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         }
         await { player.currentStory!!.story.steps[0].threads.single().messages.size == 2 && !player.isResolving }
         val card = player.presentation!!.card
-        assertFalse(card.comments.expanded)
+        await { components(card.comments).filterIsInstance<JTextArea>().any { it.text == "Story changes: Step 1 updated" } }
+        // Without a window, the card does not show yet.
         assertTrue(reader.hasUnread(stored, saved(stored).steps[0].threads))
         openPanel()
         selectStep(stored, "core")
         assertTrue(stepRow(stored, "entry").contains("1 open thread"))
         assertTrue(stepRow(stored, "entry").contains("●"))
         val before = Files.readString(stored.file)
-        card.threadLine.doClick()
+        card.comments.markShownRead()
         assertFalse(reader.hasUnread(stored, saved(stored).steps[0].threads))
         assertFalse(stepRow(stored, "entry").contains("●"))
         assertEquals(before, Files.readString(stored.file))
-        assertTrue(components(card.comments).filterIsInstance<JTextArea>().any { it.text == "Story changes: Step 1 updated" })
     }
 
-    fun `test an unsaved card input survives a story revision`() {
+    fun `test an unposted card input survives a story revision`() {
         val stored = show(story(step(id = quoted("entry"))))
         val player = StoryPlayer.getInstance(project)
         await { player.currentStory?.id == stored.id && !player.isResolving }
-        player.presentation!!.card.commentButton.doClick()
-        player.presentation!!.card.comments.input!!.text.text = "Half written question"
+        player.presentation!!.startComment()
+        player.presentation!!.card.comments.shownInput()!!.text.text = "Half written question"
         background { service.patch(stored.id, listOf(Json.parseToJsonElement("""{"op":"update","stepId":"entry","comment":"A clearer explanation."}"""))) }
         await { player.currentStory!!.story.steps[0].comment == "A clearer explanation." && !player.isResolving }
         assertEquals("Half written question", player.presentation!!.card.comments.shownInput()!!.text.text)
         assertEmpty(reader.drafts(stored.key))
+    }
+
+    fun `test a failed post keeps the comment as an unsent comment`() {
+        val stored = show(story(step(id = quoted("entry"))))
+        // Another IDE moved the story away meanwhile, so the write fails.
+        val moved = StoredStory(stored.id, stored.root, root.resolve(".codestory/local/moved-away.story.json"), stored.story, stored.modified)
+        val alone = CommentsPanel(StoryComments(project))
+        alone.show(moved, 0)
+        alone.shownInput()!!.text.text = "Is this kept?"
+        alone.shownInput()!!.post.doClick()
+        val draft = reader.drafts(moved.key).single()
+        await { !reader.isSending(draft) }
+        alone.show(moved, 0)
+        assertEquals(listOf("Is this kept?"), reader.drafts(moved.key).map { it.text })
+        assertTrue(labels(alone).contains("Unsent question"))
+        assertTrue(components(alone).filterIsInstance<ActionLink>().map { it.text }.containsAll(listOf("Post", "Edit", "Delete")))
+
+        // The story row counts unsent comments.
+        reader.saveDraft(StoryDraft(story = stored.key, step = "entry", text = "Withdrawn earlier"))
+        openPanel()
+        assertTrue(storyRow(stored).endsWith("  1 unsent"))
     }
 
     private fun stepRow(stored: StoredStory, stepId: String): String {
@@ -285,35 +315,39 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         return (tree.cellRenderer.getTreeCellRendererComponent(tree, node, false, false, false, 0, false) as SimpleColoredComponent).getCharSequence(false).toString()
     }
 
-    fun `test change request toggles in card and details preserve draft kind and refresh is in the context menu`() {
+    fun `test change requests keep their kind through withdrawal and refresh is in the context menu`() {
         val stored = show(story(step(id = quoted("entry"))))
         val player = StoryPlayer.getInstance(project)
         await { player.currentStory?.id == stored.id && !player.isResolving }
         val card = player.presentation!!.card
-        card.commentButton.doClick()
+        player.presentation!!.startComment()
         val input = card.comments.shownInput()!!
         assertTrue(input.question.isSelected)
         input.change.doClick()
         input.text.text = "Change the entry."
-        input.save.doClick()
-        assertEquals(ThreadKind.CHANGE, reader.drafts(stored.key).single().kind)
+        input.post.doClick()
+        await { saved(stored).steps.single().threads.singleOrNull()?.kind == ThreadKind.CHANGE }
         openPanel()
         selectStep(stored, "entry")
-        assertTrue(labels().contains("Draft change request"))
-        link("Edit").doClick()
-        assertTrue(comments.input!!.change.isSelected)
-        comments.input!!.question.doClick()
-        comments.input!!.save.doClick()
-        assertEquals(ThreadKind.QUESTION, reader.drafts(stored.key).single().kind)
-        link("Edit").doClick()
-        comments.input!!.change.doClick()
-        comments.input!!.save.doClick()
-        comments.submit.doClick()
+        await { labels().contains("Change request · Waiting for agent") }
+        link("Withdraw").doClick()
+        await { comments.shownInput()?.title == "Edit unsent comment" }
+        assertTrue(comments.shownInput()!!.change.isSelected)
+        comments.shownInput()!!.question.doClick()
+        comments.shownInput()!!.post.doClick()
+        await { saved(stored).steps.single().threads.singleOrNull()?.kind == ThreadKind.QUESTION }
+        await { labels().contains("Question · Waiting for agent") }
+        link("Withdraw").doClick()
+        await { comments.shownInput()?.title == "Edit unsent comment" }
+        comments.shownInput()!!.change.doClick()
+        comments.shownInput()!!.post.doClick()
         await { labels().contains("Change request · Waiting for agent") }
         perform(panel!!.contextActions, "Request refresh")
         await { labels().contains("Refresh request · Waiting for agent") }
         val submitted = service.storyFolder().get(stored.id)!!.story
         assertEquals(setOf(ThreadKind.CHANGE, ThreadKind.REFRESH), submitted.steps.single().threads.map { it.kind }.toSet())
+        // Comments posted before an agent fetched them form one round.
+        assertEquals(1, StoryThreads.pending(submitted).map { it.round }.distinct().size)
         val fetched = background { service.feedback(stored.id, null)!! }.comments
         background {
             service.reply(stored.id, fetched.map { buildJsonObject {
@@ -324,16 +358,15 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         await { labels().contains("Refresh request · Done") && labels().contains("Change request · Done") }
         // A new reader comment defaults to Question even in a refresh or change thread.
         links().last { it.text == "Reply" }.doClick()
-        assertTrue(comments.input!!.question.isSelected)
-        comments.input!!.change.doClick()
-        comments.input!!.text.text = "Change the entry again."
-        comments.input!!.save.doClick()
-        comments.submit.doClick()
+        assertTrue(comments.shownInput()!!.question.isSelected)
+        comments.shownInput()!!.change.doClick()
+        comments.shownInput()!!.text.text = "Change the entry again."
+        comments.shownInput()!!.post.doClick()
         await { labels().contains("Change request · Waiting for agent") }
         link("Withdraw").doClick()
-        await { labels().contains("Refresh request · Done") && reader.drafts(stored.key).isNotEmpty() }
+        await { labels().contains("Refresh request · Done") && comments.shownInput()?.title == "Edit unsent reply" }
         assertEquals(ThreadKind.CHANGE, reader.drafts(stored.key).single().kind)
-        comments.submit.doClick()
+        comments.shownInput()!!.post.doClick()
         await { labels().contains("Change request · Waiting for agent") }
         assertEquals(ThreadKind.CHANGE, background { service.feedback(stored.id, null)!! }.comments.single().kind)
     }
@@ -371,17 +404,18 @@ class StoryCommentsPanelTest : HeavyPlatformTestCase() {
         return (renderer as SimpleColoredComponent).getCharSequence(false).toString()
     }
 
+    private fun ctrlEnter(text: JTextArea) {
+        val post = text.getActionForKeyStroke(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK))!!
+        post.actionPerformed(ActionEvent(text, ActionEvent.ACTION_PERFORMED, "post"))
+    }
+
     private fun components(container: Container): List<Component> =
         container.components.filter { it.isVisible }.flatMap { listOf(it) + if (it is Container) components(it) else emptyList() }
 
-    private fun labels() = components(comments).filterIsInstance<JLabel>().map { it.text }
+    private fun labels(container: Container = comments) = components(container).filterIsInstance<JLabel>().map { it.text }
     private fun notes() = components(comments).filterIsInstance<JTextArea>().filter { !it.isEditable }.map { it.text }
     private fun links() = components(comments).filterIsInstance<ActionLink>()
     private fun link(text: String) = links().single { it.text == text }
-
-    private fun update(actions: DefaultActionGroup, name: String) = actions.getChildActionsOrStubs().single { it.templatePresentation.text == name }.let { action ->
-        TestActionEvent.createTestEvent(action).also(action::update).presentation
-    }
 
     private fun perform(actions: DefaultActionGroup, name: String, label: String = name) {
         val action = actions.getChildActionsOrStubs().single { it.templatePresentation.text == name }

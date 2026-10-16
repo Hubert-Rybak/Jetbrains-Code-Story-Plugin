@@ -16,7 +16,7 @@ release checks.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/step-card-dark.png">
-    <img src="docs/images/step-card-light.png" alt="A story step in the editor: the explained code is highlighted, and the step card sits to its right with the step title, the comment, and Prev, Next, Stop and comment buttons." width="720">
+    <img src="docs/images/step-card-light.png" alt="A story step in the editor: the explained code is highlighted, the current step’s gutter badge is filled, and the step card sits to its right with the step title, the comment, an answered question, the comment input, and Prev, Next and Stop." width="720">
   </picture>
 </p>
 
@@ -244,22 +244,26 @@ last step if the revision is shorter.
 ### Read a story
 
 The current step shows a floating card beside the highlighted code, with "Step N of M",
-the step title, the comment and **Prev**, **Next** and **Stop**; the tool-window toolbar
-has the same buttons. On the last step, **Next** becomes **Finish**. The card leaves the
-target code and the caret visible and does not take keyboard focus, so you can type,
-select code and click in the editor while the story plays. When the editor has no room
-for the card, the same card appears in the tool window. Text-only steps show their
-comment in the details pane and leave the editor as it is. Steps open in the preview tab
-when the IDE uses preview tabs.
+the step title, the comment, the comment threads of the step, a comment input and
+**Prev**, **Next** and **Stop**; the tool-window toolbar has the same buttons. On the last
+step, **Next** becomes **Finish**. The step text and the threads scroll; the comment input
+and the buttons stay in view. The card leaves the target code and the caret visible and
+does not take keyboard focus, so you can type, select code and click in the editor while
+the story plays. Drag the card's right edge, bottom edge or corner grip to resize it.
+Every card keeps that size, and a double-click on the grip restores the default size.
+When the editor has no room for the card, even at a smaller width, the same card appears
+in the tool window. Text-only steps show their comment in the details pane and leave the
+editor as it is. Steps open in the preview tab when the IDE uses preview tabs.
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/tool-window-dark.png">
-    <img src="docs/images/tool-window-light.png" alt="The Code Story tool window: a toolbar, stories grouped under Local and Shared with dates, branches and step statuses, and a details pane for the selected step." width="720">
+    <img src="docs/images/tool-window-light.png" alt="The Code Story tool window: a toolbar, stories grouped under Local and Shared with dates, branches and step statuses, a details pane for the selected step, and the comment input below it." width="720">
   </picture>
 </p>
 
-Numbered gutter badges jump to other steps in the same file. Closing the card keeps your
+Numbered gutter badges jump to other steps in the same file; the badge of the current
+step is filled with the accent color. Closing the card keeps your
 place and the highlighted code; click the current badge or step to reopen it. Scrolling
 and switching tabs hide and restore the card without moving your caret or scrolling
 back. **Stop** and **Finish** remove the card, the highlight and the badges.
@@ -327,9 +331,9 @@ With several Git repositories mapped in one project, the tree groups by reposito
 each repository has its own `.codestory/`. A story must stay inside one repository.
 
 If a shared arrival has the same ID as a local story, both files remain separate: comments
-and drafts belong to the selected file. Agent tools report `ambiguous-story-id` until the
-two files have different IDs. Change both the filename and the JSON `id` when resolving
-such a collision.
+and unsent comments belong to the selected file. Agent tools report `ambiguous-story-id`
+until the two files have different IDs. Change both the filename and the JSON `id` when
+resolving such a collision.
 
 ### Questions and change requests
 
@@ -338,47 +342,46 @@ Ask your agent about a story, or ask it for a code change, without leaving the I
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/comments-dark.png">
-    <img src="docs/images/comments-light.png" alt="The comments panel: an answered question, a change request that the agent is working on, a draft question, and the Submit Round button." width="720">
+    <img src="docs/images/comments-light.png" alt="The comments of a step: an answered question, a change request that the agent is working on, a question that waits for the agent, and the comment input with a typed question and the Post button." width="720">
   </picture>
 </p>
 
-1. **Write comments.** The card’s **💬** button opens a small comment input under the
-   step text. In the tool window, select a step or a story and click **Comment on step**
-   or **Comment on story** in the details pane (or **Comment** in the context menu).
-   **Ctrl+Alt+Shift+Z**, then **C**, comments on the current step. For each comment or
-   reply, choose **Question** (the default) or **Change request**. **Save Draft**
-   (Ctrl+Enter) keeps the comment as a draft in your IDE workspace; drafts never go into
-   the story file. You can edit or delete a draft, and the story row shows how many
-   drafts it has.
-2. **Submit the round.** **Submit Round (N)**, in the details pane and the toolbar,
-   writes all drafts of the story into the story file as one numbered round. Until an
-   agent fetches a comment, it shows "Waiting for agent", and you can **Withdraw** it back
-   to your drafts.
+1. **Write a comment.** The card has a comment input below the step text, next to the
+   playback buttons, so it never scrolls away. In the tool window, the details pane has
+   the same input below the details of the selected step or story; **Comment** in the
+   context menu moves the focus to it. **Ctrl+Alt+Shift+Z**, then **C**, comments on the
+   current step. Choose **Question** (the default) or **Change request**.
+2. **Post it.** **Post** (Ctrl+Enter) writes the comment into the story file at once.
+   Until an agent fetches it, it shows "Waiting for agent", and **Withdraw** takes it back
+   into the input for editing. A withdrawn comment, or one that could not be written,
+   stays in your IDE workspace as an unsent comment with **Post**, **Edit** and
+   **Delete**, and the story row shows how many unsent comments it has.
 3. **Your listening agent picks it up.** The bundled skill calls `code_story_listen`
-   after showing a story and after each reply, so Submit Round needs no extra chat
+   after showing a story and after each reply, so a posted comment needs no extra chat
    prompt. A fetched comment shows "Agent working". If your agent has stopped, tell it
-   `/code-story feedback` (`$code-story feedback` in Codex); the notification and details
-   pane have buttons to copy the command.
+   `/code-story feedback` (`$code-story feedback` in Codex); the comments have buttons to
+   copy the command.
 4. **Read the answers.** A notification tells you that answers arrived, and **Open**
-   shows the story. The answers appear under your comments, and a story that is playing
-   keeps its step. Step rows show open-thread counts and a dot for unread answers;
-   opening the threads clears the dot. The collapsed **💬 N threads · N drafts** line in
-   the card expands the threads inside the card.
-5. **Continue or close.** **Reply** in a thread adds a draft that opens the thread again
-   in the next round. **Resolve** closes a thread; resolved threads are hidden until you
-   select **Show resolved**.
+   shows the story. The answers appear under your comments, in the card and in the
+   details pane, and a story that is playing keeps its step. Step rows show open-thread
+   counts and a dot for unread answers; showing the threads clears the dot.
+5. **Continue or close.** **Reply** in a thread turns the input into a reply; posting it
+   opens the thread again. **Resolve** closes a thread; resolved threads are hidden until
+   you select **Show resolved**.
 
 Listening is enabled by default. Install the current bundled skill with **Tools | Code
 Story | Install Code Story skill** to enable this workflow. Disable **Let connected
 agents listen for submitted feedback automatically** in **Settings | Tools | Code Story**
 for manual feedback only. You can also cancel the waiting agent or tell it to stop.
 The tool waits up to 25 seconds per call; the skill reconnects after timeout and after
-answering a round. Drafts do not wake it. Listening requires an active agent session;
-it cannot restart an agent that ended its turn. Copilot in Rider needs no hook when its
-client supports active waiting calls. Optional hooks only remind sessions that are not
-listening.
+answering a round. Unsent comments do not wake it. Listening requires an active agent
+session; it cannot restart an agent that ended its turn. Copilot in Rider needs no hook
+when its client supports active waiting calls. Optional hooks only remind sessions that
+are not listening.
 
 The listening tool uses the same fetch path as `code_story_feedback`, oldest round first.
+Comments that wait for an agent together share a round number, which the agent uses in
+its replies.
 The agent answers each comment with `code_story_reply`: `answered` for questions, `done` for change
 or refresh requests, or `declined` with a reason.
 
@@ -410,8 +413,9 @@ sessions never answer the same comment twice.
 
 The plugin maintains `.codestory/local/pending-feedback.json`, a small local index of
 pending story IDs, folders, counts and rounds. It includes submitted and fetched
-feedback, omits drafts, comment text and code, and clears entries as feedback is answered,
-withdrawn or deleted. The IDE refreshes it on project open and story file changes.
+feedback, omits unsent comments, comment text and code, and clears entries as feedback
+is answered, withdrawn or deleted. The IDE refreshes it on project open and story file
+changes.
 **Check setup → Copy feedback hooks** copies the helper and all configurations below.
 The plugin never installs hooks. The snippets need Python 3; replace `python3` with your
 Python executable if needed. Merge the configuration with existing hooks. The reminders
@@ -512,7 +516,7 @@ Agent references: [Claude Code hooks](https://code.claude.com/docs/en/hooks),
 | Bring the IDE to the front on a new story | On | A new story brings the IDE window to the front. When it is off, the story still opens and plays. |
 | Include passive voice and -ing hints in agent reports | Off | Adds these optional writing hints to the agent's reports. Code text such as "string" or "mapping" can give false hints. |
 | Install the Code Story skill in the current project instead of the user folder | Off | **Install Code Story skill** writes to `.agents/skills/` and `.claude/skills/` at the repository root instead of your home folder. |
-| Let connected agents listen for submitted feedback automatically | On | Waiting agents pick up Submit Round. Turning this off ends waiting calls; manual feedback remains available. |
+| Let connected agents listen for submitted feedback automatically | On | Waiting agents pick up each posted comment. Turning this off ends waiting calls; manual feedback remains available. |
 | Highlight color | Use theme default | The background of the current step's range. Clear **Use theme default** to choose a color; transparency is supported. |
 
 Other places:
@@ -538,7 +542,7 @@ repositories, or for a text-only story.
 | `code_story_list` | Lists local and shared stories: ID, title, type, date, branch, repository path, folder, status (`ok`, `moved`, `code-changed` or `lost`, with step counts) and `pendingComments`. |
 | `code_story_get` | Returns the full saved story with its comment threads. |
 | `code_story_patch` | Edits a story with ordered `update`, `insert`, `remove` and `confirm` operations. |
-| `code_story_listen` | Waits for submitted rounds by default. Returns feedback, a timeout to reconnect, or stopped when listening is disabled. |
+| `code_story_listen` | Waits for posted comments by default. Returns feedback, a timeout to reconnect, or stopped when listening is disabled. |
 | `code_story_feedback` | Returns the reader's comments that wait for an agent, oldest round first, and the stale steps. |
 | `code_story_reply` | Saves one reply per comment: `answered`, `done` with `changedFiles` (`[]` when no code files changed), or `declined` with a reason. |
 
@@ -567,8 +571,8 @@ comment was received.
   that have none.
 - `.codestory/local/pending-feedback.json` is the local index for the
   [feedback hooks](#optional-feedback-hooks).
-- Reading positions, visited marks, comment drafts and unread markers stay in IDE
-  workspace storage, never in story files.
+- Reading positions, visited marks, unsent comments, the step card size and unread
+  markers stay in IDE storage, never in story files.
 
 ## Known limits
 
@@ -582,7 +586,7 @@ comment was received.
   deliver stories as files and get no validation report.
 - **One IDE per agent connection.** An agent talks to the MCP server of the IDE that it
   is configured for. When the project is not open in that IDE, the skill writes a file.
-- **Listening needs an active agent.** Submit Round is picked up automatically while
+- **Listening needs an active agent.** Posted comments are picked up automatically while
   the agent keeps `code_story_listen` active. The plugin cannot restart an ended agent
   turn. If the client disconnects or cannot maintain waiting calls, resume with
   `/code-story feedback`. Hooks are optional reminders, not a requirement for listening.
@@ -652,9 +656,10 @@ Management tests cover share/unshare, deletion confirmation, shared arrivals wit
 playback, repository grouping and separate reader state for duplicate story IDs.
 Core tests also cover Markdown export, including text-only steps and escaped paths.
 Feedback tests cover listening, timeout, cancellation, settings and repository scope,
-submit rounds in the fixture, call `code_story_feedback` and
+post comments in the fixture, call `code_story_feedback` and
 `code_story_reply`, and check thread states, withdraw, "already answered", thread
-preservation on revision, drafts in workspace storage and the details pane; core tests
+preservation on revision, unsent comments in workspace storage, the details pane and
+the card; core tests
 cover the thread state machine, the thread format and the answer checks.
 
 The story core (package `io.github.hubertrybak.codestory.core`) has no IDE

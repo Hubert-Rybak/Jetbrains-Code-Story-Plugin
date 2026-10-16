@@ -293,36 +293,35 @@ class CodeStoryService(private val project: Project) : Disposable {
     }
 
     /**
-     * Writes the reader's drafts of [stored] into its local or shared file as one numbered round.
-     * Returns the number of submitted comments. Reads and writes files, so call it in the background.
+     * Posts the reader's comments [drafts] into the local or shared file of [stored] at once. They
+     * join the comments that wait for an agent, and leave IDE storage. Returns the number of posted
+     * comments. Reads and writes files, so call it in the background.
      */
-    fun submitRound(stored: StoredStory): Int {
-        prepareReader(stored)
-        val reader = project.service<StoryReaderState>()
-        val drafts = reader.drafts(stored.key)
+    fun post(stored: StoredStory, drafts: List<StoryDraft>): Int {
         if (drafts.isEmpty()) return 0
+        prepareReader(stored)
         val result = StoryFolder(stored.root).update(stored) { StoryThreads.submit(it, drafts.map(StoryDraft::comment), Instant.now()) }
-        val updated = changedStory(result, "The comments make the story file larger than ${StoryLimits.MAX_FILE_BYTES / 1024} KB. Shorten them.")
+        val updated = changedStory(result, "The comment makes the story file larger than ${StoryLimits.MAX_FILE_BYTES / 1024} KB. Shorten it.")
             ?: return 0
-        reader.deleteDrafts(drafts.map { it.id })
+        project.service<StoryReaderState>().deleteDrafts(drafts.map { it.id })
         threadsChanged(listOf(updated))
-        roundSubmitted(drafts.size)
         return drafts.size
     }
 
     /**
-     * Takes back a comment that no agent fetched. It becomes a draft again. Returns `false` when an
-     * agent already fetched it. Call in the background.
+     * Takes back a comment that no agent fetched. It stays in IDE storage as an unsent comment, which
+     * is returned. Returns `null` when an agent already fetched it. Call in the background.
      */
-    fun withdraw(stored: StoredStory, threadId: String): Boolean {
-        var draft: DraftComment? = null
+    fun withdraw(stored: StoredStory, threadId: String): StoryDraft? {
+        var comment: DraftComment? = null
         val result = StoryFolder(stored.root).update(stored) { story ->
-            StoryThreads.withdraw(story, threadId)?.let { (updated, comment) -> draft = comment; updated } ?: story
+            StoryThreads.withdraw(story, threadId)?.let { (updated, withdrawn) -> comment = withdrawn; updated } ?: story
         }
-        val updated = changedStory(result, null) ?: return false
-        draft?.let { project.service<StoryReaderState>().saveDraft(StoryDraft(story = stored.key, step = it.stepId, thread = it.threadId, kind = it.kind, text = it.text)) }
+        val updated = changedStory(result, null) ?: return null
+        val draft = comment?.let { StoryDraft(story = stored.key, step = it.stepId, thread = it.threadId, kind = it.kind, text = it.text) }
+        draft?.let(project.service<StoryReaderState>()::saveDraft)
         threadsChanged(listOf(updated))
-        return true
+        return draft
     }
 
     /** Closes a thread that an agent replied to. Returns `false` when the thread waits for an agent. Call in the background. */
@@ -332,13 +331,13 @@ class CodeStoryService(private val project: Project) : Disposable {
         return true
     }
 
-    /** Adds a refresh item immediately, including when there are no reader drafts. */
+    /** Adds a refresh item immediately. It joins the comments that wait for an agent. */
     fun requestRefresh(stored: StoredStory, stepId: String? = null): Boolean {
         val result = StoryFolder(stored.root).update(stored) { story ->
             StoryThreads.requestRefresh(story, stepId?.takeIf { id -> story.steps.any { it.id == id } }, Instant.now())
         }
         threadsChanged(listOf(changedStory(result, null) ?: return false))
-        roundSubmitted(1)
+        refreshRequested()
         return true
     }
 
@@ -491,17 +490,19 @@ class CodeStoryService(private val project: Project) : Disposable {
         }, ModalityState.nonModal(), project.disposed)
     }
 
-    /** Submitted rounds are available to waiting agents; keep a command for stopped sessions. */
-    private fun roundSubmitted(count: Int) = ApplicationManager.getApplication().invokeLater({
+    /**
+     * A refresh request comes from a menu, away from the comments that show it, so it is confirmed.
+     * Waiting agents pick it up; keep a command for stopped sessions.
+     */
+    private fun refreshRequested() = ApplicationManager.getApplication().invokeLater({
         fun copy(command: String) = CopyPasteManager.getInstance().setContents(StringSelection(command))
         val handoff = if (CodeStorySettings.getInstance().state.automaticFeedback)
-            "Your listening agent picks up the round automatically. If your agent is stopped, tell it"
+            "Your listening agent picks it up automatically. If your agent is stopped, tell it"
         else "Automatic listening is off. Tell your agent"
         NotificationGroupManager.getInstance().getNotificationGroup(StoryListPanel.NOTIFICATION_GROUP)
             .createNotification(
                 "Waiting for your agent",
-                "${if (count == 1) "Your comment is" else "Your $count comments are"} in the story. $handoff $FEEDBACK_COMMAND " +
-                    "($CODEX_FEEDBACK_COMMAND in Codex).",
+                "The refresh request is in the story. $handoff $FEEDBACK_COMMAND ($CODEX_FEEDBACK_COMMAND in Codex).",
                 NotificationType.INFORMATION,
             )
             .addAction(NotificationAction.createSimple("Copy $FEEDBACK_COMMAND") { copy(FEEDBACK_COMMAND) })

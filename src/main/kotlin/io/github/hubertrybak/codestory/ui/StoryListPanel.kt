@@ -107,7 +107,6 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         add(ShareAction())
         add(DeleteAction())
         add(CopyMarkdownAction())
-        add(SubmitRoundAction())
         addSeparator()
         add(RefreshAction())
         addSeparator()
@@ -137,7 +136,11 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
             add(problemsPane, BorderLayout.NORTH)
             add(OnePixelSplitter(true, "CodeStory.detailsProportion", 0.5f).apply {
                 firstComponent = ScrollPaneFactory.createScrollPane(tree, true)
-                secondComponent = ScrollPaneFactory.createScrollPane(details, true)
+                // The comment input stays below the details, so writing a comment needs no scrolling.
+                secondComponent = JPanel(BorderLayout()).apply {
+                    add(ScrollPaneFactory.createScrollPane(details, true), BorderLayout.CENTER)
+                    details.footer?.let { add(it, BorderLayout.SOUTH) }
+                }
             }, BorderLayout.CENTER)
             add(cardContainer, BorderLayout.SOUTH)
         })
@@ -392,8 +395,8 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         }
     }
 
-    /** Opens the comment input for the selected story or step in the details pane. */
-    private inner class CommentAction : DumbAwareAction("Comment", "Write a question about the selected story or step", AllIcons.General.Balloon) {
+    /** Moves the focus to the comment input of the selected story or step in the details pane. */
+    private inner class CommentAction : DumbAwareAction("Comment", "Write a comment about the selected story or step", AllIcons.General.Balloon) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
         override fun actionPerformed(e: AnActionEvent) { details.comments?.startComment() }
@@ -405,17 +408,6 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         override fun actionPerformed(e: AnActionEvent) {
             selectedStory()?.let { comments.requestRefresh(it, selectedStep()?.step?.id) }
         }
-    }
-
-    /** Writes all comment drafts of the selected story into its file as one round for the agent. */
-    private inner class SubmitRoundAction : DumbAwareAction("Submit Round", "Save your comment drafts as a numbered feedback round", AllIcons.Actions.Commit) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-        override fun update(e: AnActionEvent) {
-            val drafts = selectedStory()?.let { comments.drafts(it).size } ?: 0
-            e.presentation.isEnabled = drafts > 0
-            e.presentation.text = if (drafts > 0) "Submit Round ($drafts)" else "Submit Round"
-        }
-        override fun actionPerformed(e: AnActionEvent) { selectedStory()?.let(comments::submit) }
     }
 
     private fun draftsChanged() {
@@ -536,7 +528,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer, private val
                     ?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
                 staleSteps(item.stored)?.let { append("  $it", WARNING) }
                 threadBadges(item.stored, item.stored.story.threads)
-                drafts(item.stored).takeIf { it > 0 }?.let { append("  $it ${if (it == 1) "draft" else "drafts"}", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
+                drafts(item.stored).takeIf { it > 0 }?.let { append("  $it unsent", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
                 toolTipText = item.stored.id
             }
             is StepItem -> {

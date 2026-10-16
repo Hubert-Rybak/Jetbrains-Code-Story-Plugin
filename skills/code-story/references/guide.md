@@ -119,14 +119,14 @@ Code Story tool window. Explain any remaining rejection if the story could not b
 
 ## Answer reader feedback
 
-Readers write comments on a step or on the whole story in the IDE, and submit them as
-a numbered round. Each comment starts a thread. After showing a story and after
-replying, listen by default with `code_story_listen(projectPath, repositoryPath)`.
-Tell the developer you are listening, then keep the agent turn active. The tool
-waits up to 25 seconds without blocking the IDE. On `timeout`, call again; on
-`feedback`, process the returned `feedback` below, then listen again. Submit Round
-requests processing that round without another chat prompt. On `stopped`, end the
-loop. Also stop on cancellation or a new task from the developer.
+Readers post comments on a step or on the whole story in the IDE. Each comment starts
+a thread, and comments that wait for an agent together share a numbered round. After
+showing a story and after replying, listen by default with
+`code_story_listen(projectPath, repositoryPath)`. Tell the developer you are listening,
+then keep the agent turn active. The tool waits up to 25 seconds without blocking the
+IDE. On `timeout`, call again; on `feedback`, process the returned `feedback` below,
+then listen again. A posted comment requests processing without another chat prompt.
+On `stopped`, end the loop. Also stop on cancellation or a new task from the developer.
 
 Listening is enabled by default in Settings | Tools | Code Story. It works through
 MCP without hooks, including with Copilot in Rider when its client supports active
@@ -268,4 +268,4 @@ corrections do not create a change summary. Do not supply change summaries yours
 
 Next: call `code_story_show` for a new story, `code_story_list` for a revision, or
 `code_story_feedback` to answer reader comments manually. After showing or replying,
-call `code_story_listen` to pick up the next submitted round automatically.
+call `code_story_listen` to pick up the next posted comments automatically.
