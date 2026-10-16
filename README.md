@@ -23,7 +23,6 @@ release checks.
 *The step card beside the highlighted code. The images in this README are illustrations of the layout, drawn in light and dark themes.*
 
 - [Requirements](#requirements)
-- [Install](#install)
 - [Set up your agent](#set-up-your-agent)
 - [Use](#use)
 - [Settings](#settings)
@@ -44,21 +43,6 @@ release checks.
   validation reports. Without it, agents write story files instead.
 - Optional: the bundled Git plugin, for branch and commit metadata and change information.
 - Optional: Python 3, for the [feedback hook snippets](#optional-feedback-hooks).
-
-## Install
-
-1. Download `code-story-1.0.0.zip` from
-   [GitHub Releases](https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases).
-   Do not unpack it.
-2. In the IDE, open **Settings | Plugins**, click the gear icon and choose
-   **Install Plugin from Disk**. Select the zip, and restart the IDE if it asks.
-3. Open **View | Tool Windows | Code Story**. The window starts on the right; use the
-   IDE's normal tool window controls to move it.
-
-To update, install a newer zip the same way. The plugin is not on JetBrains Marketplace
-yet, so the IDE does not update it by itself. After an update, the plugin offers to update
-the installed skills. To remove the plugin, uninstall **Code Story** in
-**Settings | Plugins**; your story files stay in `.codestory/`.
 
 ## Set up your agent
 
@@ -93,82 +77,20 @@ Open **Settings | Tools | MCP Server**, select **Enable MCP Server**, confirm wi
 **Enable**, and click **Apply**. The confirmation lists the access that local programs get
 to your open projects. Code Story never changes this setting itself.
 
-**Auto-Configure**, in the **Clients Auto-Configuration** list on the same page, writes
-the configuration of a detected agent for you. The list depends on the IDE version: 2025.3
-lists Claude Code, and 2026.2 also lists Codex and GitHub Copilot CLI. Restart the agent
-after you configure it. For an agent that is not in the list, **Manual Client
-Configuration** copies the server address: **Copy SSE Config**, **Copy Stdio Config**, and
-**Copy HTTP Stream Config** in newer versions.
-
 ### 3. Connect your agent
 
-| Agent | Skill folder | MCP connection | Ask for a story |
-|---|---|---|---|
-| [Claude Code](#claude-code) | `~/.claude/skills/` | Auto-Configure | `/code-story "<request>"` |
-| [Codex CLI](#codex-cli) | `~/.agents/skills/` | Auto-Configure or `~/.codex/config.toml` | `$code-story "<request>"` |
-| [GitHub Copilot in Rider](#github-copilot-in-rider) | `~/.agents/skills/` | `mcp.json` of Copilot Chat | `/code-story "<request>"` in Agent mode |
-| [GitHub Copilot CLI](#github-copilot-cli) | `~/.agents/skills/` | Auto-Configure or `/mcp add` | `/code-story "<request>"` |
+The steps are the same for every agent:
 
-Start the agent in the folder of a project that is open in the IDE.
-
-#### Claude Code
-
-1. Claude Code reads the skill from `~/.claude/skills/code-story/`. A running session
-   picks up new skills; if the `~/.claude/skills/` folder did not exist when the session
-   started, run `/reload-skills`.
-2. Click **Auto-Configure** next to **Claude Code**, then restart Claude Code. `/mcp`
-   shows the IDE's server.
-3. Type `/code-story "Explain the main change for this ticket"`.
-
-#### Codex CLI
-
-1. Codex reads the skill from `~/.agents/skills/code-story/` and finds new skills by
-   itself. If `$code-story` does not appear in `/skills`, restart Codex.
-2. If the list has **Codex**, click **Auto-Configure**. Otherwise, add the server to
-   `~/.codex/config.toml` yourself. Codex connects to streamable HTTP and stdio servers,
-   not to SSE servers. Use the URL from **Copy HTTP Stream Config**:
-
-   ```toml
-   [mcp_servers.jetbrains]
-   url = "<the URL from Copy HTTP Stream Config>"
-   ```
-
-   IDE 2025.3 has no HTTP stream configuration: put the `command`, `args` and `env` values
-   from **Copy Stdio Config** into the same table instead. Restart Codex; `/mcp` lists the
-   server.
-3. Type `$code-story "Explain the main change for this ticket"`.
-
-#### GitHub Copilot in Rider
-
-1. Copilot reads the skill from `~/.agents/skills/code-story/`. If Copilot does not use
-   it, check that agent skills are on in **Settings | Tools | GitHub Copilot | Chat |
-   Agent**.
-2. Open Copilot Chat in **Agent** mode, click the tools icon, and click **Add MCP Tools**.
-   In `mcp.json`, add the IDE's server with the URL from **Copy HTTP Stream Config** or
-   **Copy SSE Config**:
-
-   ```json
-   {
-     "servers": {
-       "rider": { "url": "<the URL from the copied configuration>" }
-     }
-   }
-   ```
-
-   On Business and Enterprise plans, an administrator must allow the "MCP servers in
-   Copilot" policy.
-3. In Agent mode, type `/code-story "Explain the main change for this ticket"`. Copilot
-   loads the skill when the request matches the skill's description.
-
-#### GitHub Copilot CLI
-
-1. Copilot CLI reads the skill from `~/.agents/skills/code-story/`. In a running session,
-   run `/skills reload`; `/skills info code-story` shows where Copilot found it.
-2. If the list has **GitHub Copilot CLI**, click **Auto-Configure**. Otherwise, run
-   `/mcp add`, choose the HTTP type with the URL from **Copy HTTP Stream Config** (or the
-   SSE type with the URL from **Copy SSE Config**), and allow all tools. The CLI saves the
-   server in `~/.copilot/mcp-config.json`, and `/mcp show <name>` lists its tools.
-3. Type `/code-story "Explain the main change for this ticket"`.
+1. On the **MCP Server** settings page, click **Auto-Configure** next to your agent in
+   **Clients Auto-Configuration**. If your agent is not listed, use **Manual Client
+   Configuration** to copy the server address (HTTP stream, SSE or stdio, whichever your
+   agent supports) and add it to the agent's MCP configuration.
+2. Restart the agent, or reload its skills and MCP servers. Its MCP list then shows the
+   IDE's server.
+3. Start the agent in the folder of a project that is open in the IDE, and run the skill
+   with your agent's skill command, for example
+   `/code-story "Explain the main change for this ticket"`. Agents that use another
+   prefix for skills, such as `$code-story` in Codex, work the same way.
 
 ### Check setup
 
@@ -207,7 +129,7 @@ Open the project in the IDE, and ask your agent:
 /code-story "Prepare a review handoff for this branch"
 ```
 
-Use `$code-story` in Codex. The agent uses the conversation, and explores the code when
+The agent uses the conversation, and explores the code when
 the conversation does not cover the subject. It writes a story with a type (change,
 exploration, bug trace or review), a title, a short summary and 3 to 12 steps (15 at
 most). Each step explains one idea about a small code range, in short sentences of simple
@@ -359,7 +281,7 @@ Ask your agent about a story, or ask it for a code change, without leaving the I
 3. **Your listening agent picks it up.** The bundled skill calls `code_story_listen`
    after showing a story and after each reply, so a posted comment needs no extra chat
    prompt. A fetched comment shows "Agent working". If your agent has stopped, tell it
-   `/code-story feedback` (`$code-story feedback` in Codex); the comments have buttons to
+   `/code-story feedback`; the comments have buttons to
    copy the command.
 4. **Read the answers.** A notification tells you that answers arrived, and **Open**
    shows the story. The answers appear under your comments, in the card and in the
@@ -375,9 +297,8 @@ agents listen for submitted feedback automatically** in **Settings | Tools | Cod
 for manual feedback only. You can also cancel the waiting agent or tell it to stop.
 The tool waits up to 25 seconds per call; the skill reconnects after timeout and after
 answering a round. Unsent comments do not wake it. Listening requires an active agent
-session; it cannot restart an agent that ended its turn. Copilot in Rider needs no hook
-when its client supports active waiting calls. Optional hooks only remind sessions that
-are not listening.
+session; it cannot restart an agent that ended its turn. Optional hooks only remind
+sessions that are not listening.
 
 The listening tool uses the same fetch path as `code_story_feedback`, oldest round first.
 Comments that wait for an agent together share a round number, which the agent uses in
@@ -416,96 +337,12 @@ pending story IDs, folders, counts and rounds. It includes submitted and fetched
 feedback, omits unsent comments, comment text and code, and clears entries as feedback
 is answered, withdrawn or deleted. The IDE refreshes it on project open and story file
 changes.
-**Check setup → Copy feedback hooks** copies the helper and all configurations below.
-The plugin never installs hooks. The snippets need Python 3; replace `python3` with your
-Python executable if needed. Merge the configuration with existing hooks. The reminders
-ask the agent to mention pending feedback and process it when you ask or agree.
-They do not push feedback to the agent or start feedback mode.
-
-Save this helper as `~/.codestory/feedback-hook.py` (create the directory yourself):
-
-```python
-import json
-import os
-from pathlib import Path
-import sys
-
-try:
-    event = json.load(sys.stdin)
-    if not isinstance(event, dict):
-        raise ValueError("Invalid hook input")
-    cwd = Path(event.get("cwd") or os.getcwd()).resolve()
-    ancestors = [cwd, *cwd.parents]
-    root = next((p for p in ancestors if (p / ".git").exists()), None)
-    if root is None:
-        root = next((p for p in ancestors if (p / ".codestory").is_dir()), cwd)
-    index = root / ".codestory/local/pending-feedback.json"
-    data = json.loads(index.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError("Invalid feedback index")
-    if data.get("schemaVersion") != 1 or data.get("pendingComments", 0) <= 0:
-        raise ValueError("No pending feedback")
-    context = (
-        "Code Story feedback is pending in this repository. Mention it to the "
-        "developer and process it with the code-story feedback skill when they "
-        "ask or agree. Fetch current feedback from the IDE before making changes."
-    )
-    if sys.argv[1] == "copilot":
-        print(json.dumps({"additionalContext": context}))
-    else:
-        print(json.dumps({"hookSpecificOutput": {
-            "hookEventName": event["hook_event_name"],
-            "additionalContext": context
-        }}))
-except (OSError, ValueError, KeyError, TypeError, IndexError):
-    print("{}")
-```
-
-Claude Code: merge into `~/.claude/settings.json` (or `.claude/settings.json` in the
-project). Reminders run at session start and on each prompt:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.codestory/feedback-hook.py\" claude"}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.codestory/feedback-hook.py\" claude"}]}]
-  }
-}
-```
-
-Codex: merge into `~/.codex/hooks.json` (or `.codex/hooks.json` in the project), using
-a Codex version with lifecycle hook support. Reminders run at session start and on
-each prompt. Review/enable the hook in Codex if your version requires that:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.codestory/feedback-hook.py\" codex"}]}],
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"$HOME/.codestory/feedback-hook.py\" codex"}]}]
-  }
-}
-```
-
-Copilot CLI: merge into `.github/hooks/code-story.json` in the project. The reminder
-runs at session start. The Rider Copilot plugin has no suitable hook:
-
-```json
-{
-  "version": 1,
-  "hooks": {
-    "sessionStart": [{
-      "type": "command",
-      "bash": "python3 \"$HOME/.codestory/feedback-hook.py\" copilot",
-      "powershell": "python \"$HOME/.codestory/feedback-hook.py\" copilot",
-      "timeoutSec": 5
-    }]
-  }
-}
-```
-
-Agent references: [Claude Code hooks](https://code.claude.com/docs/en/hooks),
-[Codex hooks](https://developers.openai.com/codex/hooks),
-[Copilot CLI hooks](https://docs.github.com/en/copilot/reference/hooks-configuration).
+**Check setup → Copy feedback hooks** copies a small Python helper and a ready
+configuration for each supported agent. Save the helper as `~/.codestory/feedback-hook.py`
+and merge the configuration into your agent's hook settings. The plugin never installs
+hooks. The helper needs Python 3. The reminders ask the agent to mention pending feedback
+and process it when you ask or agree. They do not push feedback to the agent or start
+feedback mode.
 
 ## Settings
 
