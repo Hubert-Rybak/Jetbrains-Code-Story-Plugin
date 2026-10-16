@@ -94,4 +94,10 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           sh .github/scripts/changelog-entry.sh "${RELEASE_TAG#v}" > "$RUNNER_TEMP/release-notes.md"
-          gh release create "$RELEASE_TAG" dist/*.zip --verify-tag --title "Code Story $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            # A release created by hand from the tag already exists: attach the verified zip to it.
+            gh release upload "$RELEASE_TAG" dist/*.zip --clobber
+            gh release edit "$RELEASE_TAG" --title "Code Story $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release create "$RELEASE_TAG" dist/*.zip --verify-tag --title "Code Story $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes
+          fi
