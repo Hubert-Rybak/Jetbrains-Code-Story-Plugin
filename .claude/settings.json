@@ -1,0 +1,11 @@
+{
+  "env": {
+    "GIT_AUTHOR_NAME": "Hubert Rybak",
+    "GIT_AUTHOR_EMAIL": "h.rybak@gmail.com"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  }
+}

@@ -6,6 +6,11 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A plugin logo for **Settings | Plugins** and the README, with a version for dark
+  themes.
+
 ## [1.1.0] - 2026-10-16
 
 ### Changed
