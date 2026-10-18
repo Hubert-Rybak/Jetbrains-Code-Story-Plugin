@@ -26,9 +26,9 @@ the UI checks in light and dark themes. Record the IDE versions used.
 ## Agents
 
 Install the skill with **Tools | Code Story | Install Code Story skill**.
-Switch on the MCP server (Settings | Tools | MCP Server), and connect each agent as the
-[README](../README.md#set-up-your-agent) describes. Follow the README step by step, so
-that these checks also test its setup instructions.
+Switch on the MCP server (Settings | Tools | MCP Server), and connect each agent as
+[Getting started](../README.md#getting-started) in the README describes. Follow the README
+step by step, so that these checks also test its setup instructions.
 
 - [ ] Claude Code: Auto-Configure, then `/code-story "<request>"` creates a story
       through `code_story_show`, and `/code-story feedback` answers a round.
@@ -71,8 +71,8 @@ that these checks also test its setup instructions.
       in light and dark themes.
 - [ ] Stories appear newest first with title, date, branch and distinct type
       icons. Code steps show their number, title, file and line range.
-- [ ] Selecting a story shows its summary, original request, "Written by
-      <agent> (<model>)", creation date, branch and commit in the details pane.
+- [ ] Selecting a story shows its summary, original request,
+      `Written by <agent> (<model>)`, creation date, branch and commit in the details pane.
 - [ ] Switching Git branches updates the note in the selected story's details.
       Detached HEAD and repositories without commits display clearly.
 - [ ] Clicking or pressing Enter on a text-only step shows its comment in
@@ -266,7 +266,7 @@ the install and open checks in a fresh test profile.
 
 The first version goes to [JetBrains Marketplace](https://plugins.jetbrains.com) by hand.
 After that, the tag workflow publishes each version (see
-[Release](../README.md#release)). The
+[Release](../CONTRIBUTING.md#release)). The
 [approval guidelines](https://plugins.jetbrains.com/docs/marketplace/jetbrains-marketplace-approval-guidelines.html)
 and the [listing recommendations](https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html)
 apply to every upload.
@@ -295,9 +295,10 @@ apply to every upload.
 - [ ] Create a token in [My Tokens](https://plugins.jetbrains.com/author/me/tokens), and
       save it as the `PUBLISH_TOKEN` repository secret. For signed uploads, also save the
       three signing values as secrets with the same names.
-- [ ] After the approval, replace "Install from disk" in the README's
-      [Known limits](../README.md#known-limits) with the installation from
-      **Settings | Plugins | Marketplace**.
+- [ ] After the approval, update the README: install from **Settings | Plugins |
+      Marketplace** in [Getting started](../README.md#getting-started), remove "Not on
+      JetBrains Marketplace yet" from [Known limits](../README.md#known-limits), and add
+      the Marketplace version and downloads badges to the header.
 
 ### Every release
 

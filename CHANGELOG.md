@@ -18,6 +18,8 @@ All notable changes to Code Story are listed here. The format follows
 
 - The plugin description in **Settings | Plugins** starts with a short summary, lists the
   main features, and links to the setup instructions and the issue tracker.
+- A shorter README with a quick start. The full documentation is in a user guide, an
+  agent API reference and a contributing guide.
 
 ## [1.1.0] - 2026-10-16
 
