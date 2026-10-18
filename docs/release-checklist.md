@@ -5,6 +5,8 @@ Rider (a C# solution) and IntelliJ IDEA (a Java or Kotlin project). Repeat
 the UI checks in light and dark themes. Record the IDE versions used.
 
 - [ ] The plugin installs and enables without errors.
+- [ ] **Settings | Plugins** shows the Code Story logo in the plugin list and in the
+      plugin details.
 - [ ] **View | Tool Windows | Code Story** opens the window. Without stories,
       it says "No stories yet".
 - [ ] On a fresh IDE profile, the window is docked on the right.

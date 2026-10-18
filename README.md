@@ -1,4 +1,4 @@
-# Code Story
+# <picture><source media="(prefers-color-scheme: dark)" srcset="src/main/resources/META-INF/pluginIcon_dark.svg"><img src="src/main/resources/META-INF/pluginIcon.svg" alt="" width="40" height="40" align="top"></picture> Code Story
 
 Code Story is a JetBrains IDE plugin for guided code walkthroughs, with Rider as the
 primary target. Ask your AI coding agent for a story, for example
