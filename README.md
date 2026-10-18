@@ -527,6 +527,8 @@ latest EAP for each product. Reports and the zip are workflow artifacts.
 1. Set `version` in `gradle.properties` and in
    [`skills/code-story/version.txt`](skills/code-story/version.txt).
 2. Add an entry for the version, with the release date, to [CHANGELOG.md](CHANGELOG.md).
+   This entry is also the plugin's change notes in **Settings | Plugins** and on JetBrains
+   Marketplace.
 3. Complete the [manual checklist](docs/release-checklist.md). For 1.0.0, also record the
    v1 done criteria in [docs/v1-verification.md](docs/v1-verification.md).
 4. Push a matching tag, for example `v1.0.0`.
@@ -534,7 +536,23 @@ latest EAP for each product. Reports and the zip are workflow artifacts.
 The tag build fails when the tag does not match `version` or when CHANGELOG.md has no
 entry for the version. After every build and verifier job passes, the workflow publishes
 the verified build's zip to GitHub Releases, with the CHANGELOG entry above the generated
-notes. Release publication uses the workflow's `GITHUB_TOKEN`; no Marketplace
-credentials are needed.
+notes. The GitHub release uses the workflow's `GITHUB_TOKEN`.
+
+The tag also publishes the plugin to JetBrains Marketplace: the `marketplace` job builds
+the tagged commit and runs `./gradlew publishPlugin`. The first version goes to
+Marketplace by hand, as the [checklist](docs/release-checklist.md#jetbrains-marketplace)
+describes. These repository secrets (**Settings | Secrets and variables | Actions**)
+control the job:
+
+| Secret | Value |
+| --- | --- |
+| `PUBLISH_TOKEN` | A token from [My Tokens](https://plugins.jetbrains.com/author/me/tokens) on JetBrains Marketplace. Without it, the job does not publish. |
+| `CERTIFICATE_CHAIN` | Optional: the content of `chain.crt` from the [signing key](docs/release-checklist.md#signing-key) steps. |
+| `PRIVATE_KEY` | Optional: the content of `private_encrypted.pem`. |
+| `PRIVATE_KEY_PASSWORD` | Optional: the password of the private key. |
+
+With `CERTIFICATE_CHAIN` and `PRIVATE_KEY`, `signPlugin` signs the zip before the upload.
+Without them, the job uploads the unsigned zip. To publish from your machine, set the same
+environment variables and run `./gradlew publishPlugin`.
 
 Licensed under [Apache-2.0](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).

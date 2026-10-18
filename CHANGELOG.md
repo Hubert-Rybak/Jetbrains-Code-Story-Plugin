@@ -10,6 +10,14 @@ All notable changes to Code Story are listed here. The format follows
 
 - A plugin logo for **Settings | Plugins** and the README, with a version for dark
   themes.
+- Change notes in **Settings | Plugins**: the CHANGELOG.md entry of the installed version.
+- A version tag also publishes the plugin to JetBrains Marketplace when the repository
+  has a Marketplace token, and signs it when the repository has a signing key.
+
+### Changed
+
+- The plugin description in **Settings | Plugins** starts with a short summary, lists the
+  main features, and links to the setup instructions and the issue tracker.
 
 ## [1.1.0] - 2026-10-16
 

@@ -6,7 +6,7 @@ the UI checks in light and dark themes. Record the IDE versions used.
 
 - [ ] The plugin installs and enables without errors.
 - [ ] **Settings | Plugins** shows the Code Story logo in the plugin list and in the
-      plugin details.
+      plugin details, with the description and the change notes of this version.
 - [ ] **View | Tool Windows | Code Story** opens the window. Without stories,
       it says "No stories yet".
 - [ ] On a fresh IDE profile, the window is docked on the right.
@@ -261,3 +261,62 @@ and dark themes.
 
 After the tag workflow finishes, download the release asset and repeat
 the install and open checks in a fresh test profile.
+
+## JetBrains Marketplace
+
+The first version goes to [JetBrains Marketplace](https://plugins.jetbrains.com) by hand.
+After that, the tag workflow publishes each version (see
+[Release](../README.md#release)). The
+[approval guidelines](https://plugins.jetbrains.com/docs/marketplace/jetbrains-marketplace-approval-guidelines.html)
+and the [listing recommendations](https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html)
+apply to every upload.
+
+### First upload
+
+- [ ] Sign in to [JetBrains Marketplace](https://plugins.jetbrains.com/author/me) with a
+      JetBrains Account. Accept the Developer Agreement and create the vendor profile,
+      with a website, a working contact email and the trader or non-trader declaration.
+- [ ] Optional: make a [signing key](#signing-key), and run `./gradlew signPlugin` with it
+      in a checkout of the release tag. The signed zip is
+      `build/distributions/code-story-<version>-signed.zip`.
+- [ ] **Upload plugin** with the zip of the GitHub release, or the signed zip. Select the
+      Apache 2.0 license, add the source code link
+      `https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin`, and select the tags
+      that match the plugin, for example AI and Productivity.
+- [ ] Wait for the approval. If there is no answer after 3–4 working days, write to
+      marketplace@jetbrains.com.
+- [ ] On the plugin page, add the issue tracker
+      (`https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/issues`) and the
+      README as the documentation link.
+- [ ] Add screenshots of the step card, the tool window and the comments to **Media**.
+      Take them in Rider or IntelliJ IDEA with a default theme, at 1200×760 px or more,
+      all with the same aspect ratio. The README images are illustrations, not
+      screenshots.
+- [ ] Create a token in [My Tokens](https://plugins.jetbrains.com/author/me/tokens), and
+      save it as the `PUBLISH_TOKEN` repository secret. For signed uploads, also save the
+      three signing values as secrets with the same names.
+- [ ] After the approval, replace "Install from disk" in the README's
+      [Known limits](../README.md#known-limits) with the installation from
+      **Settings | Plugins | Marketplace**.
+
+### Every release
+
+- [ ] The tag workflow's `marketplace` job published the version. The plugin page shows
+      it as approved or under review.
+- [ ] After the approval, the plugin page shows the description, the logo and the change
+      notes of the version, and the IDE offers the update.
+
+### Signing key
+
+[Plugin signing](https://plugins.jetbrains.com/docs/intellij/plugin-signing.html) is
+optional. Make the key and the certificate outside the repository, and keep the password:
+
+```sh
+openssl genpkey -aes-256-cbc -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out private_encrypted.pem
+openssl req -key private_encrypted.pem -new -x509 -days 365 -out chain.crt
+```
+
+`signPlugin` reads three environment variables; the tag workflow reads repository secrets
+with the same names. Set `CERTIFICATE_CHAIN` to the content of `chain.crt`, `PRIVATE_KEY`
+to the content of `private_encrypted.pem`, and `PRIVATE_KEY_PASSWORD` to the password. The
+certificate is valid for one year.
