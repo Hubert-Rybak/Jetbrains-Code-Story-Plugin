@@ -6,6 +6,8 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-18
+
 ### Added
 
 - A plugin logo for **Settings | Plugins** and the README, with a version for dark
@@ -13,15 +15,6 @@ All notable changes to Code Story are listed here. The format follows
 - Change notes in **Settings | Plugins**: the CHANGELOG.md entry of the installed version.
 - A version tag also publishes the plugin to JetBrains Marketplace when the repository
   has a Marketplace token, and signs it when the repository has a signing key.
-
-### Changed
-
-- The plugin description in **Settings | Plugins** starts with a short summary, lists the
-  main features, and links to the setup instructions and the issue tracker.
-- A shorter README with a quick start. The full documentation is in a user guide, an
-  agent API reference and a contributing guide.
-
-## [1.1.0] - 2026-10-16
 
 ### Changed
 
@@ -40,7 +33,10 @@ All notable changes to Code Story are listed here. The format follows
   window.
 - Smaller, smoother gutter step badges that match the gutter. The current step is filled
   with the accent color, and other steps are outlined in the line number color.
-- The README describes one setup that works for every agent.
+- The plugin description in **Settings | Plugins** starts with a short summary, lists the
+  main features, and links to the setup instructions and the issue tracker.
+- A shorter README with a quick start and one setup that works for every agent. The full
+  documentation is in a user guide, an agent API reference and a contributing guide.
 
 ## [1.0.0] - 2026-10-10
 
