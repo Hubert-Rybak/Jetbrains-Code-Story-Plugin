@@ -1,14 +1,36 @@
-<idea-plugin>
+<idea-plugin url="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin">
     <id>io.github.hubertrybak.codestory</id>
     <name>Code Story</name>
-    <vendor url="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin">Hubert Rybak</vendor>
+    <vendor url="https://github.com/Hubert-Rybak">Hubert Rybak</vendor>
+    <!-- Also the JetBrains Marketplace description. Its first 40 characters must be a short summary in English. -->
     <description><![CDATA[
-        <p>Guided code stories for JetBrains IDEs. An AI agent sends a story through the IDE's MCP server
-        (the <code>code_story_show</code> tool), or writes a story file when MCP is unavailable.
-        The plugin installs the agent skill and checks setup. The Code Story tool window lists stories and their steps;
-        a click on a step opens its file and highlights the lines that the step explains. Readers ask questions about
-        steps. Connected agents listen for posted comments by default (<code>code_story_listen</code>)
-        and answer inside the story (<code>code_story_reply</code>); <code>code_story_feedback</code> remains available for manual requests.</p>
+        <p>Guided code walkthroughs from your AI coding agent. Ask the agent for a story, and the IDE
+        plays it step by step: each step opens its file, highlights the code that it explains and
+        shows a short comment in a card beside the code.</p>
+        <ul>
+            <li><b>Stories for different tasks.</b> Ask for the main change of a ticket, how a flow
+            works, how a bug can occur, or a review handoff for your branch.</li>
+            <li><b>Read at your own speed.</b> Go to the next or previous step from the card, the
+            <b>Code Story</b> tool window or the keyboard. The card does not take the keyboard
+            focus, so you can continue to work in the editor.</li>
+            <li><b>Steps follow the code.</b> Steps stay on their code while you edit, and show
+            when their code changed or is gone.</li>
+            <li><b>See what changed.</b> In a story about a change, steps show <b>A</b> for new code
+            and <b>M</b> for changed code, and <b>Show diff</b> compares the file with the base
+            commit.</li>
+            <li><b>Share stories with your branch.</b> A shared story is a file in
+            <code>.codestory/shared/</code> that you commit with your code.</li>
+            <li><b>Ask questions in the story.</b> Post a question or a change request on a step,
+            and a listening agent answers in the story.</li>
+        </ul>
+        <p>Code Story works with Claude Code, Codex CLI, GitHub Copilot in Rider and GitHub Copilot
+        CLI. The agent sends stories through the IDE's MCP server, or writes a story file when the
+        server is off. The plugin installs the agent skill and checks your setup. It makes no network
+        calls and sends no telemetry.</p>
+        <p>To start, follow
+        <a href="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin#set-up-your-agent">Set up your agent</a>.
+        Report problems and ideas in the
+        <a href="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/issues">issue tracker</a>.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

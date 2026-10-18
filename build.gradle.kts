@@ -7,6 +7,8 @@ plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.intellij.platform")
+    // The plugin's change notes are the CHANGELOG.md entry of its version.
+    id("org.jetbrains.changelog")
 }
 
 val localIdePath = providers.gradleProperty("localIdePath")
@@ -82,6 +84,10 @@ val testWithoutMcp = intellijPlatformTesting.testIde.register("testWithoutMcp") 
 }
 
 tasks.check { dependsOn(testWithoutMcp) }
+
+// Each release adds its CHANGELOG.md entry by hand. publishPlugin runs patchChangelog, which
+// would drop the Unreleased entries, so the task is off.
+tasks.patchChangelog { enabled = false }
 
 tasks.jar {
     from(files("LICENSE", "THIRD_PARTY_NOTICES.md")) { into("META-INF") }
