@@ -90,7 +90,7 @@ editor or the themes; the manual checks cover these.
 Install the release candidate from disk: `code-story-1.0.0.zip` from the
 `plugin-distribution` artifact of the CI run, or from `build/distributions/`. Install the skill with **Tools | Code Story |
 Install Code Story skill**, and switch on **Settings | Tools | MCP Server** (see
-[Set up your agent](../README.md#set-up-your-agent)). Ask for real subjects: a recent
+[Set up](user-guide.md#set-up) in the user guide). Ask for real subjects: a recent
 change, a flow through several layers, and a bug path.
 
 ### 1. Claude Code in Rider 2026.2

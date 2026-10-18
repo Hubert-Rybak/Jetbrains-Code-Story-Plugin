@@ -28,7 +28,7 @@
         server is off. The plugin installs the agent skill and checks your setup. It makes no network
         calls and sends no telemetry.</p>
         <p>To start, follow
-        <a href="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin#set-up-your-agent">Set up your agent</a>.
+        <a href="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin#getting-started">Getting started</a>.
         Report problems and ideas in the
         <a href="https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/issues">issue tracker</a>.</p>
     ]]></description>
