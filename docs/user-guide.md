@@ -148,8 +148,9 @@ and the buttons stay in view.
 The card leaves the target code and the caret visible and does not take keyboard focus,
 so you can type, select code and click in the editor while the story plays. Drag the
 card's right edge, bottom edge or corner grip to resize it. Every card keeps that size,
-and a double-click on the grip restores the default size. When the editor has no room for
-the card, even at a smaller width, the same card appears in the tool window. Text-only
+and a double-click on the grip restores the default size. Without room beside the code,
+the card floats below or above the step, or over the code at the editor's right edge.
+Only an editor narrower than the card shows the same card in the tool window. Text-only
 steps show their comment in the details pane and leave the editor as it is. Steps open in
 the preview tab when the IDE uses preview tabs.
 

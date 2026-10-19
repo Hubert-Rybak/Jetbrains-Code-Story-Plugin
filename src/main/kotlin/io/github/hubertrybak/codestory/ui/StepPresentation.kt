@@ -237,8 +237,30 @@ class StepPresentation(
         }
         val caret = editor.visualPositionToXY(editor.caretModel.visualPosition)
         val caretBounds = Rectangle(caret.x, caret.y, JBUI.scale(8), editor.lineHeight)
-        val fits = !wrapped && visible.contains(bounds) && !bounds.intersects(caretBounds)
-        if (!fits) return dock(true)
+        if (wrapped || !visible.contains(bounds) || bounds.intersects(caretBounds)) {
+            // Without room beside the code, the card still floats over the editor: below or above the
+            // range, or over the code at the editor's right edge. Only an editor narrower than the
+            // card itself sends it to the tool window, so resizing the IDE never moves it there.
+            val width = visible.width - 2 * margin - 2 * frame
+            if (width < card.minimumWidth || maxHeight <= 0) return dock(true)
+            val right = visible.x + visible.width - margin
+            val rangeBottom = minOf(end.y + editor.lineHeight, visible.y + visible.height)
+            fun at(size: Dimension, top: Int) =
+                Rectangle(minOf(maxOf(start.x, visible.x + margin), right - size.width - 2 * frame), top, size.width + 2 * frame, size.height + 2 * frame)
+            val below = (visible.y + visible.height - margin - rangeBottom - margin - 2 * frame).let { room ->
+                card.fittedSize(width, room).takeIf { it.height <= room }?.let { it to at(it, rangeBottom + margin) }
+            }
+            val above = (rangeTop - margin - visible.y - margin - 2 * frame).let { room ->
+                card.fittedSize(width, room).takeIf { it.height <= room }?.let { it to at(it, rangeTop - margin - it.height - 2 * frame) }
+            }
+            val overlay = card.fittedSize(width, maxHeight).let { fitted ->
+                fitted to Rectangle(right - fitted.width - 2 * frame, boundsFor(fitted).y, fitted.width + 2 * frame, fitted.height + 2 * frame)
+            }
+            val placed = listOfNotNull(below, above).firstOrNull { (_, it) -> visible.contains(it) && !it.intersects(caretBounds) } ?: overlay
+            size = placed.first
+            bounds = placed.second
+            card.room = Dimension(width, maxHeight)
+        }
         setToolWindow(false)
         card.floating = true
         card.preferredSize = size

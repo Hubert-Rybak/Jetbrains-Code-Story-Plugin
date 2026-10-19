@@ -6,6 +6,13 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The step card no longer moves into the **Code Story** tool window when the tool window
+  or the IDE is resized. Without room beside the code, it floats below or above the step,
+  or over the code at the editor's right edge. Only an editor narrower than the card still
+  shows it in the tool window.
+
 ## [1.1.0] - 2026-10-18
 
 ### Added
