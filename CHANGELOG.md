@@ -6,6 +6,8 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-19
+
 ### Fixed
 
 - The step card no longer moves into the **Code Story** tool window when the tool window
@@ -109,5 +111,6 @@ Copilot CLI.
 - Resolve playback anchors and read source files in the background. Stopping or changing
   stories cancels obsolete work, and edits made during a search trigger a fresh check.
 
+[1.1.1]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.0.0
