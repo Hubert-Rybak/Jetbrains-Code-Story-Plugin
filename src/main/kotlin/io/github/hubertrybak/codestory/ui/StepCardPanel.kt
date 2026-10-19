@@ -240,7 +240,7 @@ class StepCardPanel(
         return Dimension(width, height.coerceAtLeast(minimumHeight(measure).coerceAtMost(content)))
     }
 
-    /** Narrower than this, the buttons and the comment input do not fit, so the card goes to the tool window. */
+    /** Narrower than this, the buttons and the comment input do not fit, so in a narrower editor the card goes to the tool window. */
     val minimumWidth: Int get() = JBUI.scale(MIN_WIDTH)
 
     /** The header and the footer, with at least a few lines of the step text between them. */
