@@ -6,15 +6,12 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-21
+
 ### Fixed
 
 - The story details and the file problems in the **Code Story** tool window use the IDE's
   UI font, like the rest of the tool window, instead of the text area font.
-
-## [1.1.1] - 2026-10-19
-
-### Fixed
-
 - The step card no longer moves into the **Code Story** tool window when the tool window
   or the IDE is resized. Without room beside the code, it floats below or above the step,
   or over the code at the editor's right edge. Only an editor narrower than the card still
