@@ -117,7 +117,8 @@ jobs:
           cache-read-only: true
       - name: Publish to JetBrains Marketplace
         env:
-          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          # publishPlugin reads the Marketplace token from PUBLISH_TOKEN.
+          PUBLISH_TOKEN: ${{ secrets.MARKETPLACE_API_KEY }}
           # Optional: without the signing key, the job uploads the unsigned zip.
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
@@ -125,7 +126,7 @@ jobs:
         run: |
           if [ -z "$PUBLISH_TOKEN" ]; then
             # The first version must be uploaded by hand; see docs/release-checklist.md.
-            echo "::notice::No PUBLISH_TOKEN secret. Upload the zip from the GitHub release to JetBrains Marketplace by hand."
+            echo "::notice::No MARKETPLACE_API_KEY secret. Upload the zip from the GitHub release to JetBrains Marketplace by hand."
             exit 0
           fi
           ./gradlew publishPlugin

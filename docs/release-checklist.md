@@ -293,7 +293,7 @@ apply to every upload.
       all with the same aspect ratio. The README images are illustrations, not
       screenshots.
 - [ ] Create a token in [My Tokens](https://plugins.jetbrains.com/author/me/tokens), and
-      save it as the `PUBLISH_TOKEN` repository secret. For signed uploads, also save the
+      save it as the `MARKETPLACE_API_KEY` repository secret. For signed uploads, also save the
       three signing values as secrets with the same names.
 - [ ] After the approval, update the README: install from **Settings | Plugins |
       Marketplace** in [Getting started](../README.md#getting-started), remove "Not on
