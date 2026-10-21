@@ -7,6 +7,8 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.HeavyPlatformTestCase
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.ui.SimpleColoredComponent
+import com.intellij.util.ui.JBFont
+import com.intellij.util.ui.UIUtil
 import io.github.hubertrybak.codestory.core.ShowStatus
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
@@ -24,6 +26,7 @@ import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.nio.file.Files
 import java.nio.file.Path
+import javax.swing.JTextArea
 import javax.swing.tree.DefaultMutableTreeNode
 
 /** The Code Story tool window lists the saved stories, and a click on a step opens its code. */
@@ -114,6 +117,20 @@ class StoryListPanelTest : HeavyPlatformTestCase() {
         assertTrue(text, text.contains("Commit: $commit"))
         assertFalse(text, text.contains("Current branch is"))
         assertTrue(rowText(0), rowText(0).endsWith("  story-branch"))
+    }
+
+    fun `test details and file problems use the IDE font`() {
+        show(story(step()))
+        openPanel()
+        panel!!.tree.setSelectionRow(1)
+
+        val label = JBFont.label()
+        val areas = UIUtil.findComponentsOfType(panel!!.details, JTextArea::class.java) + panel!!.fileProblems
+        assertTrue(areas.any { it.text.contains("Payment flow") })
+        for (area in areas) {
+            assertEquals(label.family, area.font.family)
+            assertEquals(label.size, area.font.size)
+        }
     }
 
     fun `test clicking and pressing Enter on a text-only step leave the editor as it is`() {
