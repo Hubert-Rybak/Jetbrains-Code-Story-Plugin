@@ -107,11 +107,11 @@ control the job:
 
 | Secret | Value |
 | --- | --- |
-| `PUBLISH_TOKEN` | A token from [My Tokens](https://plugins.jetbrains.com/author/me/tokens) on JetBrains Marketplace. Without it, the job does not publish. |
+| `MARKETPLACE_API_KEY` | A token from [My Tokens](https://plugins.jetbrains.com/author/me/tokens) on JetBrains Marketplace. Without it, the job does not publish. |
 | `CERTIFICATE_CHAIN` | Optional: the content of `chain.crt` from the [signing key](docs/release-checklist.md#signing-key) steps. |
 | `PRIVATE_KEY` | Optional: the content of `private_encrypted.pem`. |
 | `PRIVATE_KEY_PASSWORD` | Optional: the password of the private key. |
 
 With `CERTIFICATE_CHAIN` and `PRIVATE_KEY`, `signPlugin` signs the zip before the upload.
-Without them, the job uploads the unsigned zip. To publish from your machine, set the same
-environment variables and run `./gradlew publishPlugin`.
+Without them, the job uploads the unsigned zip. To publish from your machine, set the token as
+`PUBLISH_TOKEN`, the signing values under the same names, and run `./gradlew publishPlugin`.
