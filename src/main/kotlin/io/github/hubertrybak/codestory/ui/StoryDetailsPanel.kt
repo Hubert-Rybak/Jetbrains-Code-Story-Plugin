@@ -2,7 +2,6 @@ package io.github.hubertrybak.codestory.ui
 
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.ActionLink
-import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.util.ui.JBUI
 import io.github.hubertrybak.codestory.StoryChanges
@@ -26,10 +25,7 @@ import javax.swing.Scrollable
  * text, [comments] shows the comment threads of the story or step, when the tool window has them.
  */
 class StoryDetailsPanel(comments: StoryComments? = null, private val showDiff: (StepItem) -> Unit = {}) : JPanel(VerticalLayout(0)), Scrollable {
-    private val text = JBTextArea().apply {
-        isEditable = false
-        lineWrap = true
-        wrapStyleWord = true
+    private val text = PlainText().apply {
         border = JBUI.Borders.empty(8)
         accessibleContext.accessibleName = "Story details"
     }
@@ -74,7 +70,7 @@ class StoryDetailsPanel(comments: StoryComments? = null, private val showDiff: (
 
     // Looks like one page of text, in every theme. Swing asks for the background before the text area exists.
     @Suppress("USELESS_CAST")
-    override fun getBackground(): Color? = (text as JBTextArea?)?.background ?: super.getBackground()
+    override fun getBackground(): Color? = (text as PlainText?)?.background ?: super.getBackground()
 
     fun showStory(stored: StoredStory, currentGit: StoryGit?, changes: StoryChanges? = null) {
         val story = stored.story

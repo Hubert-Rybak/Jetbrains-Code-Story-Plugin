@@ -6,6 +6,11 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The story details and the file problems in the **Code Story** tool window use the IDE's
+  UI font, like the rest of the tool window, instead of the text area font.
+
 ## [1.1.1] - 2026-10-19
 
 ### Fixed

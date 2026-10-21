@@ -61,7 +61,6 @@ import java.nio.file.Path
 import java.util.concurrent.Future
 import javax.swing.JPanel
 import javax.swing.JTree
-import javax.swing.JTextArea
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
@@ -91,7 +90,7 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     private val treeModel = DefaultTreeModel(rootNode)
     val tree: Tree = Tree(treeModel)
     val cardContainer = JPanel(BorderLayout())
-    val fileProblems = JTextArea().apply { isEditable = false; lineWrap = true; wrapStyleWord = true }
+    val fileProblems = PlainText().apply { isOpaque = true }
     private val problemsPane = ScrollPaneFactory.createScrollPane(fileProblems, true).apply { isVisible = false }
     private val player = StoryPlayer.getInstance(project)
     private val comments = StoryComments(project, ::manageStory)
