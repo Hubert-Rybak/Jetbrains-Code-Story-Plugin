@@ -10,6 +10,7 @@ import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.Project
 import io.github.hubertrybak.codestory.CodeStorySettings
 import io.github.hubertrybak.codestory.StoryNavigationFiles
@@ -27,12 +28,11 @@ class StepNavigator(private val project: Project) {
     fun open(root: Path, location: Location): Editor? {
         val file = StoryNavigationFiles.find(root, location.file) ?: return null
         // The descriptor scrolls with ScrollType.CENTER, which puts the line in the upper third of the editor.
-        val editor = FileEditorManager.getInstance(project)
-            .openTextEditor(
-                OpenFileDescriptor(project, file, location.startLine - 1, 0)
-                    .setUsePreviewTab(UISettings.getInstance().openInPreviewTabIfPossible), false,
-            )
-            ?: return null
+        val descriptor = OpenFileDescriptor(project, file, location.startLine - 1, 0)
+            .setUsePreviewTab(UISettings.getInstance().openInPreviewTabIfPossible)
+        // FileEditorManager.openTextEditor is deprecated, and its replacement is experimental.
+        if (!descriptor.navigateInEditor(project, false)) return null
+        val editor = (FileEditorManager.getInstance(project).getSelectedEditor(file) as? TextEditor)?.editor ?: return null
         highlight(editor, location)
         return editor
     }

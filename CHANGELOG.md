@@ -6,6 +6,11 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The plugin no longer uses IntelliJ Platform API that is deprecated or experimental in
+  the supported IDE versions, so the Plugin Verifier reports no such usages.
+
 ## [1.1.1] - 2026-10-21
 
 ### Fixed
