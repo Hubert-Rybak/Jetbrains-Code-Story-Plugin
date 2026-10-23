@@ -6,6 +6,8 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-23
+
 ### Added
 
 - The **Code Story Timeline** tool window shows a whole story at once: every step from top
@@ -142,6 +144,7 @@ Copilot CLI.
 - Resolve playback anchors and read source files in the background. Stopping or changing
   stories cancels obsolete work, and edits made during a search trigger a fresh check.
 
+[1.2.0]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.2.0
 [1.1.1]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Hubert-Rybak/Jetbrains-Code-Story-Plugin/releases/tag/v1.0.0
