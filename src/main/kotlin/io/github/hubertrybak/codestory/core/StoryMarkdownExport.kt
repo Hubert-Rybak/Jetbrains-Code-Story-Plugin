@@ -8,7 +8,9 @@ object StoryMarkdownExport {
         appendLine(story.summary)
         story.steps.forEachIndexed { index, step ->
             appendLine()
-            appendLine("## ${index + 1}. ${plain(step.title)}")
+            // Context is a section of the step that it gives background for.
+            val level = if (step.kind == StepKind.CONTEXT) "###" else "##"
+            appendLine("$level ${index + 1}. ${label(step.kind)}${plain(step.title)}")
             step.location?.let { location ->
                 appendLine()
                 val range = "L${location.startLine}-L${location.endLine}"
@@ -16,6 +18,41 @@ object StoryMarkdownExport {
             }
             appendLine()
             appendLine(step.comment)
+            step.proposedCode?.let { code ->
+                appendLine()
+                append(proposal(step.location, code))
+            }
+        }
+    }
+
+    private fun label(kind: StepKind): String = when (kind) {
+        StepKind.EXPLANATION -> ""
+        StepKind.CONTEXT -> "Context: "
+        StepKind.PROPOSAL -> "Proposal: "
+    }
+
+    /**
+     * The proposed code as a diff of the code that the step explains, or as a plain code block when
+     * the step stores no code. The fence is longer than any run of backticks in the code.
+     */
+    private fun proposal(location: Location?, code: String): String {
+        val proposed = ProposalDiff.proposedLines(code)
+        val current = location?.rangeText
+        val diff = location != null && current != null
+        val lines = if (!diff) proposed
+            else ProposalDiff.lines(checkNotNull(current).split("\n"), proposed, checkNotNull(location).startLine).map { line ->
+                when (line.change) {
+                    DiffLine.Change.KEPT -> " "
+                    DiffLine.Change.REMOVED -> "-"
+                    DiffLine.Change.ADDED -> "+"
+                } + line.text
+            }
+        val longest = lines.flatMap { Regex("`+").findAll(it).map { run -> run.value.length }.toList() }.maxOrNull() ?: 0
+        val fence = "`".repeat(maxOf(3, longest + 1))
+        return buildString {
+            appendLine(fence + if (diff) "diff" else "")
+            lines.forEach(::appendLine)
+            appendLine(fence)
         }
     }
 

@@ -1,17 +1,14 @@
 package io.github.hubertrybak.codestory.ui
 
-import com.intellij.ide.BrowserUtil
-import com.intellij.ide.ui.UISettings
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.ui.popup.IconButton
 import com.intellij.ui.InplaceButton
 import com.intellij.ui.JBColor
 import com.intellij.ui.ScrollPaneFactory
+import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.panels.HorizontalLayout
 import com.intellij.ui.components.panels.VerticalLayout
@@ -21,9 +18,9 @@ import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import io.github.hubertrybak.codestory.CodeStorySettings
+import io.github.hubertrybak.codestory.core.StepKind
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
-import io.github.hubertrybak.codestory.core.StoryMarkdown
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Container
@@ -36,17 +33,13 @@ import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.nio.file.Files
 import javax.swing.JButton
 import javax.swing.JComponent
-import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.ScrollPaneConstants
 import javax.swing.Scrollable
 import javax.swing.SwingConstants
-import javax.swing.event.HyperlinkEvent
-import javax.swing.text.html.HTMLEditorKit
 import kotlin.math.roundToInt
 
 /** What the reader sees about the code of a step: a warning for a lost step, a note for changed code. */
@@ -82,21 +75,25 @@ class StepCardPanel(
     }
     val stop = JButton("Stop").apply { mnemonic = 'S'.code; addActionListener { player.stop() } }
     val close = InplaceButton(IconButton("Close card (keep story position)", AllIcons.Actions.Close, AllIcons.Actions.CloseHovered)) { dismiss() }
+    /** Continues the story in the timeline, at this step. */
+    val timeline = InplaceButton(IconButton("Show all steps in the timeline", CodeStoryIcons.Timeline)) {
+        StoryTimeline.getInstance(project).open(stored)
+    }
     /** The warning or note about the code of the step, if it changed. */
     val statusText: String? = statusNote(stored.status(index))
     private val noteIcon = JLabel(if (stored.status(index) == StepStatus.LOST) AllIcons.General.Warning else AllIcons.General.Information)
         .apply { verticalAlignment = SwingConstants.TOP }
     private val note = statusText?.let { text -> PlainText(text).apply { isFocusable = false; accessibleContext.accessibleName = text } }
-    private val stepNumber = JBLabel("Step ${index + 1} of ${stored.story.steps.size}").apply {
+    private val kind = stored.story.steps[index].kind
+    internal val stepNumber = JBLabel("Step ${index + 1} of ${stored.story.steps.size}" + if (kind == StepKind.EXPLANATION) "" else " · ${stepKindLabel(kind)}").apply {
         font = JBFont.small()
         foreground = UIUtil.getContextHelpForeground()
     }
     private val title = PlainText(stored.story.steps[index].title, bold = true).apply { isFocusable = false }
-    val comment = JEditorPane().apply {
-        isEditable = false
-        isOpaque = false
-        putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
-        addHyperlinkListener { if (it.eventType == HyperlinkEvent.EventType.ACTIVATED) openLink(it.description) }
+    val comment = StoryTextPane(::openLink).apply { markdown = stored.story.steps[index].comment }
+    /** A proposal with code opens its change in the diff viewer. The timeline also shows the proposed code. */
+    val previewProposal = ActionLink("Preview change") { showProposalDiff(project, stored, index) }.apply {
+        isVisible = kind == StepKind.PROPOSAL && stored.story.steps[index].proposedCode != null
     }
     private val readerComments = StoryComments(project)
     val comments = CommentsPanel(readerComments, compact = true, layoutChanged = ::resizeCard, escape = focusCode).apply { isOpaque = false }
@@ -128,6 +125,7 @@ class StepCardPanel(
     }.apply {
         isOpaque = false
         add(comment)
+        add(previewProposal)
         add(comments)
     }
     private val scroll = ScrollPaneFactory.createScrollPane(body, true).apply {
@@ -145,7 +143,11 @@ class StepCardPanel(
         }, BorderLayout.CENTER)
         add(JPanel(BorderLayout()).apply {
             isOpaque = false
-            add(close, BorderLayout.NORTH)
+            add(JPanel(HorizontalLayout(4)).apply {
+                isOpaque = false
+                add(timeline)
+                add(close)
+            }, BorderLayout.NORTH)
         }, BorderLayout.EAST)
         note?.let {
             add(JPanel(BorderLayout(JBUI.scale(6), 0)).apply {
@@ -210,18 +212,7 @@ class StepCardPanel(
     }
 
     fun refreshTheme() {
-        comment.font = UIUtil.getLabelFont()
-        comment.foreground = UIUtil.getLabelForeground()
-        val kit = HTMLEditorKit()
-        val textColor = "#%06x".format(comment.foreground.rgb and 0xffffff)
-        kit.styleSheet.addRule("body { color: $textColor; font-family: '${comment.font.family}'; font-size: ${comment.font.size}pt; }")
-        kit.styleSheet.addRule("p { margin-top: 0; margin-bottom: 6px; }")
-        kit.styleSheet.addRule("ul { margin-top: 0; margin-bottom: 6px; margin-left: 16px; }")
-        val linkColor = "#%06x".format(JBUI.CurrentTheme.Link.Foreground.ENABLED.rgb and 0xffffff)
-        kit.styleSheet.addRule("a { color: $linkColor; }")
-        comment.editorKit = kit
-        comment.text = "<html><body>${StoryMarkdown.render(stored.story.steps[index].comment)}</body></html>"
-        comment.caretPosition = 0
+        comment.refreshTheme()
         note?.foreground = UIUtil.getLabelForeground()
         stepNumber.foreground = UIUtil.getContextHelpForeground()
         resizeCard()
@@ -392,20 +383,7 @@ class StepCardPanel(
     }
 
     /** Hyperlinks have no side effects until activation; project links cannot escape the repository. */
-    internal fun openLink(target: String) {
-        if (StoryMarkdown.isWebLink(target)) {
-            BrowserUtil.browse(target)
-            return
-        }
-        val link = StoryMarkdown.fileLink(target) ?: return
-        val path = stored.root.resolve(link.path)
-        val safe = runCatching { Files.isRegularFile(path) && path.toRealPath().startsWith(stored.root.toRealPath()) }.getOrDefault(false)
-        if (!safe) return
-        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path) ?: return
-        OpenFileDescriptor(project, file, link.startLine - 1, 0)
-            .setUsePreviewTab(UISettings.getInstance().openInPreviewTabIfPossible)
-            .navigateInEditor(project, true)
-    }
+    internal fun openLink(target: String) = openStoryLink(project, stored.root, target)
 
     private companion object {
         const val GAP = 10

@@ -32,7 +32,7 @@ object StoryPatch {
             fun text(name: String) = (operation[name] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.takeIf { it.isNotEmpty() }
             val op = text("op")
             val fields = when (op) {
-                "update" -> setOf("op", "stepId", "title", "comment", "location")
+                "update" -> setOf("op", "stepId") + updateFields
                 "insert" -> setOf("op", "afterStepId", "step")
                 "remove", "confirm" -> setOf("op", "stepId")
                 else -> {
@@ -69,8 +69,8 @@ object StoryPatch {
                     confirmedIds += id
                 }
                 "update" -> {
-                    val changes = operation.filterKeys { it in setOf("title", "comment", "location") }
-                    if (changes.isEmpty()) error(ErrorCode.MISSING_FIELD, "An update needs title, comment or location.", target + 1)
+                    val changes = operation.filterKeys { it in updateFields }
+                    if (changes.isEmpty()) error(ErrorCode.MISSING_FIELD, "An update needs title, comment, location, kind or proposedCode.", target + 1)
                     else {
                         steps[target] = JsonObject(steps[target] + changes)
                         updatedIds += id
@@ -93,4 +93,7 @@ object StoryPatch {
         }
         return Result(JsonObject(json + ("steps" to JsonArray(steps))), errors, updatedIds, confirmedIds)
     }
+
+    /** The step fields that an update can replace; `null` removes a location or proposed code. */
+    private val updateFields = setOf("title", "comment", "location", "kind", "proposedCode")
 }

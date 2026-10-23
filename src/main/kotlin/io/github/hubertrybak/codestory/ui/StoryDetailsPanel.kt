@@ -5,6 +5,7 @@ import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.util.ui.JBUI
 import io.github.hubertrybak.codestory.StoryChanges
+import io.github.hubertrybak.codestory.core.StepKind
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryGit
 import java.awt.BorderLayout
@@ -107,10 +108,13 @@ class StoryDetailsPanel(comments: StoryComments? = null, private val showDiff: (
     }
 
     fun showStep(item: StepItem) {
+        val step = item.step
+        val kind = if (step.kind == StepKind.EXPLANATION) "" else " (${stepKindLabel(step.kind).lowercase()})"
         show(item, buildString {
-            append("Step ${item.index + 1} of ${item.stored.story.steps.size}: ${item.step.title}")
+            append("Step ${item.index + 1} of ${item.stored.story.steps.size}$kind: ${step.title}")
             statusNote(item.stored.status(item.index))?.let { append("\n\n").append(it) }
-            append("\n\n").append(item.step.comment)
+            append("\n\n").append(step.comment)
+            step.proposedCode?.let { append("\n\nProposed code:\n").append(it) }
         })
         comments?.show(item.stored, item.index)
     }

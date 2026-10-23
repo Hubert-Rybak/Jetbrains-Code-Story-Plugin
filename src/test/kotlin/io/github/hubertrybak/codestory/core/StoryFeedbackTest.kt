@@ -48,6 +48,16 @@ class StoryFeedbackTest {
     }
 
     @Test
+    fun `a comment on a proposal brings the kind and the proposed code`() {
+        val base = story("Proposal")
+        val proposal = base.copy(steps = listOf(base.steps[0].copy(kind = StepKind.PROPOSAL, proposedCode = "retry()"), base.steps[1]))
+        val asked = StoryThreads.submit(proposal, listOf(DraftComment("Apply this proposal.", stepId = "entry", kind = ThreadKind.CHANGE)), t1) { "c1" }
+        val step = StoryFeedback.report(listOf(stored("2026-10-08-proposal", asked)), requested = true).comments.single().step!!
+        assertEquals(StepKind.PROPOSAL, step.kind)
+        assertEquals("retry()", step.proposedCode)
+    }
+
+    @Test
     fun `stale steps come with comments or for the requested story`() {
         val quiet = stored("2026-10-08-quiet", story("Quiet"), listOf(StepStatus.LOST, StepStatus.OK))
         val none = StoryFeedback.report(listOf(quiet), requested = false)

@@ -33,3 +33,18 @@ class PreviousStepAction : PlaybackAction(StoryPlayer::previous) {
 class StopStoryAction : PlaybackAction(StoryPlayer::stop)
 
 class CommentOnCurrentStepAction : PlaybackAction(StoryPlayer::commentOnCurrentStep)
+
+/** Continues the playing story in the timeline, or shows the timeline of the last story. */
+class ShowTimelineAction : DumbAwareAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = e.project != null
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val playing = StoryPlayer.getInstance(project).currentStory
+        if (playing != null) StoryTimeline.getInstance(project).open(playing) else StoryTimeline.getInstance(project).show()
+    }
+}

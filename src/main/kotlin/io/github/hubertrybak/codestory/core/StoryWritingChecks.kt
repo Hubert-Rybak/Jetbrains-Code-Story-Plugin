@@ -14,6 +14,7 @@ enum class WarningCode(val code: String) {
     PASSIVE_VOICE("passive-voice"),
     ING_WORD("ing-word"),
     RANGE_TOO_LONG("range-too-long"),
+    PROPOSAL_TOO_LONG("proposal-too-long"),
     UNKNOWN_BASE_REF("unknown-base-ref"),
 }
 
@@ -41,6 +42,11 @@ class StoryWritingChecks(private val optionalStyleHints: Boolean = false) {
                 val lines = location.endLine.toLong() - location.startLine + 1
                 if (lines > 30) warning(this, Field(number, "location"), WarningCode.RANGE_TOO_LONG,
                     "covers $lines lines", "Point at the key lines only, usually 30 lines or fewer.")
+            }
+            step.proposedCode?.let { code ->
+                val lines = code.lines().size
+                if (lines > 30) warning(this, Field(number, "proposedCode"), WarningCode.PROPOSAL_TOO_LONG,
+                    "has $lines lines", "Propose the key lines only, usually 30 lines or fewer. Split a larger change into several proposals.")
             }
         }
     }

@@ -6,10 +6,34 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The **Code Story Timeline** tool window shows a whole story at once: every step from top
+  to bottom on a line of numbered steps, with the agent's explanation and the code of the
+  step in a read-only editor with the colors and line numbers of its file. A click on a
+  line of code opens that line in the editor beside the timeline, with the step's highlight
+  and gutter badges and without a step card. The timeline marks the current step, follows
+  **Prev**, **Next** and the gutter badges, shows the code as you edit it, and has the
+  comment threads and a comment input for the current step. Open it with **Open in
+  Timeline** in the Code Story tool window, the timeline button in the step card, or
+  **Ctrl+Alt+Shift+Z**, then **T**. **Play with Step Card** switches back.
+- Step kinds for agents: `context` steps give background for the step before them, and
+  `proposal` steps suggest a change, with optional `proposedCode` for the lines of the step.
+  The timeline shows context under its step and a proposal as a change of the current
+  code. **Preview change** opens the IDE diff viewer, and **Ask agent to apply** posts a
+  change request on the step. The writing guide, the skill, the MCP tool schemas and the
+  JSON Schema describe the kinds; story files omit the kind of other steps, so existing
+  stories do not change.
+- New stories open in the view that you used last, the step card or the timeline. You can
+  also choose it in **Settings | Tools | Code Story**.
+
 ### Changed
 
 - The plugin no longer uses IntelliJ Platform API that is deprecated or experimental in
   the supported IDE versions, so the Plugin Verifier reports no such usages.
+- The step card, the tree and the details pane name context and proposal steps. A
+  proposal's card has **Preview change**, and **Copy as Markdown** puts context under its
+  step and a proposal's code in a `diff` block.
 
 ## [1.1.1] - 2026-10-21
 

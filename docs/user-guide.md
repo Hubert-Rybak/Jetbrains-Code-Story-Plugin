@@ -13,6 +13,8 @@ in the IDE. For a short introduction, see the [README](../README.md). The
   - [Without the MCP server](#without-the-mcp-server)
 - [Ask for a story](#ask-for-a-story)
 - [Read a story](#read-a-story)
+- [The timeline](#the-timeline)
+  - [Context and proposals](#context-and-proposals)
 - [Stories about a change](#stories-about-a-change)
 - [When the code changes](#when-the-code-changes)
 - [Share and manage stories](#share-and-manage-stories)
@@ -186,14 +188,67 @@ stay in your IDE workspace and never go into story files.
 
 The default shortcuts start with **Ctrl+Alt+Shift+Z**; release those keys, then press
 **Right** for **Next Step**, **Left** for **Previous Step**, **End** for **Stop Story**,
-or **C** for **Comment on Current Step**. Change them in **Settings | Keymap** by
-searching for the action name.
+**C** for **Comment on Current Step**, or **T** for **Show Story Timeline**. Change them
+in **Settings | Keymap** by searching for the action name.
 
 ### Text formatting
 
 Comments support inline code, bold, bullet lists and links to http/https URLs or
 repository files (`src/App.kt#L2-L5`). Links open only when clicked. Headings, images,
 tables and HTML stay plain text.
+
+## The timeline
+
+The **Code Story Timeline** tool window shows a whole story at once: every step from top
+to bottom, with the agent's explanation and the code of the step, on a vertical line of
+numbered steps. Keep it beside the editor, or put it on a second screen with the tool
+window's **View Mode | Window**. The editor follows the step that you select in the
+timeline.
+
+- **Open it.** Choose **Open in Timeline** in the Code Story toolbar or context menu, the
+  timeline button in the step card, or press **Ctrl+Alt+Shift+Z**, then **T**. The list at
+  the top of the timeline switches between stories.
+- **Go to the code.** Click a line of a step's code, and the editor opens the file at that
+  line, with the step's range highlighted and the gutter badges. The editor shows no step
+  card, because the timeline explains the step. A double-click, or a click on the file name
+  above the code, also moves the keyboard focus to the editor. A click on a step's title or
+  number opens the step at its first line; a text-only step leaves the editor as it is.
+- **Follow the story.** **Prev**, **Next**, the keyboard shortcuts, the gutter badges and
+  the steps in the Code Story tool window move through the story. The timeline marks the
+  current step with the accent color and scrolls it into view.
+- **Edit while you read.** The code in the timeline follows your edits, including unsaved
+  ones, and shows when the code of a step changed or is lost. Stories about a change show
+  **A** and **M** and **Show diff**, like the tree.
+- **Comment.** The current step has a comment input below its threads, and
+  **Ctrl+Alt+Shift+Z**, then **C**, moves the focus to it. The comments about the whole
+  story are at the end of the timeline.
+- **Back to the step card.** **Play with Step Card** in the timeline toolbar continues the
+  story with the step card, at the same step.
+
+New stories open in the view that you used last, the step card or the timeline. To choose
+the view yourself, see [Settings](#settings). The code in the timeline is a read-only
+copy without the indentation that all of its lines share: select text to copy it, and edit
+the code in the editor.
+
+### Context and proposals
+
+Besides steps that explain code, agents can add two kinds of steps. The timeline shows
+each kind in its own way:
+
+- **Context** gives background for the step above it, for example a method that the step
+  calls or a setting that it reads. It hangs from the line of the timeline under that
+  step, with a dashed border.
+- **Proposal** is a change that the agent suggests but did not make, for example the fix
+  at the end of a bug trace. It has a green border and a square number, and shows the
+  proposed code as a change of the current code: removed and added lines have the diff
+  colors of the editor, with the line numbers of the file before and after the change. A
+  proposal without a place in a file shows new code. **Preview change** opens the IDE diff
+  viewer with the whole file, where you can also apply the change yourself. **Ask agent
+  to apply** posts a change request on the step, so a listening agent applies the
+  proposal and updates the step. Code Story never changes your code itself.
+
+The step card, the tree and the details pane also name these kinds. In the step card, a
+proposal has **Preview change**.
 
 ## Stories about a change
 
@@ -341,6 +396,7 @@ feedback mode.
 | Setting | Default | What it does |
 |---|---|---|
 | Bring the IDE to the front on a new story | On | A new story brings the IDE window to the front. When it is off, the story still opens and plays. |
+| Show new stories in | Step card | A new story plays with the step card beside the code, or in the [timeline](#the-timeline). The IDE changes this setting when you switch views. |
 | Include passive voice and -ing hints in agent reports | Off | Adds these optional writing hints to the agent's reports. Code text such as "string" or "mapping" can give false hints. |
 | Install the Code Story skill in the current project instead of the user folder | Off | **Install Code Story skill** writes to `.agents/skills/` and `.claude/skills/` at the repository root instead of your home folder. |
 | Let connected agents listen for submitted feedback automatically | On | Waiting agents pick up each posted comment. Turning this off ends waiting calls; manual feedback remains available. |
@@ -348,8 +404,8 @@ feedback mode.
 
 Other places:
 
-- **Settings | Keymap**: **Next Step**, **Previous Step**, **Stop Story** and
-  **Comment on Current Step**.
+- **Settings | Keymap**: **Next Step**, **Previous Step**, **Stop Story**,
+  **Comment on Current Step** and **Show Story Timeline**.
 - **Settings | Tools | MCP Server**: the IDE's MCP server (see
   [Switch on the MCP server](#switch-on-the-mcp-server)).
 - **Settings | Appearance & Behavior | Notifications**: the **Code Story** notification

@@ -1,5 +1,6 @@
 package io.github.hubertrybak.codestory.core
 
+import io.github.hubertrybak.codestory.core.StoryJson.jsonText
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
@@ -52,6 +53,15 @@ object ValidationCases {
         valid("base commit SHA", story(step(), baseRef = quoted("0123456789abcdef0123456789ABCDEF01234567"))),
         valid("short base commit SHA", story(step(), baseRef = quoted("0a1b2c3"))),
         valid("null base", story(step(), baseRef = "null")),
+        *StepKind.entries.map { valid("kind ${it.value}", story(step(), step(kind = quoted(it.value)))) }.toTypedArray(),
+        valid("null kind", story(step(kind = "null"))),
+        valid("context before the first explanation", story(step(kind = quoted("context")), step())),
+        valid("text-only context", story(step(), step(kind = quoted("context"), location = null))),
+        valid("proposal with code for its lines", story(step(kind = quoted("proposal"), proposedCode = jsonText("line 2\n    retry()")))),
+        valid("proposal that removes its lines", story(step(kind = quoted("proposal"), proposedCode = quoted("")))),
+        valid("proposal of new code without a location", story(step(kind = quoted("proposal"), location = null, proposedCode = quoted("fun retry() {}")))),
+        valid("proposal in words only", story(step(kind = quoted("proposal"), location = null))),
+        valid("null proposed code", story(step(proposedCode = "null"))),
 
         invalid("story is not an object", "[]", null to ErrorCode.WRONG_TYPE),
         invalid("no title", withoutField(story(step()), "title"), null to ErrorCode.MISSING_FIELD),
@@ -89,6 +99,13 @@ object ValidationCases {
             null to ErrorCode.TOO_MANY_STEPS,
         ),
         invalid("step is not an object", story("\"step\""), 1 to ErrorCode.WRONG_TYPE),
+        invalid("unknown step kind", story(step(), step(kind = quoted("note"))), 2 to ErrorCode.INVALID_VALUE),
+        invalid("step kind is not text", story(step(kind = "1")), 1 to ErrorCode.WRONG_TYPE),
+        invalid("blank step kind", story(step(kind = quoted(" "))), 1 to ErrorCode.EMPTY_TEXT),
+        invalid("proposed code in an explanation", story(step(proposedCode = quoted("retry()"))), 1 to ErrorCode.INVALID_VALUE),
+        invalid("proposed code in context", story(step(kind = quoted("context"), proposedCode = quoted("retry()"))), 1 to ErrorCode.INVALID_VALUE),
+        invalid("proposed code is not text", story(step(kind = quoted("proposal"), proposedCode = "[\"retry()\"]")), 1 to ErrorCode.WRONG_TYPE),
+        invalid("empty proposal without a location", story(step(kind = quoted("proposal"), location = null, proposedCode = jsonText("\n"))), 1 to ErrorCode.EMPTY_TEXT),
         invalid("no step title", story("""{"comment": "Text.", "location": {"file": "src/App.kt", "startLine": 1, "endLine": 2, "anchorText": "line 1"}}"""), 1 to ErrorCode.MISSING_FIELD),
         invalid("empty comment", story(step(comment = quoted(""))), 1 to ErrorCode.EMPTY_TEXT),
         invalid("comment is not text", story(step(comment = "[\"a\"]")), 1 to ErrorCode.WRONG_TYPE),
@@ -283,6 +300,19 @@ class StoryValidatorAnchorTest {
         assertTrue(empty.message, empty.message.endsWith("Line 4 is empty."))
         val ambiguous = (validate(story(step(file = quoted("src/Twice.kt"), start = "4", end = "4", anchor = quoted("return")))) as ValidationResult.Invalid).errors.single()
         assertTrue(ambiguous.message, ambiguous.message.contains("It is at lines 2 and 6, at the same distance."))
+    }
+
+    @Test
+    fun `kinds default to explanation and proposed code keeps its indentation with LF line breaks`() {
+        val result = validate(story(
+            step(),
+            step(kind = quoted("context"), location = null),
+            step(kind = quoted("proposal"), proposedCode = jsonText("    first()\r\n\r\n    second()\r\n")),
+            step(kind = quoted("proposal"), location = null, proposedCode = jsonText("fun retry() {\n}\n\n")),
+        )) as ValidationResult.Valid
+        assertEquals(listOf(StepKind.EXPLANATION, StepKind.CONTEXT, StepKind.PROPOSAL, StepKind.PROPOSAL), result.story.steps.map { it.kind })
+        assertEquals(listOf(null, null, "    first()\n\n    second()", "fun retry() {\n}\n"), result.story.steps.map { it.proposedCode })
+        assertEquals("line 2\nline 3\nline 4", result.story.steps[2].location!!.rangeText)
     }
 
     @Test
