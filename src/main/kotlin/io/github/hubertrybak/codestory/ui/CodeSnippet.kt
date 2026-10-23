@@ -7,9 +7,6 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.EditorKind
 import com.intellij.openapi.editor.LineNumberConverter
-import com.intellij.openapi.editor.event.EditorMouseEvent
-import com.intellij.openapi.editor.event.EditorMouseEventArea
-import com.intellij.openapi.editor.event.EditorMouseListener
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.editor.highlighter.EditorHighlighter
 import com.intellij.openapi.editor.highlighter.EditorHighlighterFactory
@@ -25,6 +22,7 @@ import com.intellij.util.ui.JBUI
 import io.github.hubertrybak.codestory.core.DiffLine
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.Point
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.MouseAdapter
@@ -111,23 +109,29 @@ class CodeSnippet(private val project: Project, parent: Disposable) : JPanel(Bor
         editor.setHorizontalScrollbarVisible(false)
         editor.setBorder(JBUI.Borders.empty())
         editor.contextMenuGroupId = null
-        editor.addEditorMouseListener(object : EditorMouseListener {
-            override fun mouseClicked(event: EditorMouseEvent) {
-                val mouse = event.mouseEvent
-                // Selecting text to copy it does not open the code.
-                if (mouse.button != MouseEvent.BUTTON1) return
-                if (editor.selectionModel.hasSelection() && event.area != EditorMouseEventArea.LINE_NUMBERS_AREA) return
-                lineClicked(event.logicalPosition.line, mouse.clickCount)
-            }
-        })
         val wheel = MouseWheelListener(::scrollTimeline)
-        val hover = object : MouseAdapter() {
+        val mouse = object : MouseAdapter() {
             override fun mouseEntered(e: MouseEvent) = setHovered(true)
             override fun mouseExited(e: MouseEvent) = setHovered(false)
+
+            // A double-click opens the code at its second press: while the first click plays the
+            // step, the release and the click of the second can miss the snippet.
+            override fun mousePressed(e: MouseEvent) {
+                if (SwingUtilities.isLeftMouseButton(e) && e.clickCount == 2) clicked(e)
+            }
+
+            override fun mouseClicked(e: MouseEvent) {
+                if (SwingUtilities.isLeftMouseButton(e) && e.clickCount == 1) clicked(e)
+            }
+
+            // The events of AWT, not of the editor, which reports no click without its release.
+            // The code and the line numbers share their y.
+            private fun clicked(e: MouseEvent) =
+                lineClicked(editor.xyToLogicalPosition(Point(0, e.y)).line, e.clickCount, onLineNumbers = e.component === editor.gutterComponentEx)
         }
         for (component in listOf(editor.contentComponent, editor.gutterComponentEx)) {
             component.addMouseWheelListener(wheel)
-            component.addMouseListener(hover)
+            component.addMouseListener(mouse)
         }
         // Wrapped lines change the height of the code when the timeline gets narrower or wider.
         editor.contentComponent.addComponentListener(object : ComponentAdapter() {
@@ -166,8 +170,14 @@ class CodeSnippet(private val project: Project, parent: Disposable) : JPanel(Bor
         repaint()
     }
 
-    /** The reader clicked snippet line [line], 0-based, [clickCount] times. */
-    internal fun lineClicked(line: Int, clickCount: Int) {
+    /**
+     * The reader clicked snippet line [line], 0-based, [clickCount] times. A click that selects
+     * text, for example with Shift, does not open the code, so the reader can copy it. A
+     * double-click selects a word first; it opens the code with the focus, without the selection.
+     */
+    internal fun lineClicked(line: Int, clickCount: Int, onLineNumbers: Boolean = false) {
+        if (clickCount == 1 && !onLineNumbers && editor.selectionModel.hasSelection()) return
+        if (clickCount > 1) editor.selectionModel.removeSelection()
         if (line in lines.text.indices) onLineClick(fileLine(line), clickCount > 1)
     }
 
