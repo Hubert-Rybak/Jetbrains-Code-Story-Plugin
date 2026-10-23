@@ -164,6 +164,83 @@ class StoryFormatTest {
         assertEquals(listOf("id", "title", "comment"), definitions.getValue("step").jsonObject.getValue("required").jsonArray.map { it.jsonPrimitive.content })
     }
 
+    private val kinds = story.copy(steps = listOf(
+        story.steps[0],
+        Step(
+            "Billing reads the timeout", "`Billing.timeout` comes from the settings.",
+            Location("src/Billing.kt", 3, 3, "val timeout = settings.timeout", "val timeout = settings.timeout"), "setting", kind = StepKind.CONTEXT,
+        ),
+        Step(
+            "Retry once", "A second call hides short provider failures.",
+            Location("src/Payment.kt", 20, 21, "val result = provider.charge(card)", "val result = provider.charge(card)\nreturn result"), "retry",
+            kind = StepKind.PROPOSAL, proposedCode = "val result = retry { provider.charge(card) }\nreturn result",
+        ),
+        Step("Add a test", "Cover the retry.", id = "test", kind = StepKind.PROPOSAL, proposedCode = "@Test\nfun retries() {}"),
+    ))
+
+    @Test
+    fun `writes the kind after the step ID and proposed code after the location, never the default kind`() {
+        val text = StoryFormat.encode(kinds, "id")
+        val steps = Json.parseToJsonElement(text).jsonObject.getValue("steps").jsonArray.map { it.jsonObject }
+        assertEquals(listOf("id", "title", "comment", "location"), steps[0].keys.toList())
+        assertEquals(listOf("id", "kind", "title", "comment", "location"), steps[1].keys.toList())
+        assertEquals(listOf("id", "kind", "title", "comment", "location", "proposedCode"), steps[2].keys.toList())
+        assertEquals(listOf("id", "kind", "title", "comment", "proposedCode"), steps[3].keys.toList())
+        assertEquals(listOf(null, "context", "proposal", "proposal"), steps.map { it["kind"]?.jsonPrimitive?.content })
+        assertEquals("val result = retry { provider.charge(card) }\nreturn result", steps[2].getValue("proposedCode").jsonPrimitive.content)
+        assertEquals(kinds, (StoryFormat.decode(text) as StoryFormat.Decoded.Valid).story)
+        // Stories without context or proposals are written exactly as before step kinds existed.
+        assertFalse(StoryFormat.encode(story, "id").contains("\"kind\""))
+        assertEquals(StoryFormat.encode(story, "id"), StoryFormat.encode(story.copy(steps = story.steps.map { it.copy(kind = StepKind.EXPLANATION) }), "id"))
+    }
+
+    @Test
+    fun `round trips every step kind with and without proposed code`() {
+        for (kind in StepKind.entries) {
+            val codes = if (kind == StepKind.PROPOSAL) listOf(null, "", "    indented()\n\n    after()") else listOf(null)
+            for (code in codes) {
+                // An empty proposal removes lines, so only a step with a location can have one.
+                val original = kinds.copy(steps = kinds.steps.map { step ->
+                    step.copy(kind = kind, proposedCode = code?.takeUnless { it.isEmpty() && step.location == null })
+                })
+                assertEquals(original, (StoryFormat.decode(StoryFormat.encode(original, "id")) as StoryFormat.Decoded.Valid).story)
+            }
+        }
+    }
+
+    @Test
+    fun `rejects story files with unknown kinds or proposed code outside a proposal`() {
+        val text = StoryFormat.encode(kinds, "id")
+        val invalid = listOf(
+            text.replace("\"kind\": \"context\"", "\"kind\": \"background\""),
+            text.replace("\"kind\": \"context\"", "\"kind\": 2"),
+            text.replaceFirst("\"kind\": \"proposal\"", "\"kind\": \"explanation\""),
+            text.replace("\"proposedCode\": \"@Test\\nfun retries() {}\"", "\"proposedCode\": 7"),
+        )
+        for (file in invalid) {
+            assertTrue(file, file != text)
+            assertTrue(file, StoryFormat.decode(file) is StoryFormat.Decoded.Invalid)
+        }
+    }
+
+    @Test
+    fun `published schema describes step kinds and proposed code in write order`() {
+        val schema = Json.parseToJsonElement(Files.readString(Path.of("schema/story-v1.schema.json"))).jsonObject
+        val step = schema.getValue("\$defs").jsonObject.getValue("step").jsonObject
+        val file = Json.parseToJsonElement(StoryFormat.encode(kinds, "id")).jsonObject
+        file.getValue("steps").jsonArray.forEach { assertFields(step, it.jsonObject) }
+        val kind = step.getValue("properties").jsonObject.getValue("kind").jsonObject
+        assertEquals(StepKind.entries.map { it.value }, kind.getValue("enum").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals("string", step.getValue("properties").jsonObject.getValue("proposedCode").jsonObject.getValue("type").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `context gives background for the nearest earlier step that is not context`() {
+        val order = listOf(StepKind.CONTEXT, StepKind.EXPLANATION, StepKind.CONTEXT, StepKind.CONTEXT, StepKind.PROPOSAL, StepKind.CONTEXT)
+        val owned = story.copy(steps = order.mapIndexed { index, kind -> Step("Step $index", "Text.", id = "s$index", kind = kind) })
+        assertEquals(listOf(null, null, 1, 1, null, 4), owned.steps.indices.map { owned.contextOwner(it) })
+    }
+
     private val time = Instant.parse("2026-10-08T12:00:00Z")
     private val question = StoryThread("q1", ThreadKind.QUESTION, ThreadState.ANSWERED, listOf(
         ThreadMessage(MessageAuthor.READER, 1, time, "Why `retry`?"),

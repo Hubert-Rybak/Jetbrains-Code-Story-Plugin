@@ -1,6 +1,7 @@
 package io.github.hubertrybak.codestory.mcp
 
 import com.intellij.mcpserver.annotations.McpDescription
+import io.github.hubertrybak.codestory.core.StepKind
 import io.github.hubertrybak.codestory.core.StoryType
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -56,12 +57,16 @@ internal class StoryShape(
 internal class StepShape(
     @property:McpDescription("A stable, unique step ID. Omit it to let the plugin assign one; keep it on revisions.")
     val id: String? = null,
+    @property:McpDescription("Omit it for an explanation of code, an overview or a what-to-check step. Use context for background that the step before it needs, such as a method that it calls or a setting that it reads. Use proposal for a change that you suggest but did not make.")
+    val kind: StepKind? = null,
     @property:McpDescription("The step title: 8 words or fewer.")
     val title: String,
     @property:McpDescription("What the code does and why it matters: 1 to 3 sentences, or one lead sentence and up to 4 bullet items; 60 words at most. Instructions have at most 20 words per sentence; descriptions have at most 25.")
     val comment: String,
-    @property:McpDescription("One code range, usually 30 lines or fewer. Omit it for an overview or a what-to-check step.")
+    @property:McpDescription("One code range, usually 30 lines or fewer. Omit it for an overview or a what-to-check step. For a proposal, the lines that the proposal changes.")
     val location: LocationShape? = null,
+    @property:McpDescription("Only for a proposal: the code that replaces the lines of location, with \\n between lines and the indentation of the file. Use an empty text to propose removing the lines. Without a location, it is new code. Omit it for a proposal in words only.")
+    val proposedCode: String? = null,
 )
 
 @Serializable

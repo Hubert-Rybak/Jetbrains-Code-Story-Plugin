@@ -57,6 +57,11 @@ a short comment in a card beside the code.
 - **Read at your own speed.** Go to the next or previous step from the card, the tool
   window or the keyboard. The card does not take the keyboard focus, so you can continue
   to work in the editor.
+- **See the whole story in a timeline.** The timeline shows every step from top to
+  bottom, with its explanation and its code, beside the editor or on a second screen.
+  Click a line of code, and the editor opens it.
+- **Context and proposals.** Agents add context steps with background for a step, and
+  proposals of code changes that you can preview in a diff and ask the agent to apply.
 - **Steps follow the code.** Steps stay on their code while you edit, and show when their
   code changed or is gone.
 - **See what changed.** In a story about a change, steps show **A** for new code and **M**
@@ -131,9 +136,19 @@ The story starts at step 1. Use **Prev** and **Next** in the step card or in the
 | **Left** | Previous Step |
 | **End** | Stop Story |
 | **C** | Comment on Current Step |
+| **T** | Show Story Timeline |
 
 Numbered gutter badges go to the other steps in the file. **Play** in the tool window
 continues a story at your last step.
+
+### Read a story in the timeline
+
+**Open in Timeline** in the tool window shows every step of the story from top to bottom
+in the **Code Story Timeline** tool window: the agent's explanation, the code of the step
+with the line numbers of its file, context under the step that it explains, and proposed
+changes. Click a line of code, and the editor beside the timeline opens the file at that
+line and highlights the step. The timeline follows **Prev**, **Next** and your edits. See
+[The timeline](docs/user-guide.md#the-timeline) in the user guide.
 
 <p align="center">
   <picture>
@@ -194,7 +209,7 @@ for a pull request description.
   systems are not supported.
 - **Agent-written stories.** You cannot edit, rename or reorder stories or steps in the
   IDE; ask the agent. One story plays at a time in a project, and each step has one code
-  range at most.
+  range at most. The plugin never applies a proposal itself; your agent does.
 - **Writing checks for English only.** The checks are mechanical. There is no check
   against the ASD-STE100 dictionary.
 - **Your own agent.** Comments go to your agent, not to the author of a shared story.

@@ -22,10 +22,12 @@ import com.intellij.util.xmlb.XmlSerializer
 import io.github.hubertrybak.codestory.core.ErrorCode
 import io.github.hubertrybak.codestory.core.MessageAuthor
 import io.github.hubertrybak.codestory.core.ReplyOutcome
+import io.github.hubertrybak.codestory.core.StepKind
 import io.github.hubertrybak.codestory.core.Story
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryFolder
 import io.github.hubertrybak.codestory.core.StoryFormat
+import io.github.hubertrybak.codestory.core.StoryJson.jsonText
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
@@ -37,6 +39,7 @@ import io.github.hubertrybak.codestory.core.ThreadState
 import io.github.hubertrybak.codestory.core.WarningCode
 import io.github.hubertrybak.codestory.mcp.CodeStoryToolset
 import io.github.hubertrybak.codestory.ui.StoryPlayer
+import io.github.hubertrybak.codestory.ui.applyProposalDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -656,6 +659,38 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
         assertEquals("replaced entry", current.steps.single().location!!.anchorText)
         assertEquals("Step 2 removed, step 1 confirmed", current.threads.single().messages.last().storyChanges)
         assertEquals("ok", list().single().string("status"))
+    }
+
+    fun `test an applied proposal becomes an explanation of the new code`() {
+        val stored = show(story(step(start = "5", end = "6", id = quoted("retry"), title = quoted("Retry the call"), kind = quoted("proposal"),
+            proposedCode = jsonText("line 5\n    retry()"))))
+        background { service.post(stored, listOf(applyProposalDraft(stored, "retry"))) }
+        val comment = feedback(stored.id).getValue("comments").jsonArray.single().jsonObject
+        assertEquals("change", comment.string("kind"))
+        val step = comment.getValue("step").jsonObject
+        assertEquals("proposal", step.string("kind"))
+        assertEquals("line 5\n    retry()", step.string("proposedCode"))
+
+        editLine(6, "    retry()")
+        val done = JsonObject(reply(comment, "done", "The call now retries once.") + ("changedFiles" to JsonArray(listOf(JsonPrimitive("src/App.kt")))))
+        assertEquals("stale-steps", reply(stored.id, listOf(done)).getValue("errors").jsonArray.single().jsonObject.string("code"))
+        val patched = patch(stored, """[{"op":"update","stepId":"retry","kind":"explanation","proposedCode":null,"title":"Retry the call once",
+            "comment":"The call retries once after a failure.","location":{"file":"src/App.kt","startLine":5,"endLine":6,"anchorText":"line 5"}}]""")
+        assertEquals(patched.toString(), "accepted", patched.string("status"))
+        assertEmpty(reply(stored.id, listOf(done)).getValue("errors").jsonArray)
+        val current = saved(stored).steps.single()
+        assertEquals(StepKind.EXPLANATION, current.kind)
+        assertNull(current.proposedCode)
+        assertEquals("line 5\n    retry()", current.location!!.rangeText)
+        assertEquals("Step 1 updated", current.threads.single().messages.last().storyChanges)
+    }
+
+    fun `test a step that stops being a proposal must drop its proposed code`() {
+        val stored = show(story(step(id = quoted("retry"), kind = quoted("proposal"), proposedCode = quoted("retry()"))))
+        val rejected = patch(stored, """[{"op":"update","stepId":"retry","kind":"explanation"}]""")
+        assertEquals("rejected", rejected.string("status"))
+        assertEquals("invalid-value", rejected.getValue("errors").jsonArray.single().jsonObject.string("code"))
+        assertEquals(StepKind.PROPOSAL, saved(stored).steps.single().kind)
     }
 
     private fun index(): JsonObject = Json.parseToJsonElement(Files.readString(service.storyFolder().localDir.resolve(StoryFolder.PENDING_INDEX))).jsonObject

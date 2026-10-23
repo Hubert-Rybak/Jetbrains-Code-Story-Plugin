@@ -52,6 +52,8 @@ object StoryFormat {
                 for (step in story.steps) {
                     addJsonObject {
                         put("id", checkNotNull(step.id))
+                        // Files from older versions have no kinds, so an explanation has none either.
+                        if (step.kind != StepKind.EXPLANATION) put("kind", step.kind.value)
                         put("title", step.title)
                         put("comment", step.comment)
                         step.location?.let { location ->
@@ -63,6 +65,7 @@ object StoryFormat {
                                 location.rangeText?.let { put("rangeText", it) }
                             }
                         }
+                        step.proposedCode?.let { put("proposedCode", it) }
                         threads(step.threads)
                     }
                 }

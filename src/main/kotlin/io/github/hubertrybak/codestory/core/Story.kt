@@ -44,14 +44,43 @@ data class StoryAuthor(val agent: String, val model: String)
 /** Null fields mean Git is unavailable, the repository has no commits, or HEAD is detached. */
 data class StoryGit(val branch: String? = null, val commit: String? = null)
 
-/** [threads] are the comment threads about this step. They belong to the plugin, like the story's threads. */
+/**
+ * [threads] are the comment threads about this step. They belong to the plugin, like the story's threads.
+ * [proposedCode] is only for a [StepKind.PROPOSAL]: the code that the proposal puts in place of the
+ * lines of [location], with `\n` between lines, or new code for a step without a location.
+ */
 data class Step(
     val title: String,
     val comment: String,
     val location: Location? = null,
     val id: String? = null,
     val threads: List<StoryThread> = emptyList(),
+    val kind: StepKind = StepKind.EXPLANATION,
+    val proposedCode: String? = null,
 )
+
+/** What a step does for the reader. Story files omit the kind of an explanation. */
+@Serializable
+enum class StepKind(val value: String) {
+    /** Explains the code of the step, or introduces or closes the story. */
+    @SerialName("explanation") EXPLANATION("explanation"),
+
+    /** Gives background for the step before it, for example a method that it calls or a setting that it reads. */
+    @SerialName("context") CONTEXT("context"),
+
+    /** Suggests a change that the agent did not make. */
+    @SerialName("proposal") PROPOSAL("proposal"),
+}
+
+/**
+ * The index of the step that the context step [index] gives background for: the nearest earlier
+ * step that is not context. `null` for other kinds, and for context before the first such step,
+ * which is background for the whole story.
+ */
+fun Story.contextOwner(index: Int): Int? {
+    if (steps[index].kind != StepKind.CONTEXT) return null
+    return (index - 1 downTo 0).firstOrNull { steps[it].kind != StepKind.CONTEXT }
+}
 
 /**
  * One range of lines. [anchorText] is the first line of the range without indentation; the plugin

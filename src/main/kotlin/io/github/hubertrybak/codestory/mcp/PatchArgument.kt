@@ -1,6 +1,7 @@
 package io.github.hubertrybak.codestory.mcp
 
 import com.intellij.mcpserver.annotations.McpDescription
+import io.github.hubertrybak.codestory.core.StepKind
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -49,4 +50,8 @@ internal class PatchShape(
     val comment: String? = null,
     @property:McpDescription("For update: replace the location, including anchorText. Omit to keep it; null makes the step text-only.")
     val location: LocationShape? = null,
+    @property:McpDescription("For update: replace the kind: explanation, context or proposal. Omit to keep it. A step that is no longer a proposal also needs proposedCode null.")
+    val kind: StepKind? = null,
+    @property:McpDescription("For update: replace the code of a proposal. Omit to keep it; null removes it.")
+    val proposedCode: String? = null,
 )

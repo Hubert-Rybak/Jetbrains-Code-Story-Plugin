@@ -57,6 +57,8 @@ class CodeStoryToolset : McpToolset {
         |Only for a story about a change, set baseRef to the SHA of the commit before the change, or HEAD for uncommitted work. The IDE saves the full commit SHA,
         |marks each step "A" (all lines added) or "M" (some lines changed), and shows the diff of a step. A baseRef that Git does not know gives a warning.
         |A step has one small code range, or no location for text-only overview and what-to-check steps.
+        |Most steps explain code. Set kind to context for background that the step before it needs, such as a method that it calls,
+        |or to proposal for a change that you suggest but did not make. A proposal can set proposedCode: the code for the lines of its location.
         |Keep step IDs stable when revising a story; omit them to let the plugin assign IDs.
         |Use 3 to 12 steps (15 at most). Read every file before you call this tool, so that each path and line number is correct.
         |Paths are relative to the Git repository root. Line numbers start at 1, and a range includes its endLine.
@@ -81,7 +83,7 @@ class CodeStoryToolset : McpToolset {
     ): ShowReport = withService { it.show(story.json, storyId, repositoryPath) }
 
     @McpTool(name = "code_story_patch")
-    @McpDescription(description = "Edits a saved story atomically with ordered operations. Use op update with stepId and title, comment or location (including anchorText; null removes the location); op insert with afterStepId and a complete step; op remove with stepId; or op confirm with stepId to make the current code the new reference. Read code_story_get for stable IDs. All operations pass the same validation as code_story_show and return its report; any error saves nothing. Threads stay on their steps by ID; removed-step threads move to the story with a step removed note. The plugin records story changes for fetched comments and adds the summary to code_story_reply. Always pass projectPath, and repositoryPath when IDs are ambiguous.")
+    @McpDescription(description = "Edits a saved story atomically with ordered operations. Use op update with stepId and title, comment, location (including anchorText; null removes the location), kind or proposedCode; op insert with afterStepId and a complete step; op remove with stepId; or op confirm with stepId to make the current code the new reference. Read code_story_get for stable IDs. All operations pass the same validation as code_story_show and return its report; any error saves nothing. Threads stay on their steps by ID; removed-step threads move to the story with a step removed note. The plugin records story changes for fetched comments and adds the summary to code_story_reply. Always pass projectPath, and repositoryPath when IDs are ambiguous.")
     suspend fun patchStory(
         @McpDescription(description = "The existing story ID from code_story_get or code_story_feedback.")
         storyId: String,
