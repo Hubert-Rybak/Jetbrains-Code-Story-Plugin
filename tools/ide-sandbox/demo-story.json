@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-23-how-a-payment-is-charged",
+  "title": "How a payment is charged",
+  "type": "exploration",
+  "summary": "The controller checks the request. The billing service charges the card and records the result in the ledger.",
+  "request": "Explain how a payment is charged",
+  "author": {
+    "agent": "Claude Code",
+    "model": "demo-model"
+  },
+  "createdAt": "2026-10-23T09:00:00Z",
+  "git": {
+    "branch": "main",
+    "commit": null
+  },
+  "steps": [
+    {
+      "id": "controller",
+      "title": "The controller takes the request",
+      "comment": "`PaymentController.charge` rejects amounts out of range, then calls the billing service. The response tells the client whether the charge worked.",
+      "location": {
+        "file": "src/main/kotlin/payments/PaymentController.kt",
+        "startLine": 4,
+        "endLine": 10,
+        "anchorText": "fun charge(request: ChargeRequest): Response {",
+        "rangeText": "    fun charge(request: ChargeRequest): Response {\n        if (request.amount <= 0 || request.amount > ChargeRequest.MAX_AMOUNT) {\n            return Response.badRequest(\"The amount is out of range.\")\n        }\n        val result = billing.charge(request.card, request.amount)\n        return if (result.ok) Response.ok(result.id) else Response.failed(result.error)\n    }"
+      }
+    },
+    {
+      "id": "limit",
+      "kind": "context",
+      "title": "The amount limit",
+      "comment": "`ChargeRequest.MAX_AMOUNT` is the largest amount, in cents, that the controller accepts.",
+      "location": {
+        "file": "src/main/kotlin/payments/ChargeRequest.kt",
+        "startLine": 4,
+        "endLine": 7,
+        "anchorText": "companion object {",
+        "rangeText": "    companion object {\n        /** The largest amount in cents that one charge can take. */\n        const val MAX_AMOUNT = 1_000_000L\n    }"
+      }
+    },
+    {
+      "id": "billing",
+      "title": "Charge the card and record it",
+      "comment": "The billing service sends the amount to the payment provider. It records every result in the ledger, also a failed charge.",
+      "location": {
+        "file": "src/main/kotlin/payments/BillingService.kt",
+        "startLine": 4,
+        "endLine": 8,
+        "anchorText": "fun charge(card: Card, amount: Long): ChargeResult {",
+        "rangeText": "    fun charge(card: Card, amount: Long): ChargeResult {\n        val result = provider.charge(card, amount)\n        ledger.record(card, amount, result)\n        return result\n    }"
+      }
+    },
+    {
+      "id": "provider",
+      "kind": "context",
+      "title": "The provider interface",
+      "comment": "Each payment provider implements `PaymentProvider.charge`.",
+      "location": {
+        "file": "src/main/kotlin/payments/Model.kt",
+        "startLine": 6,
+        "endLine": 8,
+        "anchorText": "interface PaymentProvider {",
+        "rangeText": "interface PaymentProvider {\n    fun charge(card: Card, amount: Long): ChargeResult\n}"
+      }
+    },
+    {
+      "id": "retry",
+      "kind": "proposal",
+      "title": "Retry a timed-out charge",
+      "comment": "One retry completes a charge after a short timeout of the payment provider.",
+      "location": {
+        "file": "src/main/kotlin/payments/BillingService.kt",
+        "startLine": 5,
+        "endLine": 5,
+        "anchorText": "val result = provider.charge(card, amount)",
+        "rangeText": "        val result = provider.charge(card, amount)"
+      },
+      "proposedCode": "        val result = provider.charge(card, amount)\n            .takeIf { it.ok || it.error != \"timeout\" }\n            ?: provider.charge(card, amount)"
+    },
+    {
+      "id": "test",
+      "kind": "proposal",
+      "title": "Test the retry",
+      "comment": "A test with a provider that times out once shows that the retry works.",
+      "proposedCode": "@Test\nfun `a timed-out charge is retried once`() {\n    val provider = TimingOutOnce()\n    assertTrue(BillingService(provider, NoLedger).charge(card, 100).ok)\n}"
+    },
+    {
+      "id": "checks",
+      "title": "What to check",
+      "comment": "Check these cases.\n- An amount of 0 or above the limit\n- A provider that fails\n- A provider that times out"
+    }
+  ]
+}

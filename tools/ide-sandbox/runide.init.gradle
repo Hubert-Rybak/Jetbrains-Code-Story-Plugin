@@ -1,0 +1,16 @@
+// Opens a project in the sandbox IDE of `./gradlew runIde`, for UI checks and screenshots.
+// See "Run the plugin in a sandbox IDE" in CLAUDE.md.
+//
+//   SANDBOX_PROJECT  the project to open, for example a copy of tools/ide-sandbox/demo
+//   SANDBOX_SCALE    optional UI scale, for example 2 for sharp screenshots
+//
+// The sandbox trusts every project and shows no tips, so no dialog blocks the project frame.
+allprojects {
+    tasks.matching { it.name == 'runIde' }.configureEach { task ->
+        task.jvmArgs('-Didea.trust.all.projects=true', '-Dide.show.tips.on.startup.default.value=false', '-Xmx2g')
+        def scale = System.getenv('SANDBOX_SCALE')
+        if (scale) task.jvmArgs('-Dsun.java2d.uiScale.enabled=true', "-Dsun.java2d.uiScale=$scale")
+        def project = System.getenv('SANDBOX_PROJECT')
+        if (project) task.args(project)
+    }
+}
