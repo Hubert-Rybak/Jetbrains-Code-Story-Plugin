@@ -202,34 +202,6 @@ for a pull request description.
 - [Changelog](CHANGELOG.md): the changes in each version.
 - [Product specification](spec.md): the design of the plugin.
 
-## Known limits
-
-- **Local IDE only.** Remote development, split mode and JetBrains Client are not
-  supported.
-- **Not on JetBrains Marketplace yet.** Install the zip from disk. The IDE does not update
-  the plugin automatically.
-- **Tested in Rider and IntelliJ IDEA.** Other IntelliJ-based IDEs from 2025.3 load the
-  plugin, but are not tested.
-- **The MCP server is off by default.** Only you can switch it on. Without it, agents
-  deliver stories as files and get no validation report.
-- **One IDE per agent connection.** An agent talks to the MCP server of the IDE that it is
-  configured for. When the project is not open in that IDE, the skill writes a file.
-- **Listening needs an active agent.** The plugin cannot restart an agent turn that ended.
-  If the agent does not listen, continue with `/code-story feedback`.
-- **Text anchors.** Steps anchor to a file, a line range and the text of the first line,
-  not to code symbols. After large edits, steps can be **lost** until the agent refreshes
-  them.
-- **Git only.** Change information needs Git and the Git plugin. Other version control
-  systems are not supported.
-- **Agent-written stories.** You cannot edit, rename or reorder stories or steps in the
-  IDE; ask the agent. One story plays at a time in a project, and each step has one code
-  range at most. The plugin never applies a proposal itself: your agent applies it, or you
-  apply it in the diff viewer.
-- **Writing checks for English only.** The checks are mechanical. There is no check
-  against the ASD-STE100 dictionary.
-- **Your own agent.** Comments go to your agent, not to the author of a shared story.
-- **No CodeTour import or export** yet.
-
 ## Privacy and security
 
 - The plugin makes no network calls and sends no telemetry.
