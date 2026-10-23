@@ -32,7 +32,10 @@ Import the repository as a Gradle project, or run:
 ```
 
 The installable zip is in `build/distributions/`. `./gradlew runIde` launches the
-baseline IDEA sandbox.
+baseline IDEA sandbox. To run it without a screen, for example in a container, or to take
+the screenshots of the README, see
+[Run the plugin in a sandbox IDE](CLAUDE.md#run-the-plugin-in-a-sandbox-ide). The helpers
+and a demo project are in [`tools/ide-sandbox`](tools/ide-sandbox).
 
 ## Tests
 

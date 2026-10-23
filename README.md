@@ -47,7 +47,7 @@ a short comment in a card beside the code.
 </p>
 
 <p align="center">
-  <i>The step card beside the highlighted code. The images in this README are illustrations of the layout.</i>
+  <i>The step card beside the highlighted code. The images of the step card, the tool window and the comments are illustrations of the layout.</i>
 </p>
 
 ## Highlights
@@ -141,6 +141,13 @@ The story starts at step 1. Use **Prev** and **Next** in the step card or in the
 Numbered gutter badges go to the other steps in the file. **Play** in the tool window
 continues a story at your last step.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/tool-window-dark.png">
+    <img src="docs/images/tool-window-light.png" alt="The Code Story tool window: a toolbar, stories grouped under Local and Shared with dates, branches and step statuses, a details pane for the selected step, and the comment input below it." width="720">
+  </picture>
+</p>
+
 ### Read a story in the timeline
 
 **Open in Timeline** in the tool window shows every step of the story from top to bottom
@@ -152,8 +159,15 @@ line and highlights the step. The timeline follows **Prev**, **Next** and your e
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/tool-window-dark.png">
-    <img src="docs/images/tool-window-light.png" alt="The Code Story tool window: a toolbar, stories grouped under Local and Shared with dates, branches and step statuses, a details pane for the selected step, and the comment input below it." width="720">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/timeline-dark.png">
+    <img src="docs/images/timeline-light.png" alt="The editor and the Code Story Timeline side by side. The editor highlights the code of step 3 and shows its gutter badge. In the timeline, step 3 is the current step, with its explanation, its code and the comment input. Below it are a context step and a proposal." width="800">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/timeline-proposals-dark.png">
+    <img src="docs/images/timeline-proposals-light.png" alt="Two proposals in the timeline. The first shows two added lines as a change of the current code, with Preview change and Ask agent to apply. The second proposes a new test." width="420">
   </picture>
 </p>
 
@@ -209,7 +223,8 @@ for a pull request description.
   systems are not supported.
 - **Agent-written stories.** You cannot edit, rename or reorder stories or steps in the
   IDE; ask the agent. One story plays at a time in a project, and each step has one code
-  range at most. The plugin never applies a proposal itself; your agent does.
+  range at most. The plugin never applies a proposal itself: your agent applies it, or you
+  apply it in the diff viewer.
 - **Writing checks for English only.** The checks are mechanical. There is no check
   against the ASD-STE100 dictionary.
 - **Your own agent.** Comments go to your agent, not to the author of a shared story.
