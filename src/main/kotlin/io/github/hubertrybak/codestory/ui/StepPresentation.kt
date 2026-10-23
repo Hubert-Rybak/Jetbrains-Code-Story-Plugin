@@ -69,7 +69,7 @@ class StepPresentation(
     private val project: Project,
     val editor: Editor,
     private var stored: StoredStory,
-    private val index: Int,
+    val index: Int,
     private val player: StoryPlayer,
 ) : Disposable {
     val card = StepCardPanel(project, stored, index, player, ::dismissCard, ::queueUpdate, ::focusCode)
@@ -392,7 +392,7 @@ internal class StepNumberIcon(number: Int, private val current: Boolean, private
 
 private class StepBadge(
     private val stored: StoredStory,
-    private val index: Int,
+    val index: Int,
     private val current: Boolean,
     private val player: StoryPlayer,
     private val editor: Editor,

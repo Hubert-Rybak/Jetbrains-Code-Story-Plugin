@@ -161,6 +161,36 @@ and dark themes, including narrow and split editors.
       Next Step / Previous Step / Stop Story. Change each shortcut in Keymap
       and confirm that the new shortcut works.
 
+## Timeline
+
+Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin), in light and dark
+themes, with the timeline docked right, docked bottom and in **View Mode | Window**.
+
+- [ ] **Open in Timeline** (toolbar and context menu), the timeline button in the step
+      card and **Ctrl+Alt+Shift+Z**, then **T**, show the story in the **Code Story
+      Timeline** tool window. The story list at the top switches between stories.
+- [ ] Every step shows its number on the line of the timeline, its title, file and
+      lines, the explanation and its code with the colors and line numbers of its file.
+      Long lines wrap; the mouse wheel over code scrolls the timeline.
+- [ ] Context steps hang from the line under their step with a dashed border. Proposals
+      have a green border, a square number and a **Proposal** chip; their code shows
+      removed and added lines with the line numbers before and after the change.
+- [ ] A click on a code line opens the file at that line with the step's highlight and
+      gutter badges and no step card; the keyboard focus stays in the timeline. A
+      double-click or a click on the file name moves the focus to the editor.
+- [ ] **Prev**, **Next**, the gutter badges and the tree move the current step; the
+      timeline marks it and scrolls it into view without jumping when it is visible.
+- [ ] Editing a step's file updates its code in the timeline after a short pause and
+      shows "code changed" or "lost" when the code changes or goes.
+- [ ] **Preview change** opens the diff viewer with the proposal in place. **Ask agent
+      to apply** posts a change request that a listening agent applies; the step then
+      becomes an explanation, and the link is hidden while the request waits.
+- [ ] The current step has the comment input; **Ctrl+Alt+Shift+Z**, then **C**, focuses it.
+      Reply in another step's thread shows the input there. Story comments are at the end.
+- [ ] **Play with Step Card** continues at the same step with the card. A new story opens
+      in the view that was used last, and the setting in **Settings | Tools | Code Story**
+      shows it.
+
 ## Anchoring
 
 Repeat these checks in Rider (C#) and IntelliJ IDEA (Java/Kotlin).

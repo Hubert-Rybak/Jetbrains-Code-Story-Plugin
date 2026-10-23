@@ -42,6 +42,7 @@ import io.github.hubertrybak.codestory.StoryGitMetadata
 import io.github.hubertrybak.codestory.StoryFileWatcher
 import io.github.hubertrybak.codestory.core.Location
 import io.github.hubertrybak.codestory.core.StepChange
+import io.github.hubertrybak.codestory.core.StepKind
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryGit
@@ -59,6 +60,7 @@ import java.awt.datatransfer.StringSelection
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.Future
+import javax.swing.Icon
 import javax.swing.JPanel
 import javax.swing.JTree
 import javax.swing.tree.DefaultMutableTreeNode
@@ -67,6 +69,20 @@ import javax.swing.tree.TreePath
 
 /** A story row in the tree. [changes] is `null` for a story without a base, or without the Git plugin. */
 class StoryItem(val stored: StoredStory, val changes: StoryChanges? = null)
+
+fun storyTypeIcon(type: StoryType): Icon = when (type) {
+    StoryType.CHANGE -> AllIcons.Actions.Diff
+    StoryType.EXPLORATION -> AllIcons.Actions.Find
+    StoryType.BUG_TRACE -> AllIcons.Actions.StartDebugger
+    StoryType.REVIEW -> AllIcons.Actions.Checked
+}
+
+fun storyTypeLabel(type: StoryType): String = when (type) {
+    StoryType.CHANGE -> "Change"
+    StoryType.EXPLORATION -> "Exploration"
+    StoryType.BUG_TRACE -> "Bug trace"
+    StoryType.REVIEW -> "Review"
+}
 
 class RepositoryItem(val root: Path)
 class StoryFolderItem(val root: Path, val shared: Boolean) {
@@ -96,9 +112,10 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     private val comments = StoryComments(project, ::manageStory)
     val details = StoryDetailsPanel(comments, ::showDiff)
     /** The context menu of stories and steps. */
-    val contextActions = DefaultActionGroup(RestartAction(), CommentAction(), RequestRefreshAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
+    val contextActions = DefaultActionGroup(RestartAction(), TimelineAction(), CommentAction(), RequestRefreshAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
     val toolbarActions = DefaultActionGroup().apply {
         add(PlayAction())
+        add(TimelineAction())
         add(ActionManager.getInstance().getAction("CodeStory.PreviousStep"))
         add(ActionManager.getInstance().getAction("CodeStory.NextStep"))
         add(ActionManager.getInstance().getAction("CodeStory.StopStory"))
@@ -354,6 +371,16 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         override fun actionPerformed(e: AnActionEvent) { selectedStory()?.let { player.play(it) } }
     }
 
+    /** Every step of the selected story in the timeline beside the editor. A playing story continues there. */
+    private inner class TimelineAction : DumbAwareAction("Open in Timeline", "Show every step of the selected story in the timeline beside the editor", CodeStoryIcons.Timeline) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
+        override fun actionPerformed(e: AnActionEvent) {
+            val stored = selectedStory() ?: return
+            StoryTimeline.getInstance(project).open(player.currentStory?.takeIf { it.key == stored.key } ?: stored)
+        }
+    }
+
     private inner class RestartAction : DumbAwareAction("Restart", "Play the selected story from step 1", AllIcons.Actions.Restart) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
@@ -513,12 +540,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer, private val
                 toolTipText = item.root.resolve(".codestory").resolve(item.name.lowercase()).toString()
             }
             is StoryItem -> {
-                icon = when (item.stored.story.type) {
-                    StoryType.CHANGE -> AllIcons.Actions.Diff
-                    StoryType.EXPLORATION -> AllIcons.Actions.Find
-                    StoryType.BUG_TRACE -> AllIcons.Actions.StartDebugger
-                    StoryType.REVIEW -> AllIcons.Actions.Checked
-                }
+                icon = storyTypeIcon(item.stored.story.type)
                 append(item.stored.story.title)
                 if (item.stored.isNew) append("  new", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                 append("  ${item.stored.date}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
@@ -535,6 +557,9 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer, private val
                 val attributes = if (player.currentStory?.key == item.stored.key && player.stepIndex == item.index)
                     SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else SimpleTextAttributes.REGULAR_ATTRIBUTES
                 append("${item.index + 1}. ${item.step.title}", attributes)
+                item.step.kind.takeIf { it != StepKind.EXPLANATION }?.let { kind ->
+                    append("  ${stepKindLabel(kind).lowercase()}", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, TimelineColors.of(kind)))
+                }
                 if (location != null) append("  ${location.file.substringAfterLast('/')}:${lines(location)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 item.change?.let { change ->
                     val color = if (change == StepChange.ADDED) FileStatus.ADDED.color else FileStatus.MODIFIED.color

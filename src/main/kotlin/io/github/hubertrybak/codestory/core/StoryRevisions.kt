@@ -16,6 +16,10 @@ object StoryRevisions {
             step.location?.let { location ->
                 add(location.file); add(location.startLine); add(location.endLine); add(location.anchorText)
             }
+            // Saved snapshots come from versions without kinds, so an explanation keeps its fingerprint.
+            if (step.kind != StepKind.EXPLANATION || step.proposedCode != null) {
+                add(step.kind.value); add(step.proposedCode)
+            }
         }.toString()
         val digest = MessageDigest.getInstance("SHA-256").digest(content.toByteArray(Charsets.UTF_8))
         StoryStepSnapshot(checkNotNull(step.id), digest.joinToString("") { "%02x".format(it) })

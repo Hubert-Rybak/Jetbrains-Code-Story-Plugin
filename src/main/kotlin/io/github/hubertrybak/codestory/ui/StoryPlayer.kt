@@ -24,8 +24,10 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.util.messages.Topic
 import io.github.hubertrybak.codestory.AnchorTracker
 import io.github.hubertrybak.codestory.CodeStoryService
+import io.github.hubertrybak.codestory.CodeStorySettings
 import io.github.hubertrybak.codestory.LiveSnapshot
 import io.github.hubertrybak.codestory.StoryReaderState
+import io.github.hubertrybak.codestory.StoryView
 import io.github.hubertrybak.codestory.core.StepStatus
 import io.github.hubertrybak.codestory.core.StoredStory
 import io.github.hubertrybak.codestory.core.StoryAnchors
@@ -103,12 +105,45 @@ class StoryPlayer(private val project: Project) : Disposable {
     val isPlaying get() = currentStory != null
     val isLastStep get() = currentStory?.let { stepIndex == it.story.steps.lastIndex } == true
 
+    /**
+     * Where the reader follows the steps: the step card beside the code, or the timeline. In the
+     * timeline, the editor shows the code of the step with its highlight and gutter badges, and no card.
+     */
+    val view: StoryView get() = CodeStorySettings.getInstance().state.storyView
+
     fun wasVisited(stored: StoredStory, index: Int) = index in visited[stored.key].orEmpty()
 
     /** Without an explicit index, Play resumes the position saved in this IDE's workspace. */
-    fun play(stored: StoredStory, index: Int? = null) = play(stored, index, null)
+    fun play(stored: StoredStory, index: Int? = null) = start(stored, index, null)
 
-    private fun play(stored: StoredStory, index: Int?, afterPresentation: (() -> Unit)?) {
+    /**
+     * Plays in [view], which new stories then also use. [afterPresentation] gets the presentation of
+     * the step in its editor when the step shows, or `null` when the step has no code in an editor.
+     */
+    fun play(stored: StoredStory, index: Int?, view: StoryView, afterPresentation: (StepPresentation?) -> Unit = {}) {
+        CodeStorySettings.getInstance().state.storyView = view
+        start(stored, index) {
+            afterPresentation(presentation?.takeIf { it.index == stepIndex && it.card.currentStory.key == currentStory?.key && !it.disposed })
+        }
+    }
+
+    /** Continues the playing story in [view] at the same step. New stories also open in [view]. */
+    fun showIn(view: StoryView) {
+        ApplicationManager.getApplication().assertIsDispatchThread()
+        CodeStorySettings.getInstance().state.storyView = view
+        val current = currentStory
+        when {
+            current == null -> changed()
+            view == StoryView.CARD -> play(current, stepIndex)
+            else -> {
+                presentation?.dismissCard()
+                showExplanation()
+                changed()
+            }
+        }
+    }
+
+    private fun start(stored: StoredStory, index: Int?, afterPresentation: (() -> Unit)?) {
         ApplicationManager.getApplication().assertIsDispatchThread()
         if (disposed || project.isDisposed) return
         cancelPending()
@@ -210,8 +245,31 @@ class StoryPlayer(private val project: Project) : Disposable {
         currentStory = resolved.withNewMarker(false)
         stepIndex = target
         visited.getOrPut(resolved.key) { mutableSetOf() }.add(target)
-        if (editor != null) presentation!!.showCard()
-        else ToolWindowManager.getInstance(project).getToolWindow(CodeStoryService.TOOL_WINDOW_ID)?.show()
+        when {
+            editor == null -> showExplanation()
+            view == StoryView.CARD -> presentation!!.showCard()
+            else -> {
+                // The timeline explains the step, so the editor shows only its code.
+                presentation!!.dismissCard()
+                showExplanation()
+            }
+        }
+    }
+
+    /**
+     * Shows the explanation of a step that has no card: the details pane of the Code Story tool
+     * window, or the timeline. A visible Code Story tool window also explains the step in the
+     * timeline view, so it stays in view.
+     */
+    private fun showExplanation() {
+        val manager = ToolWindowManager.getInstance(project)
+        val details = manager.getToolWindow(CodeStoryService.TOOL_WINDOW_ID)
+        if (view == StoryView.CARD) {
+            details?.show()
+            return
+        }
+        val timeline = manager.getToolWindow(CodeStoryService.TIMELINE_TOOL_WINDOW_ID)
+        if (timeline?.isVisible != true && details?.isVisible != true) timeline?.show()
     }
 
     fun restart(stored: StoredStory) = play(stored, 0)
@@ -221,7 +279,7 @@ class StoryPlayer(private val project: Project) : Disposable {
         val index = stepIndex.coerceAtMost(stored.story.steps.lastIndex)
         val comments = presentation?.card?.comments
         clearPresentation()
-        play(stored, index) { comments?.let { presentation?.card?.comments?.restoreInput(it) } }
+        start(stored, index) { comments?.let { presentation?.card?.comments?.restoreInput(it) } }
     }
     /** Sharing changes the file location without restarting playback or moving the editor. */
     fun relocated(previous: StoredStory, stored: StoredStory) {
@@ -252,7 +310,8 @@ class StoryPlayer(private val project: Project) : Disposable {
 
     fun commentOnCurrentStep() {
         val current = currentStory ?: return
-        if (current.story.steps[stepIndex].location != null && presentation != null) presentation!!.startComment()
+        if (view == StoryView.TIMELINE) StoryTimeline.getInstance(project).startComment()
+        else if (current.story.steps[stepIndex].location != null && presentation != null) presentation!!.startComment()
         else {
             ToolWindowManager.getInstance(project).getToolWindow(CodeStoryService.TOOL_WINDOW_ID)?.show {
                 project.messageBus.syncPublisher(StoryCommentListener.TOPIC).commentRequested()

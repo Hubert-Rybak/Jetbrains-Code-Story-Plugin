@@ -17,6 +17,32 @@ Use the key lines only, usually 30 lines or fewer. Skip renames, formatting,
 generated code, lock files and imports; mention mechanical changes in at most one
 summary sentence. An overview or a final list of checks may be text-only.
 
+## Step kinds
+
+Most steps explain code, and need no `kind`. Two other kinds help the reader:
+
+- `context`: background that the step before it needs, for example a method that it
+  calls, a type that it uses or a setting that it reads. Put a context step directly
+  after the step that it supports; the reader sees it under that step. Context before
+  the first explanation is background for the whole story. Keep context short, and do
+  not repeat the explanation of the step.
+- `proposal`: a change that you suggest but did not make, for example the fix at the end
+  of a bug trace or an improvement in a review. Point `location` at the lines that the
+  proposal changes, and put their new code in `proposedCode`, with the indentation of the
+  file. An empty `proposedCode` proposes to remove the lines. Without a location,
+  `proposedCode` is new code, for example a new test. A proposal in words only has no
+  `proposedCode`. Only a proposal can have `proposedCode`.
+
+Do not apply a proposal while you write a story. The reader sees the proposal as a change
+of the code, and can ask you to apply it. That request arrives as a change request on the
+proposal step, with its `kind` and `proposedCode`. Apply the proposed code at the current
+lines of the step. Then update the step: set `kind` to `explanation`, set `proposedCode`
+to null, and explain the new code. Remove the step instead when the story does not need it.
+
+Readers follow a story with the step card beside the code, or in the timeline, which
+shows every step from top to bottom with its code. Order the steps so that they read well
+in sequence.
+
 ## Stories about a change
 
 Set `baseRef` only for a story about a change, usually of type `change` or `review`.
@@ -157,7 +183,9 @@ Answer every comment with `code_story_reply(storyId, replies)`. Each reply has t
   Summarize the changes in `text` and supply `changedFiles`, an array of repository-relative
   code paths. Use `[]` for a story-only refresh. The plugin rejects `done` with
   `stale-steps` until all listed steps are reviewed after feedback was fetched. Later
-  code edits require another review. Questions cannot use `done`.
+  code edits require another review. Questions cannot use `done`. For a change request on
+  a proposal step, apply its `proposedCode`, then make the step an explanation of the new
+  code, or remove the step.
 - `declined`: you cannot or should not answer or make the change. Give the reason in 1 to 3 sentences.
 
 Answers follow the writing rules above, with larger limits: 1 to 5 sentences, or one
@@ -182,6 +210,8 @@ The `story` parameter is a typed JSON object, not a JSON string. Supply `title`,
 Add `baseRef` only for a story about a change.
 Each step has `title`, `comment`, an optional stable `id`, and either one `location`
 object or no location. A location has `file`, `startLine`, `endLine` and `anchorText`.
+A context step has `"kind": "context"`. A proposal has `"kind": "proposal"` and an optional
+`proposedCode`: text with `\n` between lines. Omit `kind` for an explanation.
 The plugin assigns IDs to new steps whose IDs are omitted.
 `children` and `links` are reserved and ignored in v1; do not use them.
 
@@ -218,6 +248,17 @@ This example illustrates the format; verify paths and lines in the actual projec
       }
     },
     {
+      "kind": "context",
+      "title": "The amount limit",
+      "comment": "`ChargeRequest.MaxAmount` is the largest amount that the controller accepts.",
+      "location": {
+        "file": "src/Payments/ChargeRequest.cs",
+        "startLine": 8,
+        "endLine": 8,
+        "anchorText": "public const decimal MaxAmount = 10000m;"
+      }
+    },
+    {
       "title": "Charge the card",
       "comment": "The billing service sends the amount to the payment provider and saves the result.",
       "location": {
@@ -226,6 +267,18 @@ This example illustrates the format; verify paths and lines in the actual projec
         "endLine": 35,
         "anchorText": "public ChargeResult Charge(Card card, decimal amount)"
       }
+    },
+    {
+      "kind": "proposal",
+      "title": "Retry a timed-out charge",
+      "comment": "One retry completes a charge after a short timeout of the payment provider.",
+      "location": {
+        "file": "src/Payments/BillingService.cs",
+        "startLine": 27,
+        "endLine": 27,
+        "anchorText": "var result = _provider.Charge(card, amount);"
+      },
+      "proposedCode": "        var result = Retry.Once(() => _provider.Charge(card, amount));"
     }
   ]
 }
@@ -239,8 +292,10 @@ code, call `code_story_patch(storyId, operations)` with `projectPath` and, when 
 `repositoryPath`. Operations run in list order:
 
 - Update: `{"op":"update","stepId":"entry","comment":"The controller checks the request."}`.
-  You may supply `title`, `comment`, or a complete `location` with `anchorText`.
-  Omitted fields stay unchanged; `location: null` makes the step text-only.
+  You may supply `title`, `comment`, a complete `location` with `anchorText`, `kind` or
+  `proposedCode`. Omitted fields stay unchanged; `location: null` makes the step text-only,
+  and `proposedCode: null` removes the proposed code. After you apply a proposal, use
+  `{"op":"update","stepId":"retry","kind":"explanation","proposedCode":null,"comment":"..."}`.
 - Insert: `{"op":"insert","afterStepId":"entry","step":{"title":"Validation","comment":"Invalid requests stop here."}}`.
   The plugin assigns a stable ID when `step.id` is omitted. Supply an ID to refer to it
   in a later operation in the same call.

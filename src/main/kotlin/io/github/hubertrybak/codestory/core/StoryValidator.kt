@@ -227,11 +227,46 @@ class StoryValidator(
             val title = text(element, "title", owner, STEP_TITLE_HINT)
             val comment = text(element, "comment", owner, COMMENT_HINT)
             val id = if (readMetadata) text(element, "id", owner, ID_HINT) else nullableText(element, "id", owner, ID_HINT)
+            val kind = stepKind(owner, element)
+            val hasLocation = if (id in unchangedSteps) unchangedSteps[id]?.location != null
+                else element["location"] != null && element["location"] != JsonNull
             val location = if (id in unchangedSteps) unchangedSteps[id]?.location
-                else if (element["location"] == null || element["location"] == JsonNull) null else location(owner, element)
+                else if (!hasLocation) null else location(owner, element)
+            val proposedCode = proposedCode(owner, element, kind, hasLocation)
             val threads = if (readMetadata) threads(element, owner) else emptyList()
             // `children` and `links` are reserved for later modes and ignored in v1.
-            return if (title != null && comment != null && threads != null) Step(title, comment, location, id, threads) else null
+            return if (title != null && comment != null && threads != null) Step(title, comment, location, id, threads, kind, proposedCode) else null
+        }
+
+        /** A step without a kind explains its code. After an error, the step counts as an explanation. */
+        private fun stepKind(owner: Owner, step: JsonObject): StepKind {
+            if (step["kind"] == null || step["kind"] == JsonNull) return StepKind.EXPLANATION
+            val value = text(step, "kind", owner, KIND_HINT) ?: return StepKind.EXPLANATION
+            return StepKind.entries.firstOrNull { it.value == value } ?: StepKind.EXPLANATION.also {
+                error(owner, ErrorCode.INVALID_VALUE, "${owner.subject} has an unknown `kind`: `${quote(value)}`.", KIND_HINT)
+            }
+        }
+
+        /**
+         * The code that a proposal puts in place, with `\n` between lines. It keeps its indentation
+         * and empty lines. An empty text proposes to remove the lines of the step.
+         */
+        private fun proposedCode(owner: Owner, step: JsonObject, kind: StepKind, hasLocation: Boolean): String? {
+            val element = step["proposedCode"]
+            if (element == null || element is JsonNull) return null
+            if (element !is JsonPrimitive || !element.isString) {
+                return error(owner, ErrorCode.WRONG_TYPE, "${owner.where}, `proposedCode` must be text.", PROPOSED_CODE_HINT)
+            }
+            if (kind != StepKind.PROPOSAL) {
+                return error(owner, ErrorCode.INVALID_VALUE, "${owner.subject} has `proposedCode`, but only a proposal step proposes code.",
+                    "Set `kind` to `proposal`, or set `proposedCode` to null.")
+            }
+            val code = element.content.replace("\r\n", "\n").replace('\r', '\n').removeSuffix("\n")
+            if (code.isEmpty() && !hasLocation) {
+                return error(owner, ErrorCode.EMPTY_TEXT, "${owner.subject} has an empty `proposedCode` and no `location`.",
+                    "Add the proposed code, or add the `location` of the lines that the proposal removes.")
+            }
+            return code
         }
 
         private fun obj(parent: JsonObject, name: String, owner: Owner, hint: String): JsonObject? = when (val element = parent[name]) {
@@ -413,6 +448,8 @@ class StoryValidator(
         private const val TITLE_HINT = "Give the story a short `title` (8 words or fewer)."
         private const val STEPS_HINT = "Add `steps`: a list of 3 to 12 steps (15 at most). Each step explains one idea."
         private const val STEP_HINT = "Send each step as an object with `title`, `comment` and an optional `location`."
+        private const val KIND_HINT = "Set `kind` to `explanation`, `context` or `proposal`, or omit it for an explanation."
+        private const val PROPOSED_CODE_HINT = "Set `proposedCode` to the code that replaces the lines of the step, with `\\n` between lines."
         private const val STEP_TITLE_HINT = "Give the step a short `title` (8 words or fewer)."
         private const val COMMENT_HINT = "Add a `comment` that explains the code of the step in 1 to 3 short sentences."
         private const val LOCATION_HINT = "Add a `location` with `file`, `startLine`, `endLine` and `anchorText`."

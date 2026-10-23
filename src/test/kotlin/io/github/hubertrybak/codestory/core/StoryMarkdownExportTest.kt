@@ -54,6 +54,54 @@ class StoryMarkdownExportTest {
         assertTrue(result, result.contains("Keep **formatting** and [links](docs/readme.md)."))
     }
 
+    @Test fun `exports context as sections of their step and proposals with their code`() {
+        val result = StoryMarkdownExport.render(story(
+            Step("Charge", "Call `charge()` once.", Location("src/App.kt", 42, 43, "val result = charge()", "val result = charge()\nreturn result")),
+            Step("The provider call", "The provider can time out.", Location("src/Provider.kt", 9, 9), kind = StepKind.CONTEXT),
+            Step("Retry once", "A retry hides short failures.", Location("src/App.kt", 42, 43, "val result = charge()", "val result = charge()\nreturn result"),
+                kind = StepKind.PROPOSAL, proposedCode = "val result = retry { charge() }\nreturn result"),
+            Step("Add a test", "Cover the retry with ```fences```.", kind = StepKind.PROPOSAL, proposedCode = "@Test\nfun retries() = check(\"````\")"),
+        ))
+        assertEquals("""
+            # Payment flow
+
+            The **controller** charges the card.
+
+            ## 1. Charge
+
+            [src/App\.kt:L42-L43](src/App.kt#L42-L43)
+
+            Call `charge()` once.
+
+            ### 2. Context: The provider call
+
+            [src/Provider\.kt:L9-L9](src/Provider.kt#L9-L9)
+
+            The provider can time out.
+
+            ## 3. Proposal: Retry once
+
+            [src/App\.kt:L42-L43](src/App.kt#L42-L43)
+
+            A retry hides short failures.
+
+            ```diff
+            -val result = charge()
+            +val result = retry { charge() }
+             return result
+            ```
+
+            ## 4. Proposal: Add a test
+
+            Cover the retry with ```fences```.
+
+            `````
+            @Test
+            fun retries() = check("````")
+            `````
+        """.trimIndent() + "\n", result)
+    }
+
     @Test fun `comment threads in a saved file are never exported`() {
         val time = Instant.parse("2026-10-05T12:00:00Z")
         val thread = StoryThread("private", ThreadKind.QUESTION, ThreadState.SUBMITTED, listOf(ThreadMessage(MessageAuthor.READER, 1, time, "Private reviewer thread")))

@@ -155,6 +155,14 @@
           "minLength": 1,
           "pattern": "\\S"
         },
+        "kind": {
+          "description": "What the step does for the reader. explanation (the default, omitted in saved files) explains code, or introduces or closes the story. context gives background for the nearest earlier step that is not context, for example a method that it calls; context before the first such step is background for the whole story. proposal suggests a change that the agent did not make.",
+          "enum": [
+            "explanation",
+            "context",
+            "proposal"
+          ]
+        },
         "title": {
           "description": "The step title: 8 words or fewer.",
           "type": "string",
@@ -168,7 +176,7 @@
           "pattern": "\\S"
         },
         "location": {
-          "description": "Exactly one location or none. Omit it or use null for a text-only step.",
+          "description": "Exactly one location or none. Omit it or use null for a text-only step. For a proposal, the lines that the proposal changes.",
           "anyOf": [
             {
               "$ref": "#/$defs/location"
@@ -177,6 +185,10 @@
               "type": "null"
             }
           ]
+        },
+        "proposedCode": {
+          "description": "Only for a proposal step: the code that replaces the lines of the location, with \\n between lines; an empty text proposes to remove them. Without a location, it is new code. The plugin removes a final line break.",
+          "type": "string"
         },
         "children": {
           "description": "Reserved for later modes; ignored in v1.",
@@ -194,6 +206,22 @@
           "items": {
             "$ref": "#/$defs/thread"
           }
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "not": {
+              "const": "proposal"
+            }
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "proposedCode"
+          ]
         }
       }
     },

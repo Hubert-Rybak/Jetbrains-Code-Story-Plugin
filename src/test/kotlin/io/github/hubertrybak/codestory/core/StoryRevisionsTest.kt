@@ -44,6 +44,19 @@ class StoryRevisionsTest {
         assertNull(StoryRevisions.summary(StoryRevisions.snapshot(withCode), StoryRevisions.snapshot(differentCode)))
     }
 
+    @Test
+    fun `explanations keep their fingerprints and changed kinds or proposed code count as updates`() {
+        val explanation = StoryRevisions.snapshot(initial)
+        // Versions without step kinds saved the same fingerprint in comment threads.
+        assertEquals(sha256("[\"Entry\",\"The app starts here.\"]"), explanation.first().fingerprint)
+        val proposal = initial.copy(steps = listOf(initial.steps[0].copy(kind = StepKind.PROPOSAL), initial.steps[1]))
+        assertEquals("Step 1 updated", StoryRevisions.summary(explanation, StoryRevisions.snapshot(proposal)))
+        val code = proposal.copy(steps = listOf(proposal.steps[0].copy(proposedCode = "retry()"), proposal.steps[1]))
+        assertEquals("Step 1 updated", StoryRevisions.summary(StoryRevisions.snapshot(proposal), StoryRevisions.snapshot(code)))
+    }
+
+    private fun sha256(text: String) = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+
     private fun revise(before: Story, steps: List<Step>) = StoryRevisions.record(before, StoryThreads.carryOver(before, before.copy(steps = steps)))
     private fun roundTrip(story: Story) = (StoryFormat.decode(StoryFormat.encode(story, "2026-10-10-story")) as StoryFormat.Decoded.Valid).story
 }

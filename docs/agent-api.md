@@ -8,6 +8,7 @@ debug agent integrations. For the reader's side, see the [user guide](user-guide
 
 - [MCP tools](#mcp-tools)
 - [Story validation](#story-validation)
+- [Step kinds](#step-kinds)
 - [Patch operations](#patch-operations)
 - [Story files](#story-files)
 
@@ -59,14 +60,34 @@ with the same location rules. Errors then appear in the tool window, because a f
 has no report channel to the agent; see
 [Without the MCP server](user-guide.md#without-the-mcp-server).
 
+## Step kinds
+
+A step without `kind` explains code, or introduces or closes the story. Two other kinds
+help the reader, and the [timeline](user-guide.md#the-timeline) shows each of them in its
+own way:
+
+| `kind` | Use | Fields |
+|---|---|---|
+| `context` | Background that the step before it needs, for example a method that it calls or a setting that it reads. Context before the first explanation is background for the whole story. | Like any step: an optional `location`. |
+| `proposal` | A change that the agent suggests but did not make, for example the fix of a bug trace. | An optional `location` for the lines that it changes, and an optional `proposedCode`: their new code, with `\n` between lines. An empty text proposes to remove the lines; without a location, it is new code. |
+
+An unknown kind, or `proposedCode` on a step that is not a proposal, is an error. A
+proposal of more than 30 lines gives a `proposal-too-long` warning. The reader can ask the
+agent to apply a proposal: the request is a change request on the proposal step, and
+`code_story_feedback` returns the step with its `kind` and `proposedCode`. After applying
+it, the agent updates the step to an explanation, or removes it. Story files omit the kind
+of an explanation, so stories without context or proposals are the same as before, and
+older plugin versions show context and proposal steps as explanations.
+
 ## Patch operations
 
-`code_story_patch` operations: `update` (stepId; title, comment or location),
+`code_story_patch` operations: `update` (stepId; title, comment, location, kind or proposedCode),
 `insert` (afterStepId and a complete step), `remove` (stepId) and `confirm` (stepId).
 Confirm makes the current code the step’s new reference and returns its status to **ok**;
 the agent must read the current code first and check that the explanation still fits. A
 missing file or range needs a new location or removal. Locations include anchor text; an
-explicit null makes a step text-only. A patch checks the whole structure and validates
+explicit null makes a step text-only, and a null `proposedCode` removes the proposed code.
+A patch checks the whole structure and validates
 edited steps like `code_story_show`; untouched steps keep their code references,
 including stale steps. Any error saves nothing. Threads and creation metadata stay
 intact. Replies show a **Story changes** line for the net story edits made while the

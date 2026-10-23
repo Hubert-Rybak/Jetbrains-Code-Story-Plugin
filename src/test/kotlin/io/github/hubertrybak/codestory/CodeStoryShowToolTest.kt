@@ -20,6 +20,7 @@ import com.intellij.testFramework.PlatformTestUtil
 import io.github.hubertrybak.codestory.ui.StoryPlayer
 import io.github.hubertrybak.codestory.core.ErrorCode
 import io.github.hubertrybak.codestory.core.StoryFormat
+import io.github.hubertrybak.codestory.core.StoryJson.jsonText
 import io.github.hubertrybak.codestory.core.StoryJson.quoted
 import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
@@ -68,7 +69,9 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
         val author = story.getValue("properties").jsonObject.getValue("author").jsonObject
         assertEquals(listOf("agent", "model"), author.getValue("properties").jsonObject.keys.toList())
         val step = story.getValue("properties").jsonObject.getValue("steps").jsonObject.getValue("items").jsonObject
-        assertEquals(listOf("id", "title", "comment", "location"), step.getValue("properties").jsonObject.keys.toList())
+        assertEquals(listOf("id", "kind", "title", "comment", "location", "proposedCode"), step.getValue("properties").jsonObject.keys.toList())
+        val kind = step.getValue("properties").jsonObject.getValue("kind").jsonObject.toString()
+        for (value in listOf("explanation", "context", "proposal")) assertTrue(kind, kind.contains("\"$value\""))
         assertEquals(listOf("title", "comment"), step.getValue("required").jsonArray.map { it.jsonPrimitive.content })
         val location = step.getValue("properties").jsonObject.getValue("location").jsonObject
         assertEquals("integer", location.getValue("properties").jsonObject.getValue("startLine").jsonObject.getValue("type").jsonPrimitive.content)
@@ -273,6 +276,28 @@ class CodeStoryShowToolTest : HeavyPlatformTestCase() {
         val saved = CodeStoryService.getInstance(project).stories().single().story
         assertEquals("story-branch", saved.git.branch)
         assertNull(saved.git.commit)
+    }
+
+    fun `test context and proposal steps are saved with the proposed code`() {
+        val report = call(story(
+            step(),
+            step(file = quoted("src/Billing.kt"), start = "2", end = "2", anchor = quoted("fun charge() {}"), title = quoted("Billing call"), kind = quoted("context")),
+            step(start = "5", end = "6", title = quoted("Retry"), kind = quoted("proposal"), proposedCode = jsonText("line 5\r\n    retry()\r\n")),
+        ))
+        assertEquals(report.errors.toString(), "accepted", report.status)
+        val steps = Json.parseToJsonElement(Files.readString(root.resolve(report.file!!))).jsonObject.getValue("steps").jsonArray.map { it.jsonObject }
+        assertEquals(listOf(null, "context", "proposal"), steps.map { it["kind"]?.jsonPrimitive?.content })
+        assertEquals("line 5\n    retry()", steps[2].getValue("proposedCode").jsonPrimitive.content)
+        assertFalse(steps[0].containsKey("proposedCode"))
+    }
+
+    fun `test proposed code outside a proposal is rejected with a fix hint`() {
+        val report = call(story(step(), step(start = "5", end = "6", kind = quoted("context"), proposedCode = quoted("retry()"))))
+        assertEquals("rejected", report.status)
+        val error = report.errors.single()
+        assertEquals(2 to ErrorCode.INVALID_VALUE.code, error.step to error.code)
+        assertTrue(error.hint, error.hint.contains("proposal"))
+        assertFalse(root.resolve(".codestory/local").exists())
     }
 
     fun `test stories still save when optional Git integration is absent`() {

@@ -2,6 +2,7 @@ package io.github.hubertrybak.codestory.core
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import java.io.IOException
 import java.nio.file.Files
@@ -29,11 +30,23 @@ object StoryJson {
         id: String? = null,
         anchor: String? = quoted("line ${start.toIntOrNull() ?: 1}"),
         location: String? = """{"file": $file, "startLine": $start, "endLine": $end${if (anchor == null) "" else ", \"anchorText\": $anchor"}}""",
-    ): String = """{${if (id == null) "" else "\"id\": $id, "}"title": $title, "comment": $comment${if (location == null) "" else ", \"location\": $location"}}"""
+        kind: String? = null,
+        proposedCode: String? = null,
+    ): String = "{" + listOfNotNull(
+        id?.let { "\"id\": $it" },
+        kind?.let { "\"kind\": $it" },
+        "\"title\": $title",
+        "\"comment\": $comment",
+        location?.let { "\"location\": $it" },
+        proposedCode?.let { "\"proposedCode\": $it" },
+    ).joinToString(", ") + "}"
 
     fun withoutField(json: String, field: String): String = JsonObject(Json.parseToJsonElement(json).jsonObject - field).toString()
 
     fun quoted(text: String): String = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+    /** A JSON string literal, with line breaks and other control characters escaped. */
+    fun jsonText(text: String): String = JsonPrimitive(text).toString()
 }
 
 /** Files under a story root, and one file outside it. */

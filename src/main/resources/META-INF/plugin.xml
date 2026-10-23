@@ -13,6 +13,12 @@
             <li><b>Read at your own speed.</b> Go to the next or previous step from the card, the
             <b>Code Story</b> tool window or the keyboard. The card does not take the keyboard
             focus, so you can continue to work in the editor.</li>
+            <li><b>See the whole story in a timeline.</b> The <b>Code Story Timeline</b> tool
+            window shows every step from top to bottom with its explanation and its code. Click
+            a line of code, and the editor beside the timeline opens it.</li>
+            <li><b>Context and proposals.</b> Context steps give background for a step, and
+            proposals show a suggested change that you can preview and ask the agent to
+            apply.</li>
             <li><b>Steps follow the code.</b> Steps stay on their code while you edit, and show
             when their code changed or is gone.</li>
             <li><b>See what changed.</b> In a story about a change, steps show <b>A</b> for new code
@@ -46,6 +52,8 @@
         <postStartupActivity implementation="io.github.hubertrybak.codestory.CodeStoryStartup"/>
         <toolWindow id="Code Story" anchor="right" icon="AllIcons.Toolwindows.Documentation"
                     factoryClass="io.github.hubertrybak.codestory.CodeStoryToolWindowFactory"/>
+        <toolWindow id="Code Story Timeline" anchor="right" icon="/icons/timeline.svg"
+                    factoryClass="io.github.hubertrybak.codestory.TimelineToolWindowFactory"/>
         <notificationGroup id="Code Story" displayType="BALLOON"/>
         <applicationConfigurable parentId="tools" id="io.github.hubertrybak.codestory.settings"
                                  displayName="Code Story" instance="io.github.hubertrybak.codestory.CodeStoryConfigurable"/>
@@ -74,6 +82,10 @@
         <action id="CodeStory.StopStory" class="io.github.hubertrybak.codestory.ui.StopStoryAction"
                 text="Stop Story" description="Stop playback and clear the story presentation" icon="AllIcons.Actions.Suspend">
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift Z" second-keystroke="END"/>
+        </action>
+        <action id="CodeStory.ShowTimeline" class="io.github.hubertrybak.codestory.ui.ShowTimelineAction"
+                text="Show Story Timeline" description="Show every step of the story in the timeline beside the editor" icon="/icons/timeline.svg">
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift Z" second-keystroke="T"/>
         </action>
     </actions>
 </idea-plugin>

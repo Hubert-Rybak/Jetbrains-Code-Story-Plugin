@@ -73,6 +73,9 @@ object WritingCases {
         WritingCase("active voice and code names", "comment", "`Thing.isStored` saves `mapping` as a string.", hints = true),
         WritingCase("thirty-line range", "range", "39"),
         WritingCase("thirty-one-line range", "range", "40", WarningCode.RANGE_TOO_LONG),
+        WritingCase("thirty-line proposal", "proposal", "30"),
+        WritingCase("thirty-one-line proposal", "proposal", "31", WarningCode.PROPOSAL_TOO_LONG),
+        WritingCase("proposal comments follow the comment rules", "proposal-comment", "One. Two. Three. Four.", WarningCode.COMMENT_SENTENCES),
     )
 }
 
@@ -89,6 +92,8 @@ class StoryWritingChecksTest(private val case: WritingCase) {
             "summary" -> base.copy(summary = case.text)
             "comment" -> base.copy(steps = listOf(step.copy(comment = case.text)))
             "range" -> base.copy(steps = listOf(step.copy(location = Location("src/App.kt", 10, case.text.toInt()))))
+            "proposal" -> base.copy(steps = listOf(step.copy(kind = StepKind.PROPOSAL, proposedCode = List(case.text.toInt()) { "call($it)" }.joinToString("\n"))))
+            "proposal-comment" -> base.copy(steps = listOf(step.copy(kind = StepKind.PROPOSAL, comment = case.text)))
             else -> error(case.field)
         }
         val warnings = StoryWritingChecks(case.hints).check(input)

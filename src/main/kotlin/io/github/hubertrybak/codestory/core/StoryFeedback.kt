@@ -55,6 +55,9 @@ data class FeedbackStep(
     val comment: String,
     val location: FeedbackLocation?,
     val status: StepStatus,
+    val kind: StepKind = StepKind.EXPLANATION,
+    /** Only for a proposal: the code that it proposes for the lines of [location]. */
+    val proposedCode: String? = null,
 )
 
 @Serializable
@@ -146,7 +149,7 @@ object StoryFeedback {
 
     private fun step(stored: StoredStory, index: Int): FeedbackStep {
         val step = stored.story.steps[index]
-        return FeedbackStep(step.id, index + 1, step.title, step.comment, step.location?.let(::location), stored.status(index))
+        return FeedbackStep(step.id, index + 1, step.title, step.comment, step.location?.let(::location), stored.status(index), step.kind, step.proposedCode)
     }
 
     private fun location(location: Location) = FeedbackLocation(location.file, location.startLine, location.endLine)

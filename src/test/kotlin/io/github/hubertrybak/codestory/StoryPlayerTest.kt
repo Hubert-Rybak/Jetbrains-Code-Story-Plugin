@@ -466,13 +466,13 @@ class StoryPlayerTest : HeavyPlatformTestCase() {
         val manager = KeymapManager.getInstance()
         for (name in listOf("\$default", "Mac OS X 10.5+", "Visual Studio", "Visual Studio OSX", "ReSharper", "ReSharper OSX", "Visual Studio 2022")) {
             val keymap = manager.getKeymap(name) ?: continue
-            for (id in listOf("CodeStory.NextStep", "CodeStory.PreviousStep", "CodeStory.StopStory", "CodeStory.CommentOnCurrentStep")) {
+            for (id in listOf("CodeStory.NextStep", "CodeStory.PreviousStep", "CodeStory.StopStory", "CodeStory.CommentOnCurrentStep", "CodeStory.ShowTimeline")) {
                 val action = ActionManager.getInstance().getAction(id)
                 assertNotNull(id, action)
                 val shortcut = keymap.getShortcuts(id).filterIsInstance<KeyboardShortcut>().single()
                 assertNotNull(shortcut.secondKeyStroke)
                 assertEquals(listOf(id), keymap.getActionIds(shortcut).toList())
-                assertEquals(name, setOf("CodeStory.NextStep", "CodeStory.PreviousStep", "CodeStory.StopStory", "CodeStory.CommentOnCurrentStep"), keymap.getActionIds(shortcut.firstKeyStroke).toSet())
+                assertEquals(name, setOf("CodeStory.NextStep", "CodeStory.PreviousStep", "CodeStory.StopStory", "CodeStory.CommentOnCurrentStep", "CodeStory.ShowTimeline"), keymap.getActionIds(shortcut.firstKeyStroke).toSet())
             }
         }
     }

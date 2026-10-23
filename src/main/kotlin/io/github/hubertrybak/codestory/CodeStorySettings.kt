@@ -14,10 +14,12 @@ import com.intellij.util.ui.JBUI
 import java.awt.Color
 import java.awt.FlowLayout
 import javax.swing.BoxLayout
+import javax.swing.ButtonGroup
 import javax.swing.JCheckBox
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
+import javax.swing.JRadioButton
 
 fun interface StorySettingsListener {
     fun settingsChanged()
@@ -26,6 +28,9 @@ fun interface StorySettingsListener {
         val TOPIC = Topic(StorySettingsListener::class.java)
     }
 }
+
+/** How the reader follows a story: a step card beside the code, or the timeline of all steps next to the editor. */
+enum class StoryView { CARD, TIMELINE }
 
 @Service(Service.Level.APP)
 @State(name = "CodeStorySettings", storages = [Storage("codeStory.xml")])
@@ -40,6 +45,8 @@ class CodeStorySettings : PersistentStateComponent<CodeStorySettings.Options> {
         /** The step card size that the reader chose by dragging, in unscaled pixels; 0 means the default size. */
         var cardWidth = 0
         var cardHeight = 0
+        /** The view that the reader used last. New stories open in it. */
+        var storyView = StoryView.CARD
     }
 
     private var options = Options()
@@ -63,11 +70,16 @@ class CodeStoryConfigurable : Configurable {
     private var automaticFeedback: JCheckBox? = null
     private var themeDefault: JCheckBox? = null
     private var color: ColorPanel? = null
+    private var cardView: JRadioButton? = null
+    private var timelineView: JRadioButton? = null
 
     override fun getDisplayName() = "Code Story"
 
     override fun createComponent(): JComponent {
         bringToFront = JCheckBox("Bring the IDE to the front on a new story")
+        cardView = JRadioButton("Step card beside the code")
+        timelineView = JRadioButton("Timeline of all steps")
+        ButtonGroup().apply { add(cardView); add(timelineView) }
         optionalStyleHints = JCheckBox("Include passive voice and -ing hints in agent reports")
         automaticFeedback = JCheckBox("Let connected agents listen for submitted feedback automatically")
         projectSkillInstallation = JCheckBox("Install the Code Story skill in the current project instead of the user folder")
@@ -79,6 +91,12 @@ class CodeStoryConfigurable : Configurable {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = JBUI.Borders.empty(8)
             add(bringToFront)
+            add(JPanel(FlowLayout(FlowLayout.LEFT)).apply {
+                add(JLabel("Show new stories in:"))
+                add(cardView)
+                add(timelineView)
+            })
+            add(JLabel("The IDE remembers the view that you use last."))
             add(optionalStyleHints)
             add(automaticFeedback)
             add(projectSkillInstallation)
@@ -95,6 +113,7 @@ class CodeStoryConfigurable : Configurable {
 
     override fun isModified(): Boolean = panel != null && CodeStorySettings.getInstance().state.let {
         bringToFront!!.isSelected != it.bringToFront || selectedColor() != it.highlightColor ||
+            selectedView() != it.storyView ||
             optionalStyleHints!!.isSelected != it.optionalStyleHints ||
             automaticFeedback!!.isSelected != it.automaticFeedback ||
             projectSkillInstallation!!.isSelected != it.projectSkillInstallation
@@ -103,6 +122,7 @@ class CodeStoryConfigurable : Configurable {
     override fun apply() {
         CodeStorySettings.getInstance().state.apply {
             bringToFront = this@CodeStoryConfigurable.bringToFront!!.isSelected
+            storyView = selectedView()
             highlightColor = selectedColor()
             optionalStyleHints = this@CodeStoryConfigurable.optionalStyleHints!!.isSelected
             automaticFeedback = this@CodeStoryConfigurable.automaticFeedback!!.isSelected
@@ -115,6 +135,8 @@ class CodeStoryConfigurable : Configurable {
         if (panel == null) return
         val settings = CodeStorySettings.getInstance()
         bringToFront!!.isSelected = settings.state.bringToFront
+        cardView!!.isSelected = settings.state.storyView == StoryView.CARD
+        timelineView!!.isSelected = settings.state.storyView == StoryView.TIMELINE
         optionalStyleHints!!.isSelected = settings.state.optionalStyleHints
         automaticFeedback!!.isSelected = settings.state.automaticFeedback
         projectSkillInstallation!!.isSelected = settings.state.projectSkillInstallation
@@ -125,9 +147,13 @@ class CodeStoryConfigurable : Configurable {
 
     private fun selectedColor() = if (themeDefault!!.isSelected) null else color!!.selectedColor?.rgb
 
+    private fun selectedView() = if (timelineView!!.isSelected) StoryView.TIMELINE else StoryView.CARD
+
     override fun disposeUIResources() {
         panel = null
         bringToFront = null
+        cardView = null
+        timelineView = null
         optionalStyleHints = null
         automaticFeedback = null
         projectSkillInstallation = null
