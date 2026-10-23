@@ -44,7 +44,7 @@ the IDE's MCP server does, and check the report, the saved files and the tool wi
 |---|---|
 | Agent tools | Guide, list and get, replacement in local and shared folders, and writing reports. |
 | Playback | Auto-play, playback controls, resume and restart, card dismissal, gutter navigation, presentation cleanup and the absence of code-line inlays. |
-| Timeline | Step blocks for every kind, code with file line numbers, without shared indentation and with proposal diffs, navigation from a code line without a step card, following the player and edits, view switching with the current step in view, a scroll position that reloads keep, the remembered view, comments and HTML-safe paths. |
+| Timeline | Step blocks for every kind, code with file line numbers, without shared indentation and with proposal diffs, navigation from a code line without a step card, selections that a click keeps for copying, following the player and edits, view switching with the current step in view, a scroll position that reloads keep, the remembered view, comments and HTML-safe paths. |
 | Step kinds | Core tests for the format, validation, patches, revisions, Markdown export and the proposal diff, and agent API tests from a proposal to its applied code. |
 | Anchoring | The tests edit fixture documents and check corrections, step statuses, live markers during playback and the rewrite of local (never shared) stories. |
 | Change information | The tests build a fixture Git history and check the A/M badges, the saved base commit, **Show diff** and the unknown-base warning. |

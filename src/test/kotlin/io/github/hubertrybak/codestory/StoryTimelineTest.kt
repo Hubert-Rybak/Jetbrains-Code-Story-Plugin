@@ -2,6 +2,7 @@ package io.github.hubertrybak.codestory
 
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diff.DiffColors
+import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
@@ -18,6 +19,7 @@ import io.github.hubertrybak.codestory.core.StoryJson.step
 import io.github.hubertrybak.codestory.core.StoryJson.story
 import io.github.hubertrybak.codestory.core.ThreadKind
 import io.github.hubertrybak.codestory.ui.APPLY_PROPOSAL_TEXT
+import io.github.hubertrybak.codestory.ui.CodeSnippet
 import io.github.hubertrybak.codestory.ui.StepItem
 import io.github.hubertrybak.codestory.ui.StepNavigator
 import io.github.hubertrybak.codestory.ui.StoryDetailsPanel
@@ -182,6 +184,35 @@ class StoryTimelineTest : HeavyPlatformTestCase() {
         assertEquals(4, player.stepIndex)
         assertSame(editor, FileEditorManager.getInstance(project).selectedTextEditor)
         assertTrue(panel.blocks[4].isCurrent)
+    }
+
+    fun `test a selection in the code stays for copying, and a double-click on a word opens the code`() {
+        show(kinds)
+        val blocks = openTimeline().blocks
+        val context = blocks[1].snippet!!
+        // A click that extends the selection, for example with Shift, does not open the code.
+        context.editor.selectionModel.setSelection(0, 3)
+        click(context, line = 0)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(0, player.stepIndex)
+        assertTrue(context.editor.selectionModel.hasSelection())
+
+        // The line numbers always open the code.
+        click(context, line = 0, onLineNumbers = true)
+        player.awaitPlayback()
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(1, player.stepIndex)
+
+        // A double-click selects a word, then opens the code without the selection. The snippet
+        // takes it at its second press; a press in a test editor leaks a hover listener.
+        val entry = blocks[0].snippet!!
+        entry.editor.selectionModel.setSelection(0, 4)
+        entry.lineClicked(1, clickCount = 2)
+        player.awaitPlayback()
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(0, player.stepIndex)
+        assertFalse(entry.editor.selectionModel.hasSelection())
+        assertEquals(10, player.presentation!!.editor.caretModel.logicalPosition.line)
     }
 
     fun `test the timeline follows the player and the step card comes back on request`() {
@@ -386,6 +417,13 @@ class StoryTimelineTest : HeavyPlatformTestCase() {
             PlatformTestUtil.waitWithEventsDispatching("the timeline did not load", { loaded.isDone }, TIMEOUT_SECONDS)
         }
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+    }
+
+    /** A single click as AWT reports it, on snippet line [line] of the code or of the line numbers. */
+    private fun click(snippet: CodeSnippet, line: Int, onLineNumbers: Boolean = false) {
+        val target = if (onLineNumbers) snippet.editor.gutterComponentEx else snippet.editor.contentComponent
+        val y = snippet.editor.logicalPositionToXY(LogicalPosition(line, 0)).y + 1
+        target.dispatchEvent(MouseEvent(target, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, 5, y, 1, false, MouseEvent.BUTTON1))
     }
 
     /** Lays out [component] and its children, which `validate` skips without a window. Wrapped text needs a few passes. */
