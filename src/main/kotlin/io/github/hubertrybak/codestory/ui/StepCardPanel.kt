@@ -3,7 +3,6 @@ package io.github.hubertrybak.codestory.ui
 import com.intellij.ide.BrowserUtil
 import com.intellij.ide.ui.UISettings
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
@@ -403,10 +402,9 @@ class StepCardPanel(
         val safe = runCatching { Files.isRegularFile(path) && path.toRealPath().startsWith(stored.root.toRealPath()) }.getOrDefault(false)
         if (!safe) return
         val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path) ?: return
-        FileEditorManager.getInstance(project).openTextEditor(
-            OpenFileDescriptor(project, file, link.startLine - 1, 0)
-                .setUsePreviewTab(UISettings.getInstance().openInPreviewTabIfPossible), true,
-        )
+        OpenFileDescriptor(project, file, link.startLine - 1, 0)
+            .setUsePreviewTab(UISettings.getInstance().openInPreviewTabIfPossible)
+            .navigateInEditor(project, true)
     }
 
     private companion object {

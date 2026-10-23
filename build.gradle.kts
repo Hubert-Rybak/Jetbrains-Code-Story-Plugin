@@ -1,6 +1,7 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.models.ProductRelease
+import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
 plugins {
@@ -30,6 +31,9 @@ kotlin {
         // Match the Kotlin API bundled with the oldest supported IDE.
         apiVersion = KotlinVersion.KOTLIN_2_2
         languageVersion = KotlinVersion.KOTLIN_2_2
+        // Without bridges for inherited interface methods, classes do not call the deprecated and
+        // experimental defaults of platform interfaces such as ToolWindowFactory.
+        jvmDefault = JvmDefaultMode.NO_COMPATIBILITY
     }
 }
 
