@@ -9,7 +9,7 @@ plugin, especially in a cloud container without a screen.
 - Run Gradle with a UTF-8 locale. Some test names contain typographic apostrophes, and the
   test report fails without it:
   `LC_ALL=C.UTF-8 LANG=C.UTF-8 ./gradlew check`
-- One test class: `./gradlew test --tests 'io.github.hubertrybak.codestory.StoryTimelineTest'`.
+- One test class: `./gradlew test --tests 'io.github.hubertrybak.codestory.StoryPlayerTest'`.
   Add `--rerun` to run unchanged tests again, and `-i` to see their output. The results are
   in `build/test-results/test/TEST-*.xml`.
 - Plugin Verifier against the IDE that Gradle downloaded, without another download:
@@ -42,7 +42,6 @@ container without a screen:
      <component name="CodeStorySettings">
        <option name="bringToFront" value="false" />
        <option name="setupNotificationShown" value="true" />
-       <option name="storyView" value="TIMELINE" />
      </component>
    </application>
    ```
@@ -103,7 +102,7 @@ it into a `BufferedImage` and write a PNG. Delete the test before you commit.
 
 ### Screenshots for the documentation
 
-The timeline screenshots in [`docs/images`](docs/images) come from this setup: the demo
+Screenshots for [`docs/images`](docs/images) come from this setup: the demo
 project at `SANDBOX_SCALE=2` on a `3840x2160` display, once with `Islands Light` and once
 with `Islands Dark`. Text with subpixel antialiasing gets colored edges when GitHub scales
 an image, so also preset grayscale antialiasing in `other.xml`:
@@ -120,10 +119,6 @@ an image, so also preset grayscale antialiasing in `other.xml`:
 - Drag the splitter between the Project tool window and the editor to set the width of the
   editor, then crop the Project tool window away. A crop of about 1000 logical pixels stays
   readable at the width of the README.
-- The mouse wheel scrolls the timeline in large steps. For an exact position, hover the
-  scroll bar and drag its thumb a few pixels.
-- A single click on a line of code leaves a caret in the snippet. A double-click opens the
-  line and moves the keyboard focus to the editor.
 - Crop the same rectangle from the light and the dark screenshot, so the two images of a
   pair match.
 
@@ -136,12 +131,8 @@ an image, so also preset grayscale antialiasing in `other.xml`:
   `StoryTextPane` does it already.
 - In a `JComponent` subclass, Kotlin resolves `accessibleContext` to the protected field,
   which is `null` until it is created. Call `getAccessibleContext()`.
-- An embedded editor reports a click only after its release, and the second click of a
-  double-click can miss it while the event thread is busy. `CodeSnippet` listens to the AWT
-  events instead and opens a double-click at its second press.
 - A mouse press that a test sends to an embedded editor registers a hover listener that the
-  leak check reports. Send `MOUSE_CLICKED`, or call the handler, for example
-  `CodeSnippet.lineClicked`.
+  leak check reports. Send `MOUSE_CLICKED`, or call the handler directly.
 - Story text comes from files and agents. Show it as plain text (`PlainText`,
   `SimpleColoredComponent`) or through `StoryTextPane`, never as HTML. Set
   `html.disable` on labels and links that show paths.

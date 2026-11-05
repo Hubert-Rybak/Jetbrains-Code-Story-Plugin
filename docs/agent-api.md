@@ -63,8 +63,7 @@ has no report channel to the agent; see
 ## Step kinds
 
 A step without `kind` explains code, or introduces or closes the story. Two other kinds
-help the reader, and the [timeline](user-guide.md#the-timeline) shows each of them in its
-own way:
+help the reader (see [Context and proposals](user-guide.md#context-and-proposals)):
 
 | `kind` | Use | Fields |
 |---|---|---|
