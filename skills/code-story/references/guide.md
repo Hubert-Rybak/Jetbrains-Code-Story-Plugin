@@ -39,9 +39,8 @@ proposal step, with its `kind` and `proposedCode`. Apply the proposed code at th
 lines of the step. Then update the step: set `kind` to `explanation`, set `proposedCode`
 to null, and explain the new code. Remove the step instead when the story does not need it.
 
-Readers follow a story with the step card beside the code, or in the timeline, which
-shows every step from top to bottom with its code. Order the steps so that they read well
-in sequence.
+Readers follow a story with the step card beside the code, one step at a time. Order the
+steps so that they read well in sequence.
 
 ## Stories about a change
 
