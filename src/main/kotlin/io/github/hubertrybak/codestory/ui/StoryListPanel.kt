@@ -112,10 +112,9 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
     private val comments = StoryComments(project, ::manageStory)
     val details = StoryDetailsPanel(comments, ::showDiff)
     /** The context menu of stories and steps. */
-    val contextActions = DefaultActionGroup(RestartAction(), TimelineAction(), CommentAction(), RequestRefreshAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
+    val contextActions = DefaultActionGroup(RestartAction(), CommentAction(), RequestRefreshAction(), ShowDiffAction(), ShareAction(), DeleteAction(), CopyMarkdownAction())
     val toolbarActions = DefaultActionGroup().apply {
         add(PlayAction())
-        add(TimelineAction())
         add(ActionManager.getInstance().getAction("CodeStory.PreviousStep"))
         add(ActionManager.getInstance().getAction("CodeStory.NextStep"))
         add(ActionManager.getInstance().getAction("CodeStory.StopStory"))
@@ -371,16 +370,6 @@ class StoryListPanel(private val project: Project) : SimpleToolWindowPanel(true,
         override fun actionPerformed(e: AnActionEvent) { selectedStory()?.let { player.play(it) } }
     }
 
-    /** Every step of the selected story in the timeline beside the editor. A playing story continues there. */
-    private inner class TimelineAction : DumbAwareAction("Open in Timeline", "Show every step of the selected story in the timeline beside the editor", CodeStoryIcons.Timeline) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-        override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
-        override fun actionPerformed(e: AnActionEvent) {
-            val stored = selectedStory() ?: return
-            StoryTimeline.getInstance(project).open(player.currentStory?.takeIf { it.key == stored.key } ?: stored)
-        }
-    }
-
     private inner class RestartAction : DumbAwareAction("Restart", "Play the selected story from step 1", AllIcons.Actions.Restart) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun update(e: AnActionEvent) { e.presentation.isEnabled = selectedStory() != null }
@@ -558,7 +547,7 @@ private class StoryTreeCellRenderer(private val player: StoryPlayer, private val
                     SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else SimpleTextAttributes.REGULAR_ATTRIBUTES
                 append("${item.index + 1}. ${item.step.title}", attributes)
                 item.step.kind.takeIf { it != StepKind.EXPLANATION }?.let { kind ->
-                    append("  ${stepKindLabel(kind).lowercase()}", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, TimelineColors.of(kind)))
+                    append("  ${stepKindLabel(kind).lowercase()}", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, StepKindColors.of(kind)))
                 }
                 if (location != null) append("  ${location.file.substringAfterLast('/')}:${lines(location)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 item.change?.let { change ->

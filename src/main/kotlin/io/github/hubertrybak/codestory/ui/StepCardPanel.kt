@@ -75,10 +75,6 @@ class StepCardPanel(
     }
     val stop = JButton("Stop").apply { mnemonic = 'S'.code; addActionListener { player.stop() } }
     val close = InplaceButton(IconButton("Close card (keep story position)", AllIcons.Actions.Close, AllIcons.Actions.CloseHovered)) { dismiss() }
-    /** Continues the story in the timeline, at this step. */
-    val timeline = InplaceButton(IconButton("Show all steps in the timeline", CodeStoryIcons.Timeline)) {
-        StoryTimeline.getInstance(project).open(stored)
-    }
     /** The warning or note about the code of the step, if it changed. */
     val statusText: String? = statusNote(stored.status(index))
     private val noteIcon = JLabel(if (stored.status(index) == StepStatus.LOST) AllIcons.General.Warning else AllIcons.General.Information)
@@ -91,7 +87,7 @@ class StepCardPanel(
     }
     private val title = PlainText(stored.story.steps[index].title, bold = true).apply { isFocusable = false }
     val comment = StoryTextPane(::openLink).apply { markdown = stored.story.steps[index].comment }
-    /** A proposal with code opens its change in the diff viewer. The timeline also shows the proposed code. */
+    /** A proposal with code opens its change in the diff viewer. */
     val previewProposal = ActionLink("Preview change") { showProposalDiff(project, stored, index) }.apply {
         isVisible = kind == StepKind.PROPOSAL && stored.story.steps[index].proposedCode != null
     }
@@ -143,11 +139,7 @@ class StepCardPanel(
         }, BorderLayout.CENTER)
         add(JPanel(BorderLayout()).apply {
             isOpaque = false
-            add(JPanel(HorizontalLayout(4)).apply {
-                isOpaque = false
-                add(timeline)
-                add(close)
-            }, BorderLayout.NORTH)
+            add(close, BorderLayout.NORTH)
         }, BorderLayout.EAST)
         note?.let {
             add(JPanel(BorderLayout(JBUI.scale(6), 0)).apply {

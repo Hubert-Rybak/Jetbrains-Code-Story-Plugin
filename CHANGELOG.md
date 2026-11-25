@@ -6,6 +6,13 @@ All notable changes to Code Story are listed here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The **Code Story Timeline** tool window, its **Show Story Timeline** action and
+  shortcut, and the setting that chose between the step card and the timeline. Stories
+  play with the step card beside the code. Context and proposal steps stay: the step card
+  names them, and **Preview change** opens a proposal in the diff viewer.
+
 ## [1.2.0] - 2026-10-23
 
 ### Added

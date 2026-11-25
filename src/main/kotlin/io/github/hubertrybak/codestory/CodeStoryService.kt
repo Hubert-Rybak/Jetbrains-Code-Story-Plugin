@@ -609,9 +609,7 @@ class CodeStoryService(private val project: Project) : Disposable {
                     }
                     player.reload(stored)
                 } else player.restart(stored)
-                // The story shows where the reader follows stories: the list with the step card, or the timeline.
-                val toolWindow = if (player.view == StoryView.TIMELINE) TIMELINE_TOOL_WINDOW_ID else TOOL_WINDOW_ID
-                ToolWindowManager.getInstance(project).getToolWindow(toolWindow)?.show()
+                ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.show()
                 if (CodeStorySettings.getInstance().state.bringToFront) {
                     WindowManager.getInstance().getFrame(project)?.let { IdeFocusManager.getInstance(project).toFront(it.rootPane) }
                 }
@@ -625,7 +623,6 @@ class CodeStoryService(private val project: Project) : Disposable {
 
     companion object {
         const val TOOL_WINDOW_ID = "Code Story"
-        const val TIMELINE_TOOL_WINDOW_ID = "Code Story Timeline"
         private val LOG = logger<CodeStoryService>()
 
         fun getInstance(project: Project): CodeStoryService = project.service()

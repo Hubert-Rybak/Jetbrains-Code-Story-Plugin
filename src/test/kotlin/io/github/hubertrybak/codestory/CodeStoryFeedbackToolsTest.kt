@@ -39,7 +39,6 @@ import io.github.hubertrybak.codestory.core.ThreadState
 import io.github.hubertrybak.codestory.core.WarningCode
 import io.github.hubertrybak.codestory.mcp.CodeStoryToolset
 import io.github.hubertrybak.codestory.ui.StoryPlayer
-import io.github.hubertrybak.codestory.ui.applyProposalDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -664,7 +663,7 @@ class CodeStoryFeedbackToolsTest : HeavyPlatformTestCase() {
     fun `test an applied proposal becomes an explanation of the new code`() {
         val stored = show(story(step(start = "5", end = "6", id = quoted("retry"), title = quoted("Retry the call"), kind = quoted("proposal"),
             proposedCode = jsonText("line 5\n    retry()"))))
-        background { service.post(stored, listOf(applyProposalDraft(stored, "retry"))) }
+        background { service.post(stored, listOf(StoryDraft(story = stored.key, step = "retry", kind = ThreadKind.CHANGE, text = "Apply this proposal."))) }
         val comment = feedback(stored.id).getValue("comments").jsonArray.single().jsonObject
         assertEquals("change", comment.string("kind"))
         val step = comment.getValue("step").jsonObject
